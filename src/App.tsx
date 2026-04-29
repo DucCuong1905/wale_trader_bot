@@ -39,28 +39,40 @@ export default function App() {
   const [signals, setSignals] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         const res = await fetch('/api/trading/status');
+        if (!res.ok) throw new Error(`Status API error: ${res.status}`);
         const json = await res.json();
         setData(json);
         setLastPrice(json.last_price);
         setBidRatio(parseFloat(json.bid_ratio));
         setSignals(json.signals);
 
-        const histRes = await fetch('/api/trading/history');
-        const histJson = await histRes.json();
-        setHistory(histJson);
-        setLoading(false);
+        try {
+          const histRes = await fetch('/api/trading/history');
+          if (histRes.ok) {
+            const histJson = await histRes.json();
+            setHistory(histJson);
+          }
+        } catch (hErr) {
+          console.warn("History fetch failed, but status ok", hErr);
+        }
+        
+        setError(null);
       } catch (e) {
         console.error("Failed to fetch status:", e);
+        setError("Could not connect to Trading Engine. Please check if the server is running on port 3000.");
+      } finally {
+        setLoading(false);
       }
     };
 
     fetchData();
-    const interval = setInterval(fetchData, 2000);
+    const interval = setInterval(fetchData, 3000);
     return () => clearInterval(interval);
   }, []);
 
@@ -80,6 +92,24 @@ export default function App() {
     );
   }
 
+  if (error) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0c] text-white flex items-center justify-center font-sans p-6">
+        <div className="max-w-md w-full bg-red-500/10 border border-red-500/20 p-8 rounded-3xl text-center">
+          <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-red-400 mb-2">Connection Failure</h2>
+          <p className="text-sm text-red-400/70 mb-6">{error}</p>
+          <button 
+            onClick={() => window.location.reload()}
+            className="px-6 py-2 bg-red-500 text-white rounded-full text-sm font-bold hover:bg-red-600 transition-colors"
+          >
+            Retry Connection
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#0a0a0c] text-white font-sans selection:bg-blue-500/30">
       {/* Header */}
@@ -90,7 +120,7 @@ export default function App() {
               <Zap className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="font-bold text-lg leading-none">WhaleTrade</h1>
+              <h1 className="font-bold text-lg leading-none">WhaleBot <span className="text-blue-500">v2.1</span></h1>
               <span className="text-[10px] text-blue-400 font-mono tracking-widest uppercase opacity-70">Deep Liquidity Engine</span>
             </div>
           </div>
