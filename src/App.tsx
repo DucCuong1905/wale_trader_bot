@@ -31,25 +31,14 @@ import {
   Area
 } from 'recharts';
 
-// Mock data for initial UI
-const MOCK_HISTORICAL_DATA = Array.from({ length: 20 }, (_, i) => ({
-  time: `${i}:00`,
-  price: 65000 + Math.random() * 1000 - 500,
-  balance: 5000 + i * 50 + (Math.random() * 200 - 100)
-}));
-
-const MOCK_TRADES = [
-  { id: 1, side: 'LONG', symbol: 'BTC/USDT', entry: 65420.5, exit: 66100.2, pnl: 120.5, status: 'Closed', time: '10:15:00' },
-  { id: 2, side: 'SHORT', symbol: 'BTC/USDT', entry: 65900.0, exit: 65650.0, pnl: 85.2, status: 'Closed', time: '12:30:15' },
-  { id: 3, side: 'LONG', symbol: 'BTC/USDT', entry: 65720.1, exit: null, pnl: 15.4, status: 'Active', time: '14:05:44' },
-];
-
+// State for the app
 export default function App() {
   const [data, setData] = useState<any>(null);
   const [lastPrice, setLastPrice] = useState(0);
   const [bidRatio, setBidRatio] = useState(1);
   const [signals, setSignals] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -64,6 +53,7 @@ export default function App() {
         const histRes = await fetch('/api/trading/history');
         const histJson = await histRes.json();
         setHistory(histJson);
+        setLoading(false);
       } catch (e) {
         console.error("Failed to fetch status:", e);
       }
