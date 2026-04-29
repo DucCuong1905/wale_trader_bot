@@ -16,7 +16,8 @@ import {
   AlertTriangle,
   ArrowUpRight,
   ArrowDownRight,
-  Brain
+  Brain,
+  BarChart3
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -30,6 +31,7 @@ import {
   AreaChart,
   Area
 } from 'recharts';
+import TradeStats from './components/TradeStats';
 
 // State for the app
 export default function App() {
@@ -190,6 +192,9 @@ export default function App() {
               "{data?.ai_reasoning || 'Waiting for the next signal to analyze market context with Gemini AI...'}"
             </p>
           </div>
+
+          {/* Win/Loss Statistics Chart */}
+          <TradeStats trades={history} />
 
           {/* Main Balance Chart */}
           <section className="bg-[#0f0f13] border border-white/5 rounded-2xl p-6 shadow-xl relative overflow-hidden">
