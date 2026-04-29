@@ -49,6 +49,7 @@ export default function App() {
   const [lastPrice, setLastPrice] = useState(0);
   const [bidRatio, setBidRatio] = useState(1);
   const [signals, setSignals] = useState<any[]>([]);
+  const [history, setHistory] = useState<any[]>([]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -59,6 +60,10 @@ export default function App() {
         setLastPrice(json.last_price);
         setBidRatio(parseFloat(json.bid_ratio));
         setSignals(json.signals);
+
+        const histRes = await fetch('/api/trading/history');
+        const histJson = await histRes.json();
+        setHistory(histJson);
       } catch (e) {
         console.error("Failed to fetch status:", e);
       }
@@ -148,17 +153,20 @@ export default function App() {
             <div className="flex items-center justify-between mb-8">
               <div>
                 <h3 className="text-lg font-semibold">Growth Performance</h3>
-                <p className="text-sm text-gray-400">Track your equity curve over the last session</p>
+                <p className="text-sm text-gray-400">Track your equity curve over time</p>
               </div>
               <div className="flex gap-2">
                 <button className="px-3 py-1 rounded-md bg-white/5 hover:bg-white/10 text-xs transition-colors">1H</button>
-                <button className="px-3 py-1 rounded-md bg-blue-600 text-xs transition-colors font-semibold">24H</button>
+                <button className="px-3 py-1 rounded-md bg-blue-600 text-xs transition-colors font-semibold">ALL</button>
               </div>
             </div>
             
             <div className="h-[300px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={MOCK_HISTORICAL_DATA}>
+                <AreaChart data={history.filter(h => h.balance).reverse().map(h => ({
+                  time: new Date(h.time).toLocaleTimeString(),
+                  balance: h.balance
+                }))}>
                   <defs>
                     <linearGradient id="colorBalance" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
@@ -167,7 +175,7 @@ export default function App() {
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
                   <XAxis dataKey="time" stroke="#4b5563" fontSize={10} axisLine={false} tickLine={false} />
-                  <YAxis hide={true} domain={['dataMin - 100', 'dataMax + 100']} />
+                  <YAxis hide={true} domain={['auto', 'auto']} />
                   <Tooltip 
                     contentStyle={{ backgroundColor: '#18181b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }} 
                     itemStyle={{ color: '#fff' }}
@@ -183,6 +191,11 @@ export default function App() {
                   />
                 </AreaChart>
               </ResponsiveContainer>
+              {history.filter(h => h.balance).length === 0 && (
+                <div className="absolute inset-0 flex items-center justify-center bg-[#0f0f13]/50">
+                  <p className="text-sm text-gray-500">No balance history recorded yet.</p>
+                </div>
+              )}
             </div>
           </section>
 
@@ -196,35 +209,44 @@ export default function App() {
               <table className="w-full text-left">
                 <thead className="bg-white/2 text-[10px] uppercase tracking-wider text-gray-400">
                   <tr>
-                    <th className="px-6 py-4 font-semibold">Asset</th>
-                    <th className="px-6 py-4 font-semibold">Side</th>
-                    <th className="px-6 py-4 font-semibold">Entry</th>
-                    <th className="px-6 py-4 font-semibold">Exit</th>
-                    <th className="px-6 py-4 font-semibold text-right">PnL</th>
+                    <th className="px-6 py-4 font-semibold">Time</th>
+                    <th className="px-6 py-4 font-semibold">Type</th>
+                    <th className="px-6 py-4 font-semibold">Details</th>
+                    <th className="px-6 py-4 font-semibold text-right">Result</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
-                  {MOCK_TRADES.map((trade) => (
-                    <tr key={trade.id} className="hover:bg-white/[0.02] transition-colors group">
-                      <td className="px-6 py-4">
-                        <span className="font-mono text-sm font-medium">{trade.symbol}</span>
+                  {history.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="px-6 py-12 text-center text-gray-500 text-sm">
+                        No trade history available yet.
+                      </td>
+                    </tr>
+                  ) : history.map((item, idx) => (
+                    <tr key={idx} className="hover:bg-white/[0.02] transition-colors group">
+                      <td className="px-6 py-4 text-xs font-mono text-gray-400">
+                        {new Date(item.time).toLocaleString()}
                       </td>
                       <td className="px-6 py-4">
                         <span className={cn(
-                          "text-[10px] font-bold px-2 py-0.5 rounded-full border mr-2",
-                          trade.side === 'LONG' ? "bg-green-500/10 border-green-500/30 text-green-400" : "bg-red-500/10 border-red-500/30 text-red-400"
+                          "text-[10px] font-bold px-2 py-0.5 rounded-full border",
+                          item.status === 'EXECUTED' ? "bg-blue-500/10 border-blue-500/30 text-blue-400" :
+                          item.status === 'CLOSED' ? "bg-purple-500/10 border-purple-500/30 text-purple-400" :
+                          "bg-gray-500/10 border-gray-500/30 text-gray-400"
                         )}>
-                          {trade.side}
+                          {item.status}
                         </span>
-                        <span className="text-[10px] text-gray-500 uppercase font-bold">{trade.status}</span>
                       </td>
-                      <td className="px-6 py-4 font-mono text-sm">${trade.entry.toLocaleString()}</td>
-                      <td className="px-6 py-4 font-mono text-sm">{trade.exit ? `$${trade.exit.toLocaleString()}` : '--'}</td>
+                      <td className="px-6 py-4 font-mono text-sm">
+                        {item.status === 'EXECUTED' && `${item.type} @ ${item.price}`}
+                        {item.status === 'CLOSED' && `PnL: $${item.pnl?.toFixed(2)}`}
+                        {item.status === 'AI_REJECTED' && `REJECTED: ${item.reason}`}
+                      </td>
                       <td className={cn(
                         "px-6 py-4 text-right font-mono text-sm font-bold",
-                        trade.pnl > 0 ? "text-green-400" : "text-red-400"
+                        item.pnl > 0 ? "text-green-400" : item.pnl < 0 ? "text-red-400" : "text-gray-400"
                       )}>
-                        {trade.pnl > 0 ? '+' : ''}{trade.pnl}%
+                        {item.pnl !== undefined ? `${item.pnl >= 0 ? '+' : ''}$${item.pnl.toFixed(2)}` : '--'}
                       </td>
                     </tr>
                   ))}

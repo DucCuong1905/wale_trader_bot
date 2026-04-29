@@ -26,6 +26,39 @@ const RR = 2;
 const COOLDOWN_MS = 60000;
 const MAX_DAILY_LOSS = 0.02; // Chặn nếu lỗ 2% trong ngày
 
+// --- PERSISTENCE ---
+const DATA_DIR = path.join(process.cwd(), "data");
+const TRADES_FILE = path.join(DATA_DIR, "trades.json");
+
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR);
+}
+
+function loadTrades() {
+  if (fs.existsSync(TRADES_FILE)) {
+    try {
+      const data = fs.readFileSync(TRADES_FILE, "utf-8");
+      return JSON.parse(data);
+    } catch (e) {
+      console.error("Error loading trades:", e);
+      return [];
+    }
+  }
+  return [];
+}
+
+function saveTrade(trade: any) {
+  const trades = loadTrades();
+  trades.unshift(trade);
+  // Keep only last 1000 trades
+  const limited = trades.slice(0, 1000);
+  try {
+    fs.writeFileSync(TRADES_FILE, JSON.stringify(limited, null, 2));
+  } catch (e) {
+    console.error("Error saving trade:", e);
+  }
+}
+
 // System State
 let botState = {
   isRunning: true,
@@ -33,12 +66,12 @@ let botState = {
   bid: 0,
   ask: 0,
   inPosition: false,
-  lastPositionCheck: false, // Để so sánh trạng thái trước đó
+  lastPositionCheck: false,
   lastTradeTime: 0,
   balance: 0,
   dailyStartingBalance: 0,
   lastResetDate: "",
-  trades: [] as any[],
+  trades: loadTrades() as any[],
   signals: [] as any[],
   aiReasoning: "Awaiting analysis..."
 };
@@ -290,6 +323,18 @@ async function traderLoop() {
     if (botState.inPosition && !isNowInPosition) {
       const dailyPnL = currentBalance - botState.dailyStartingBalance;
       const pnlPercent = (dailyPnL / botState.dailyStartingBalance * 100).toFixed(2);
+      
+      const tradeResult = {
+        type: 'CLOSE',
+        balance: currentBalance,
+        pnl: dailyPnL,
+        time: new Date().toISOString(),
+        status: 'CLOSED'
+      };
+      
+      botState.trades.unshift(tradeResult);
+      saveTrade(tradeResult);
+
       const closedMsg = `🔔 *VỊ THẾ ĐÃ ĐÓNG*\n💰 Số dư hiện tại: $${botState.balance.toFixed(2)}\n📊 PnL hôm nay: ${dailyPnL >= 0 ? '+' : ''}$${dailyPnL.toFixed(2)} (${pnlPercent}%)`;
       sendTelegram(closedMsg);
     }
@@ -349,13 +394,18 @@ async function traderLoop() {
             const rejectMsg = `🤖 *AI REJECTED TRADE*\nLý do: ${aiEval.reason}`;
             console.log(rejectMsg);
             sendTelegram(rejectMsg);
-            botState.signals.unshift({ 
+            
+            const tradeData = { 
               type: signal, 
               price: entry, 
-              time: new Date().toLocaleTimeString(), 
+              time: new Date().toISOString(), 
               status: 'AI_REJECTED', 
               reason: aiEval.reason 
-            });
+            };
+            botState.signals.unshift(tradeData);
+            botState.trades.unshift(tradeData);
+            saveTrade(tradeData);
+            
             return;
           }
           
@@ -378,7 +428,19 @@ async function traderLoop() {
 
             botState.lastTradeTime = Date.now();
             botState.inPosition = true;
-            botState.signals.unshift({ type: signal, price: entry, time: new Date().toLocaleTimeString(), status: 'EXECUTED' });
+            
+            const tradeData = { 
+              type: signal, 
+              price: entry, 
+              time: new Date().toISOString(), 
+              status: 'EXECUTED',
+              sl,
+              tp,
+              size
+            };
+            botState.signals.unshift(tradeData);
+            botState.trades.unshift(tradeData);
+            saveTrade(tradeData);
           } catch (orderError) {
             console.error("❌ Execution Failed:", orderError);
           }
@@ -436,6 +498,10 @@ async function startServer() {
       total: botState.balance,
       currency: "USDT"
     });
+  });
+
+  app.get("/api/trading/history", (req, res) => {
+    res.json(botState.trades);
   });
 
   // Start Loops
