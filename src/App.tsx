@@ -69,6 +69,17 @@ export default function App() {
     console.log("Monitoring active...");
   };
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0c] text-white flex items-center justify-center font-sans">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-400 animate-pulse font-mono text-xs tracking-widest uppercase">Initializing Neural Engine...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#0a0a0c] text-white font-sans selection:bg-blue-500/30">
       {/* Header */}
