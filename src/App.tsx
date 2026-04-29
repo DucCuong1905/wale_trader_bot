@@ -42,6 +42,9 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let retryCount = 0;
+    const maxRetries = 5;
+
     const fetchData = async () => {
       try {
         const res = await fetch('/api/trading/status');
@@ -63,8 +66,17 @@ export default function App() {
         }
         
         setError(null);
+        retryCount = 0; // Reset on success
       } catch (e) {
         console.error("Failed to fetch status:", e);
+        
+        // If it's a fetch error and we haven't exceeded retries, try again silently
+        if (retryCount < maxRetries) {
+          retryCount++;
+          console.log(`Retrying fetch (${retryCount}/${maxRetries})...`);
+          return;
+        }
+
         setError("Could not connect to Trading Engine. Please check if the server is running on port 3000.");
       } finally {
         setLoading(false);

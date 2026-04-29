@@ -21,10 +21,10 @@ const model = "gemini-3-flash-preview";
 // --- TRADING LOGIC CONSTANTS ---
 const PAIR = "BTC/USDT:USDT";
 const SYMBOL_ID = "BTCUSDT"; // For Bitget WS
-const RISK_PER_TRADE = 0.005;
-const RR = 2;
-const COOLDOWN_MS = 60000;
-const MAX_DAILY_LOSS = 0.02; // Chặn nếu lỗ 2% trong ngày
+const RISK_PER_TRADE = 0.01; // Tăng lên 1% mỗi lệnh (đã liều hơn)
+const RR = 2.5; // Tăng mục tiêu lợi nhuận lên 2.5
+const COOLDOWN_MS = 30000; // Giảm cooldown xuống 30 giây
+const MAX_DAILY_LOSS = 0.03; // Nâng giới hạn lỗ ngày lên 3%
 
 // --- PERSISTENCE ---
 const DATA_DIR = path.join(process.cwd(), "data");
@@ -79,17 +79,36 @@ let botState = {
 // --- AI LOGIC ---
 async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number, bars: any[]) {
   try {
-    const context = bars.slice(-5).map(b => `Price: ${b[4]}, Vol: ${b[5]}`).join("\n");
-    const prompt = `You are a professional whale trader.
-Technical Signal: ${signal}
-Price: ${lastPrice}
-Orderbook Bid/Ask Ratio: ${obRatio}
-Recent 5m candles:
+    // Lấy 20 nến gần nhất để AI có cái nhìn tổng quan hơn về xu hướng
+    const context = bars.slice(-20).map((b, i) => {
+      const time = new Date(b[0]).toLocaleTimeString();
+      return `[${time}] O:${b[1]} H:${b[2]} L:${b[3]} C:${b[4]} V:${b[5]}`;
+    }).join("\n");
+
+    const prompt = `You are an aggressive high-frequency whale trader. Your goal is to capture market momentum and liquidity sweeps.
+SIGNAL TO EVALUATE: ${signal}
+CURRENT PRICE: ${lastPrice}
+ORDERBOOK BID/ASK RATIO: ${obRatio}
+
+MARKET CONTEXT (Last 20 candles):
 ${context}
 
-Task: Decide if this trade is likely to succeed based on "Orderflow Absorption" and "Liquidity Sweeps".
+ANALYSIS GUIDELINES:
+- Be decisive. If the market structure is even slightly aligned with the ${signal} signal, CONFIRM it.
+- Look for early signs of reversal after a liquidity sweep.
+- Accept moderate risks if the Bid/Ask ratio supports the move.
+- We are playing for 2.5 RR, so we can afford some stops as long as we catch the big sweeps.
+
+FINAL DECISION:
+- "CONFIRM" if the signal has at least 60% probability based on your experience.
+- "REJECT" only if there is a massive counter-trend volume or clear manipulative fakeout.
+
 Return ONLY a JSON object:
-{ "decision": "CONFIRM" | "REJECT", "reason": "1-sentence explanation" }`;
+{ 
+  "decision": "CONFIRM" | "REJECT", 
+  "reason": "Short technical explanation (max 2 sentences)",
+  "confidence": 0-100
+}`;
 
     const result = await ai.models.generateContent({
       model: model,
@@ -101,7 +120,7 @@ Return ONLY a JSON object:
     return parsed;
   } catch (e) {
     console.error("AI Analysis Error:", e);
-    return { decision: "REJECT", reason: "AI Service Error" };
+    return { decision: "REJECT", reason: "AI Service Error", confidence: 0 };
   }
 }
 
@@ -180,8 +199,8 @@ function checkAbsorption(lastBar: any[]) {
 function getOrderbookSignal() {
   if (botState.bid === 0 || botState.ask === 0) return null;
   const ratio = botState.bid / botState.ask;
-  if (ratio > 1.5) return "BULL";
-  if (ratio < 0.66) return "BEAR";
+  if (ratio > 1.2) return "BULL"; // Nhạy hơn (trước là 1.5)
+  if (ratio < 0.83) return "BEAR"; // Nhạy hơn (trước là 0.66)
   return null;
 }
 
@@ -361,8 +380,8 @@ async function traderLoop() {
     console.log(`📊 ADX: ${adx.toFixed(1)} | Seek: ${sweepLow ? 'SWEEP_LOW' : sweepHigh ? 'SWEEP_HIGH' : 'NONE'}`);
 
     let signal: 'LONG' | 'SHORT' | null = null;
-    if (sweepLow && obSignal === "BULL" && absorb && adx > 25) signal = "LONG";
-    if (sweepHigh && obSignal === "BEAR" && absorb && adx > 25) signal = "SHORT";
+    if (sweepLow && obSignal === "BULL" && absorb && adx > 20) signal = "LONG"; // ADX > 20 (trước là 25)
+    if (sweepHigh && obSignal === "BEAR" && absorb && adx > 20) signal = "SHORT"; // ADX > 20 (trước là 25)
 
     if (signal) {
       // ADX đã lọc nhiễu, tiến hành vào lệnh
@@ -409,7 +428,7 @@ async function traderLoop() {
             return;
           }
           
-          const confirmMsg = `🤖 *AI CONFIRMED TRADE*\nLý do: ${aiEval.reason}`;
+          const confirmMsg = `🤖 *AI CONFIRMED TRADE* (Confidence: ${aiEval.confidence}%)\nLý do: ${aiEval.reason}`;
           console.log(confirmMsg);
           sendTelegram(confirmMsg);
           
@@ -471,12 +490,14 @@ async function startServer() {
 
   // Health Check
   app.get("/api/health", (req, res) => {
-    res.json({ status: "ok", time: new Date().toISOString() });
+    console.log("[Health] Health check requested");
+    res.json({ status: "ok", time: new Date().toISOString(), node: process.version });
   });
 
   // API Routes
   app.get("/api/trading/status", (req, res) => {
     try {
+      console.log("[API] /api/trading/status requested");
       res.json({
         status: botState.isRunning ? "running" : "idle",
         symbol: PAIR,
@@ -543,6 +564,7 @@ async function startServer() {
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`🚀 Trading Server running on http://localhost:${PORT}`);
     console.log(`📡 WebSocket Listener: Active`);
+    console.log(`🔗 Node version: ${process.version}`);
   });
 }
 
