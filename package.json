@@ -13,9 +13,11 @@
   "dependencies": {
     "@google/genai": "^1.29.0",
     "@tailwindcss/vite": "^4.1.14",
+    "@types/cors": "^2.8.19",
     "@vitejs/plugin-react": "^5.0.4",
     "ccxt": "^4.5.51",
     "clsx": "^2.1.1",
+    "cors": "^2.8.6",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "express-basic-auth": "^1.2.1",

@@ -6,6 +6,7 @@ import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import * as ccxt from "ccxt";
 import WebSocket from "ws";
+import cors from "cors";
 
 import { GoogleGenAI } from "@google/genai";
 
@@ -15,7 +16,12 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // --- AI CONFIG ---
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+let ai: GoogleGenAI | null = null;
+if (process.env.GEMINI_API_KEY) {
+  ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+} else {
+  console.warn("⚠️ GEMINI_API_KEY is missing. AI Analysis will be disabled.");
+}
 const model = "gemini-3-flash-preview";
 
 // --- CẤU HÌNH GIAO DỊCH (TRADING CONSTANTS) ---
@@ -71,6 +77,8 @@ function saveTrade(trade: any) {
 // Trạng thái hệ thống (System State) để theo dõi dữ liệu thời gian thực
 let botState = {
   isRunning: true, // Trạng thái hoạt động của Bot
+  isWSConnected: false, // Kiểm tra kết nối WebSocket
+  lastMessageAt: Date.now(), // Thời điểm cuối cùng nhận dữ liệu từ WS
   lastPrice: 0, // Giá thị trường hiện tại
   bid: 0, // Tổng khối lượng mua trong Orderbook
   ask: 0, // Tổng khối lượng bán trong Orderbook
@@ -88,6 +96,9 @@ let botState = {
 // --- LOGIC PHÂN TÍCH AI (AI ANALYSIS) ---
 // Hàm này gửi dữ liệu thị trường cho AI (Gemini) để đánh giá lại tín hiệu kỹ thuật
 async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number, bars: any[]) {
+  if (!ai) {
+    return { decision: "CONFIRM", confidence: 100, reason: "AI not configured, defaulting to technical signal." };
+  }
   try {
     // Lấy 20 nến gần nhất để AI có cái nhìn tổng quan hơn về xu hướng
     const context = bars.slice(-20).map((b, i) => {
@@ -236,9 +247,13 @@ function startWS() {
   const ws = new WebSocket("wss://ws.bitget.com/v2/ws/public");
 
   let pingInterval: NodeJS.Timeout;
+  let watchdogInterval: NodeJS.Timeout;
 
   ws.on('open', () => {
     console.log("🔌 Đã kết nối WebSocket Bitget");
+    botState.isWSConnected = true;
+    botState.lastMessageAt = Date.now();
+
     // Đăng ký nhận thông báo về Sổ lệnh (bids/asks) và Giá (ticker)
     ws.send(JSON.stringify({
       op: "subscribe",
@@ -248,17 +263,29 @@ function startWS() {
       ]
     }));
 
-    // Gửi ping mỗi 20 giây để giữ kết nối không bị ngắt (Keep-alive)
+    // Gửi ping mỗi 20 giây để giữ kết nối (Keep-alive)
     pingInterval = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) {
+        // Gửi cả 2 định dạng để đảm bảo tương thích tốt nhất
         ws.send("ping");
+        ws.send(JSON.stringify({ op: "ping" }));
       }
     }, 20000);
+
+    // Cơ chế Watchdog: Kiểm tra nếu quá 35s không có dữ liệu mới thì tự động kết nối lại
+    watchdogInterval = setInterval(() => {
+      const timeSinceLastMessage = Date.now() - botState.lastMessageAt;
+      if (timeSinceLastMessage > 35000) {
+        console.warn(`⚠️ Watchdog detected stale connection (${timeSinceLastMessage}ms). Reconnecting...`);
+        ws.terminate(); // Ngắt ngay lập tức để kích hoạt sự kiện 'close'
+      }
+    }, 10000);
   });
 
   ws.on('message', (data) => {
+    botState.lastMessageAt = Date.now();
     const raw = data.toString();
-    if (raw === "pong") return; // Nhận phản hồi pong từ sàn, không cần xử lý
+    if (raw === "pong" || raw.includes('"op":"pong"')) return; 
 
     try {
       const parsed = JSON.parse(raw);
@@ -280,9 +307,11 @@ function startWS() {
   });
 
   ws.on('error', (e) => console.error("Lỗi WebSocket:", e));
-  ws.on('close', () => {
+  ws.on('close', (code, reason) => {
     clearInterval(pingInterval);
-    console.warn("WebSocket bị đóng. Đang kết nối lại sau 5 giây...");
+    clearInterval(watchdogInterval);
+    botState.isWSConnected = false;
+    console.warn(`⚠️ WebSocket bị đóng. Code: ${code}, Lý do: ${reason || 'Không rõ'}. Đăng kết nối lại sau 5 giây...`);
     setTimeout(startWS, 5000);
   });
 }
@@ -379,6 +408,21 @@ async function traderLoop() {
     const ticker = await ex.fetchTicker(PAIR.split(':')[0]);
     if (ticker && ticker.last) {
       botState.lastPrice = ticker.last;
+    }
+
+    // --- REST FALLBACK (Dự phòng nết WebSocket bị ngắt) ---
+    if (!botState.isWSConnected) {
+      try {
+        // Lấy Sổ lệnh (Orderbook) qua REST API để tính Ratio
+        const orderbook = await ex.fetchOrderBook(PAIR.split(':')[0], 20);
+        if (orderbook && orderbook.bids && orderbook.asks) {
+          botState.bid = orderbook.bids.reduce((sum, x) => sum + x[1], 0);
+          botState.ask = orderbook.asks.reduce((sum, x) => sum + x[1], 0);
+          console.log("🔄 Dùng dữ liệu REST API (WebSocket đang ngắt)...");
+        }
+      } catch (restErr) {
+        console.error("❌ Lỗi lấy dữ liệu REST Fallback:", restErr);
+      }
     }
 
     // Reset số dư ngày mới lúc 00:00 UTC
@@ -551,7 +595,13 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  app.use(cors());
   app.use(express.json());
+
+  // Lấy trạng thái hiện tại của Bot
+  app.get("/api/test", (req, res) => {
+    res.json({ message: "API is reachable" });
+  });
 
   // Middleware ghi log các yêu cầu API
   app.use((req, res, next) => {
@@ -572,19 +622,24 @@ async function startServer() {
   // Lấy trạng thái hiện tại của Bot
   app.get("/api/trading/status", (req, res) => {
     try {
+      // Đảm bảo trả về đầy đủ các trường mà Frontend yêu cầu
       res.json({
         status: botState.isRunning ? "running" : "idle",
         symbol: PAIR,
         last_price: botState.lastPrice || 0,
         bid_ratio: botState.ask !== 0 ? (botState.bid / botState.ask).toFixed(2) : "1.00",
         in_position: botState.inPosition,
-        signals: botState.signals.slice(0, 10),
-        balance: botState.balance || 0,
-        ai_reasoning: botState.aiReasoning
+        signals: Array.isArray(botState.signals) ? botState.signals.slice(0, 10) : [],
+        balance: typeof botState.balance === 'number' ? botState.balance : 0,
+        ai_reasoning: botState.aiReasoning || "Đang chờ phân tích...",
+        timestamp: new Date().toISOString()
       });
     } catch (e) {
-      console.error("Lỗi API Status:", e);
-      res.status(500).json({ error: "Lỗi Server Nội Bộ" });
+      console.error("❌ Lỗi API Status:", e);
+      res.status(500).json({ 
+        error: "Lỗi Server Nội Bộ", 
+        message: e instanceof Error ? e.message : String(e) 
+      });
     }
   });
 
