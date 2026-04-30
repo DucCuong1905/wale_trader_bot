@@ -26,36 +26,45 @@ const RR = 2.5; // Tỷ lệ Lợi nhuận/Rủi ro (Take Profit gấp 2.5 lần
 const COOLDOWN_MS = 30000; // Thời gian nghỉ giữa các lệnh (30 giây) để tránh vào lệnh liên tục
 const MAX_DAILY_LOSS = 0.03; // Giới hạn lỗ tối đa trong ngày (3%). Nếu chạm mốc này, Bot sẽ dừng giao dịch.
 
-// --- PERSISTENCE ---
-const DATA_DIR = path.join(process.cwd(), "data");
-const TRADES_FILE = path.join(DATA_DIR, "trades.json");
+// --- PERSISTENCE (LƯU TRỮ DỮ LIỆU) ---
+const DATA_DIR = path.join(process.cwd(), "data"); // Thư mục lưu trữ database local
+const TRADES_FILE = path.join(DATA_DIR, "trades.json"); // File lưu lịch sử giao dịch
 
+// Tạo thư mục data nếu chưa tồn tại
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR);
 }
 
+/**
+ * Hàm tải lịch sử giao dịch từ file JSON
+ * Trả về mảng các giao dịch hoặc mảng rỗng nếu có lỗi
+ */
 function loadTrades() {
   if (fs.existsSync(TRADES_FILE)) {
     try {
       const data = fs.readFileSync(TRADES_FILE, "utf-8");
       return JSON.parse(data);
     } catch (e) {
-      console.error("Error loading trades:", e);
+      console.error("Lỗi khi tải lịch sử giao dịch:", e);
       return [];
     }
   }
   return [];
 }
 
+/**
+ * Hàm lưu một giao dịch mới vào file JSON
+ * Giới hạn tối đa 1000 giao dịch gần nhất để tránh file quá nặng
+ */
 function saveTrade(trade: any) {
   const trades = loadTrades();
-  trades.unshift(trade);
-  // Keep only last 1000 trades
+  trades.unshift(trade); // Thêm giao dịch mới vào đầu mảng
+  // Chỉ giữ lại 1000 lệnh gần nhất
   const limited = trades.slice(0, 1000);
   try {
     fs.writeFileSync(TRADES_FILE, JSON.stringify(limited, null, 2));
   } catch (e) {
-    console.error("Error saving trade:", e);
+    console.error("Lỗi khi lưu giao dịch:", e);
   }
 }
 
@@ -125,11 +134,14 @@ Return ONLY a JSON object:
   }
 }
 
-// --- TELEGRAM HELPER ---
+/**
+ * Hàm gửi tin nhắn thông báo qua Telegram Bot
+ * Sử dụng Token và Chat ID từ biến môi trường (.env)
+ */
 async function sendTelegram(msg: string) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
-  if (!token || !chatId) return;
+  if (!token || !chatId) return; // Bỏ qua nếu chưa cấu hình Telegram
 
   try {
     const url = `https://api.telegram.org/bot${token}/sendMessage`;
@@ -139,16 +151,20 @@ async function sendTelegram(msg: string) {
       body: JSON.stringify({
         chat_id: chatId,
         text: msg,
-        parse_mode: "Markdown"
+        parse_mode: "Markdown" // Cho phép định dạng in đậm, in nghiêng
       })
     });
   } catch (e) {
-    console.error("Telegram Error:", e);
+    console.error("Lỗi gửi Telegram:", e);
   }
 }
 
-// Exchange Init (Lazy)
+// Khởi tạo đối tượng Exchange (Sàn giao dịch) - Cơ chế Lazy Load
 let exchange: ccxt.bitget | null = null;
+/**
+ * Hàm lấy đối tượng kết nối với sàn Bitget
+ * Nếu chưa có thì khởi tạo, nếu có rồi thì trả về đối tượng cũ
+ */
 function getExchange() {
   if (!exchange) {
     const apiKey = process.env.BG_API_KEY;
@@ -156,7 +172,7 @@ function getExchange() {
     const password = process.env.BG_PASSPHRASE;
 
     if (!apiKey || !secret) {
-      console.warn("⚠️ API keys missing. Bot will run in monitoring mode.");
+      console.warn("⚠️ Thiếu API Key. Bot sẽ chạy ở chế độ chỉ theo dõi (Monitoring Mode).");
       return null;
     }
 
@@ -164,8 +180,8 @@ function getExchange() {
       apiKey,
       secret,
       password,
-      enableRateLimit: true,
-      options: { defaultType: 'future' }
+      enableRateLimit: true, // Tự động tránh lỗi quá tải yêu cầu (Rate Limit)
+      options: { defaultType: 'future' } // Mặc định giao dịch Hợp đồng tương lai
     });
   }
   return exchange;
@@ -212,12 +228,16 @@ function getOrderbookSignal() {
   return null;
 }
 
-// WebSocket Loop (Orderbook & Ticker)
+/**
+ * Kết nối WebSocket để nhận dữ liệu Real-time (Sổ lệnh & Giá)
+ * Tự động kết nối lại sau 5 giây nếu bị ngắt quãng
+ */
 function startWS() {
   const ws = new WebSocket("wss://ws.bitget.com/v2/ws/public");
 
   ws.on('open', () => {
-    console.log("🔌 Connected to Bitget WS");
+    console.log("🔌 Đã kết nối WebSocket Bitget");
+    // Đăng ký nhận thông báo về Sổ lệnh (bids/asks) và Giá (ticker)
     ws.send(JSON.stringify({
       op: "subscribe",
       args: [
@@ -233,46 +253,61 @@ function startWS() {
       if (!parsed.data || !parsed.data[0]) return;
       const d = parsed.data[0];
 
+      // Cập nhật khối lượng Mua/Bán (Orderbook) để tính Ratio
       if (d.bids) {
         botState.bid = d.bids.reduce((sum: number, x: any) => sum + parseFloat(x[1]), 0);
         botState.ask = d.asks.reduce((sum: number, x: any) => sum + parseFloat(x[1]), 0);
       }
-      if (d.last) {
-        botState.lastPrice = parseFloat(d.last);
+      // Cập nhật giá mới nhất (Last Price)
+      if (d.last || d.lastPr) {
+        botState.lastPrice = parseFloat(d.last || d.lastPr);
       }
     } catch (e) {
-      // Ignore parse errors
+      // Bỏ qua lỗi parse dữ liệu
     }
   });
 
-  ws.on('error', (e) => console.error("WS Error:", e));
-  ws.on('close', () => setTimeout(startWS, 5000));
+  ws.on('error', (e) => console.error("Lỗi WebSocket:", e));
+  ws.on('close', () => {
+    console.warn("WebSocket bị đóng. Đang kết nối lại sau 5 giây...");
+    setTimeout(startWS, 5000);
+  });
 }
 
+/**
+ * Tính toán biên độ trung bình của nến (Average Range)
+ * Dùng để xác định khoảng cách đặt Stop Loss (SL) cho hợp lý
+ */
 function getAvgRange(ohlcv: any[], period: number = 14) {
-  const slice = ohlcv.slice(-period);
-  const sum = slice.reduce((acc, bar: any) => acc + (bar[2] - bar[3]), 0);
+  const slice = ohlcv.slice(-period); // Lấy N nến gần nhất
+  const sum = slice.reduce((acc, bar: any) => acc + (bar[2] - bar[3]), 0); // bar[2]: High, bar[3]: Low
   return sum / period;
 }
 
-// --- TECHNICAL INDICATORS ---
+// --- CHỈ BÁO KỸ THUẬT (TECHNICAL INDICATORS) ---
 
+/**
+ * Tính toán chỉ báo ADX (Average Directional Index)
+ * Giúp xác định xem thị trường đang có xu hướng mạnh hay đi ngang (sideway)
+ */
 function calcADX(ohlcv: any[], period: number = 14) {
   if (ohlcv.length < period * 2) return 0;
 
-  let tr: number[] = [];
-  let plusDM: number[] = [];
-  let minusDM: number[] = [];
+  let tr: number[] = []; // True Range
+  let plusDM: number[] = []; // +DM
+  let minusDM: number[] = []; // -DM
 
   for (let i = 1; i < ohlcv.length; i++) {
     const [prevTs, prevO, prevH, prevL, prevC] = ohlcv[i - 1];
     const [ts, o, h, l, c] = ohlcv[i];
 
+    // Tính TR (True Range)
     const tr1 = h - l;
     const tr2 = Math.abs(h - prevC);
     const tr3 = Math.abs(l - prevC);
     tr.push(Math.max(tr1, tr2, tr3));
 
+    // Tính Directional Movement (+DM và -DM)
     const upMove = h - prevH;
     const downMove = prevL - l;
 
@@ -283,7 +318,9 @@ function calcADX(ohlcv: any[], period: number = 14) {
     else minusDM.push(0);
   }
 
-  // Simple Moving Average for smoothing (Wilder's smoothing is standard but SMA is a close proxy)
+  /**
+   * Hàm làm mượt dữ liệu (Smoothing) theo phương pháp SMA
+   */
   const smooth = (arr: number[]) => {
     let result = [arr.slice(0, period).reduce((a, b) => a + b, 0) / period];
     for (let i = period; i < arr.length; i++) {
@@ -305,7 +342,7 @@ function calcADX(ohlcv: any[], period: number = 14) {
   }
 
   const adx = smooth(dx);
-  return adx[adx.length - 1];
+  return adx[adx.length - 1]; // Trả về giá trị ADX cuối cùng
 }
 
 // Vòng lặp giao dịch chính (Main Trader Loop)
@@ -324,6 +361,12 @@ async function traderLoop() {
     const balanceInfo = await ex.fetchBalance();
     const currentBalance = balanceInfo.USDT ? (balanceInfo.USDT as any).total : 0;
     botState.balance = currentBalance;
+
+    // Cập nhật giá mới nhất từ sàn để đảm bảo không bị 0$
+    const ticker = await ex.fetchTicker(PAIR.split(':')[0]);
+    if (ticker && ticker.last) {
+      botState.lastPrice = ticker.last;
+    }
 
     // Reset số dư ngày mới lúc 00:00 UTC
     const today = new Date().toISOString().split('T')[0];
@@ -487,13 +530,17 @@ async function traderLoop() {
   setTimeout(traderLoop, 5000); // Lặp lại sau mỗi 5 giây
 }
 
+/**
+ * Hàm khởi tạo Server Express
+ * Tích hợp Vite middleware và các API Routes
+ */
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
   app.use(express.json());
 
-  // Logger Middleware
+  // Middleware ghi log các yêu cầu API
   app.use((req, res, next) => {
     if (req.url.startsWith('/api')) {
       console.log(`[API] ${req.method} ${req.url}`);
@@ -501,16 +548,17 @@ async function startServer() {
     next();
   });
 
-  // Health Check
+  // Kiểm tra sức khỏe hệ thống (Health Check)
   app.get("/api/health", (req, res) => {
-    console.log("[Health] Health check requested");
+    console.log("[Health] Yêu cầu kiểm tra sức khỏe");
     res.json({ status: "ok", time: new Date().toISOString(), node: process.version });
   });
 
-  // API Routes
+  // --- API ROUTES CHO FRONTEND ---
+
+  // Lấy trạng thái hiện tại của Bot
   app.get("/api/trading/status", (req, res) => {
     try {
-      console.log("[API] /api/trading/status requested");
       res.json({
         status: botState.isRunning ? "running" : "idle",
         symbol: PAIR,
@@ -522,11 +570,12 @@ async function startServer() {
         ai_reasoning: botState.aiReasoning
       });
     } catch (e) {
-      console.error("Status API Error:", e);
-      res.status(500).json({ error: "Internal Server Error" });
+      console.error("Lỗi API Status:", e);
+      res.status(500).json({ error: "Lỗi Server Nội Bộ" });
     }
   });
 
+  // Lấy số dư tài khoản
   app.get("/api/trading/balance", (req, res) => {
     res.json({
       total: botState.balance,
@@ -534,25 +583,39 @@ async function startServer() {
     });
   });
 
+  // Lấy lịch sử giao dịch toàn bộ
   app.get("/api/trading/history", (req, res) => {
     res.json(botState.trades);
   });
 
-  // Start Loops
+  // KHỞI CHẠY CÁC VÒNG LẶP (WebSocket & Trading Loop)
   startWS();
   traderLoop();
 
-  // Telegram Start Notification
+  // Thông báo Bot đã lên sóng
   sendTelegram("🐳 *Whale Bot Started (VPS)*\nBot đã sẵn sàng và đang quét lệnh...");
 
-  // Health Check: Mỗi 4 tiếng
-  setInterval(() => {
-    let msg = `🛰 *Health Report*\n🕒 Thời gian: ${new Date().toLocaleTimeString()}\n📈 Giá hiện tại: $${botState.lastPrice}\n💰 Số dư: $${botState.balance.toFixed(2)}\n🔄 Trạng thái: ${botState.inPosition ? 'Đang có vị thế' : 'Đang chờ sweep'}`;
+  // Báo cáo sức khỏe định kỳ: Mỗi 4 tiếng
+  setInterval(async () => {
+    // Luôn lấy giá mới nhất trước khi báo cáo
+    if (botState.lastPrice === 0) {
+      const ex = getExchange();
+      if (ex) {
+        try {
+          const ticker = await ex.fetchTicker(PAIR.split(':')[0]);
+          if (ticker && ticker.last) botState.lastPrice = ticker.last;
+        } catch (e) {
+          console.error("Lỗi đồng bộ giá báo cáo 4h:", e);
+        }
+      }
+    }
+
+    let msg = `🛰 *Health Report*\n🕒 Thời gian: ${new Date().toLocaleString('vi-VN')}\n📈 Giá hiện tại: $${botState.lastPrice.toLocaleString()}\n💰 Số dư: $${botState.balance.toFixed(2)}\n🔄 Trạng thái: ${botState.inPosition ? 'Đang có vị thế' : 'Đang chờ sweep'}`;
     if (!botState.isRunning) msg += `\n⚠️ Lý do: Bot đang tạm dừng (Lỗi hoặc Pause)`;
     sendTelegram(msg);
   }, 1000 * 60 * 60 * 4);
 
-  // Vite integration
+  // Tích hợp Vite (Development Mode)
   try {
     if (process.env.NODE_ENV !== "production") {
       const vite = await createViteServer({
@@ -560,8 +623,9 @@ async function startServer() {
         appType: "spa",
       });
       app.use(vite.middlewares);
-      console.log("🛠 Vite middleware initialized");
+      console.log("🛠 Đã tích hợp Vite middleware");
     } else {
+      // Production Mode: Phục vụ các tệp tĩnh từ thư mục dist
       const distPath = path.join(process.cwd(), "dist");
       if (fs.existsSync(distPath)) {
         app.use(express.static(distPath));
@@ -571,13 +635,14 @@ async function startServer() {
       }
     }
   } catch (e) {
-    console.error("Vite setup error:", e);
+    console.error("Lỗi thiết lập Vite:", e);
   }
 
+  // Lắng nghe yêu cầu trên Port 3000
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`🚀 Trading Server running on http://localhost:${PORT}`);
-    console.log(`📡 WebSocket Listener: Active`);
-    console.log(`🔗 Node version: ${process.version}`);
+    console.log(`🚀 Trading Server chạy tại http://localhost:${PORT}`);
+    console.log(`📡 WebSocket Listener: Hoạt động`);
+    console.log(`🔗 Phiên bản Node: ${process.version}`);
   });
 }
 
