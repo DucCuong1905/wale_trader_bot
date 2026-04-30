@@ -18,13 +18,13 @@ const __dirname = path.dirname(__filename);
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 const model = "gemini-3-flash-preview";
 
-// --- TRADING LOGIC CONSTANTS ---
-const PAIR = "BTC/USDT:USDT";
-const SYMBOL_ID = "BTCUSDT"; // For Bitget WS
-const RISK_PER_TRADE = 0.01; // Tăng lên 1% mỗi lệnh (đã liều hơn)
-const RR = 2.5; // Tăng mục tiêu lợi nhuận lên 2.5
-const COOLDOWN_MS = 30000; // Giảm cooldown xuống 30 giây
-const MAX_DAILY_LOSS = 0.03; // Nâng giới hạn lỗ ngày lên 3%
+// --- CẤU HÌNH GIAO DỊCH (TRADING CONSTANTS) ---
+const PAIR = "BTC/USDT:USDT"; // Cặp giao dịch (BTC Futures trên Bitget)
+const SYMBOL_ID = "BTCUSDT"; // ID Symbol cho WebSocket
+const RISK_PER_TRADE = 0.01; // Rủi ro 1% tổng tài sản cho mỗi lệnh (Stop Loss sẽ mất 1%)
+const RR = 2.5; // Tỷ lệ Lợi nhuận/Rủi ro (Take Profit gấp 2.5 lần Stop Loss)
+const COOLDOWN_MS = 30000; // Thời gian nghỉ giữa các lệnh (30 giây) để tránh vào lệnh liên tục
+const MAX_DAILY_LOSS = 0.03; // Giới hạn lỗ tối đa trong ngày (3%). Nếu chạm mốc này, Bot sẽ dừng giao dịch.
 
 // --- PERSISTENCE ---
 const DATA_DIR = path.join(process.cwd(), "data");
@@ -59,24 +59,25 @@ function saveTrade(trade: any) {
   }
 }
 
-// System State
+// Trạng thái hệ thống (System State) để theo dõi dữ liệu thời gian thực
 let botState = {
-  isRunning: true,
-  lastPrice: 0,
-  bid: 0,
-  ask: 0,
-  inPosition: false,
+  isRunning: true, // Trạng thái hoạt động của Bot
+  lastPrice: 0, // Giá thị trường hiện tại
+  bid: 0, // Tổng khối lượng mua trong Orderbook
+  ask: 0, // Tổng khối lượng bán trong Orderbook
+  inPosition: false, // Kiểm tra xem Bot có đang giữ lệnh nào không
   lastPositionCheck: false,
-  lastTradeTime: 0,
-  balance: 0,
-  dailyStartingBalance: 0,
-  lastResetDate: "",
-  trades: loadTrades() as any[],
-  signals: [] as any[],
-  aiReasoning: "Awaiting analysis..."
+  lastTradeTime: 0, // Thời điểm vào lệnh gần nhất
+  balance: 0, // Số dư hiện tại (USDT)
+  dailyStartingBalance: 0, // Số dư lúc bắt đầu ngày mới (để tính lãi/lỗ ngày)
+  lastResetDate: "", // Ngày reset số dư gần nhất
+  trades: loadTrades() as any[], // Lịch sử giao dịch
+  signals: [] as any[], // Các tín hiệu đã phát hiện
+  aiReasoning: "Awaiting analysis..." // Phân tích gần nhất từ AI
 };
 
-// --- AI LOGIC ---
+// --- LOGIC PHÂN TÍCH AI (AI ANALYSIS) ---
+// Hàm này gửi dữ liệu thị trường cho AI (Gemini) để đánh giá lại tín hiệu kỹ thuật
 async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number, bars: any[]) {
   try {
     // Lấy 20 nến gần nhất để AI có cái nhìn tổng quan hơn về xu hướng
@@ -171,24 +172,29 @@ function getExchange() {
 }
 
 // Ported Logic from Python
+// Tính toán vùng thanh khoản (Liquidity) dựa trên đỉnh/đáy của các nến trước đó
 function getLiquidity(ohlcv: any[]) {
   // OHLCV structure: [timestamp, open, high, low, close, volume]
-  const slice = ohlcv.slice(-6, -1); // 5 candles before current
-  const highs = slice.map(b => b[2]);
-  const lows = slice.map(b => b[3]);
+  const slice = ohlcv.slice(-6, -1); // Lấy 5 nến trước nến hiện tại
+  const highs = slice.map(b => b[2]); // Lấy giá cao nhất
+  const lows = slice.map(b => b[3]); // Lấy giá thấp nhất
   return { 
-    eqHigh: Math.max(...highs), 
-    eqLow: Math.min(...lows) 
+    eqHigh: Math.max(...highs), // Đỉnh cũ gần nhất
+    eqLow: Math.min(...lows)   // Đáy cũ gần nhất
   };
 }
 
+// Phát hiện cú quét thanh khoản (Liquidity Sweep)
+// Xảy ra khi giá vượt qua đỉnh/đáy cũ nhưng đóng cửa quay lại bên trong
 function detectSweep(lastBar: any[], eqHigh: number, eqLow: number) {
   const [, , h, l, c] = lastBar;
-  const sweepHigh = h > eqHigh && c < eqHigh;
-  const sweepLow = l < eqLow && c > eqLow;
+  const sweepHigh = h > eqHigh && c < eqHigh; // Quét đỉnh (Fake breakout lên)
+  const sweepLow = l < eqLow && c > eqLow;   // Quét đáy (Fake breakout xuống)
   return { sweepHigh, sweepLow };
 }
 
+// Kiểm tra sự hấp thụ (Absorption)
+// Nhìn vào độ dài của râu nến (Wick). Nếu râu nến dài gấp đôi thân nến kèm Volume cao => Có dấu hiệu đảo chiều.
 function checkAbsorption(lastBar: any[]) {
   const [, o, h, l, c] = lastBar;
   const body = Math.abs(c - o);
@@ -196,11 +202,13 @@ function checkAbsorption(lastBar: any[]) {
   return wick > body * 2;
 }
 
+// Tín hiệu từ sổ lệnh (Orderbook)
+// Nếu khối lượng Mua lớn hơn Bán 1.2 lần => BULL, ngược lại => BEAR
 function getOrderbookSignal() {
   if (botState.bid === 0 || botState.ask === 0) return null;
   const ratio = botState.bid / botState.ask;
-  if (ratio > 1.2) return "BULL"; // Nhạy hơn (trước là 1.5)
-  if (ratio < 0.83) return "BEAR"; // Nhạy hơn (trước là 0.66)
+  if (ratio > 1.2) return "BULL"; // Lực mua mạnh
+  if (ratio < 0.83) return "BEAR"; // Lực bán mạnh
   return null;
 }
 
@@ -300,7 +308,7 @@ function calcADX(ohlcv: any[], period: number = 14) {
   return adx[adx.length - 1];
 }
 
-// Main Trader Loop
+// Vòng lặp giao dịch chính (Main Trader Loop)
 async function traderLoop() {
   const ex = getExchange();
   if (!ex) {
@@ -312,33 +320,34 @@ async function traderLoop() {
   }
 
   try {
-    // 1. Sync Account Info
+    // 1. Cập nhật thông tin tài khoản (Sync Account Info)
     const balanceInfo = await ex.fetchBalance();
     const currentBalance = balanceInfo.USDT ? (balanceInfo.USDT as any).total : 0;
     botState.balance = currentBalance;
 
-    // Reset daily starting balance at UTC 00:00
+    // Reset số dư ngày mới lúc 00:00 UTC
     const today = new Date().toISOString().split('T')[0];
     if (botState.lastResetDate !== today) {
-      console.log(`🌅 New Day Started: ${today}. Recording daily starting balance: ${currentBalance}`);
+      console.log(`🌅 Ngày mới bắt đầu: ${today}. Ghi nhận số dư đầu ngày: ${currentBalance}`);
       botState.dailyStartingBalance = currentBalance;
       botState.lastResetDate = today;
     }
 
-    // Daily Stop Loss Check
+    // Kiểm tra giới hạn lỗ tối đa trong ngày (Daily Stop Loss)
     const dailyPnL = currentBalance - botState.dailyStartingBalance;
     const dailyLossPercent = botState.dailyStartingBalance > 0 ? (dailyPnL / botState.dailyStartingBalance) : 0;
 
     if (dailyLossPercent <= -MAX_DAILY_LOSS) {
-      console.warn(`🛑 Daily Loss Limit Reached (${(dailyLossPercent * 100).toFixed(2)}%). Trading paused until tomorrow.`);
-      setTimeout(traderLoop, 60000 * 30); // Sleep for 30 mins before re-checking
+      console.warn(`🛑 Chạm giới hạn lỗ ngày (${(dailyLossPercent * 100).toFixed(2)}%). Dừng giao dịch cho đến ngày mai.`);
+      setTimeout(traderLoop, 60000 * 30); // Nghỉ 30 phút rồi check lại
       return;
     }
 
+    // Kiểm tra vị thế hiện tại trên sàn
     const positions = await ex.fetchPositions([PAIR]);
     const isNowInPosition = positions.some(p => Math.abs(parseFloat(p.info.size || p.contracts || 0)) > 0);
     
-    // Kiểm tra nếu mới đóng vị thế
+    // Nếu vừa đóng vị thế (chốt lời/cắt lỗ xong)
     if (botState.inPosition && !isNowInPosition) {
       const dailyPnL = currentBalance - botState.dailyStartingBalance;
       const pnlPercent = (dailyPnL / botState.dailyStartingBalance * 100).toFixed(2);
@@ -360,44 +369,47 @@ async function traderLoop() {
     
     botState.inPosition = isNowInPosition;
 
-    // Cooldown check
+    // Kiểm tra thời gian chờ (Cooldown) và trạng thái lệnh
     if (botState.inPosition || (Date.now() - botState.lastTradeTime < COOLDOWN_MS)) {
       setTimeout(traderLoop, 5000);
       return;
     }
 
-    // 2. Technical Analysis (15m Candles)
+    // 2. Phân tích kỹ thuật (Technical Analysis - Nến 15 phút)
     const bars = await ex.fetchOHLCV(PAIR, '15m', 100);
     if (!bars || bars.length < 30) return;
 
-    const adx = calcADX(bars, 14);
-    const { eqHigh, eqLow } = getLiquidity(bars);
+    const adx = calcADX(bars, 14); // Chỉ báo ADX để xác định sức mạnh xu hướng
+    const { eqHigh, eqLow } = getLiquidity(bars); // Đỉnh/đáy thanh khoản
     const lastBar = bars[bars.length - 1];
-    const { sweepHigh, sweepLow } = detectSweep(lastBar, eqHigh, eqLow);
-    const absorb = checkAbsorption(lastBar);
-    const obSignal = getOrderbookSignal();
+    const { sweepHigh, sweepLow } = detectSweep(lastBar, eqHigh, eqLow); // Quét thanh khoản
+    const absorb = checkAbsorption(lastBar); // Hấp thụ giá
+    const obSignal = getOrderbookSignal(); // Tín hiệu từ sổ lệnh
 
     console.log(`📊 ADX: ${adx.toFixed(1)} | Seek: ${sweepLow ? 'SWEEP_LOW' : sweepHigh ? 'SWEEP_HIGH' : 'NONE'}`);
 
+    // LOGIC VÀO LỆNH:
+    // LONG: Quét đáy + Sổ lệnh Bullish + Nến hấp thụ + Xu hướng có lực (ADX > 20)
+    // SHORT: Quét đỉnh + Sổ lệnh Bearish + Nến hấp thụ + Xu hướng có lực (ADX > 20)
     let signal: 'LONG' | 'SHORT' | null = null;
-    if (sweepLow && obSignal === "BULL" && absorb && adx > 20) signal = "LONG"; // ADX > 20 (trước là 25)
-    if (sweepHigh && obSignal === "BEAR" && absorb && adx > 20) signal = "SHORT"; // ADX > 20 (trước là 25)
+    if (sweepLow && obSignal === "BULL" && absorb && adx > 20) signal = "LONG";
+    if (sweepHigh && obSignal === "BEAR" && absorb && adx > 20) signal = "SHORT";
 
     if (signal) {
-      // ADX đã lọc nhiễu, tiến hành vào lệnh
+      // 3. Tính toán thông số lệnh (Order Calculation)
       const entry = botState.lastPrice;
-      const rangeAvg = getAvgRange(bars, 14);
+      const rangeAvg = getAvgRange(bars, 14); // Độ biến động nến trung bình để đặt SL
       
       const sl = signal === "LONG" ? entry - rangeAvg : entry + rangeAvg;
       const tp = signal === "LONG" ? entry + (entry - sl) * RR : entry - (sl - entry) * RR;
 
-      // Risk Calc
+      // Tính toán kích thước (Size) theo % rủi ro
       const riskAmt = botState.balance * RISK_PER_TRADE;
       const stopDist = Math.abs(entry - sl);
       
       if (stopDist > 0) {
         let size = riskAmt / stopDist;
-        const maxNotional = (botState.balance * 0.1) / entry; // Safe limit 10%
+        const maxNotional = (botState.balance * 0.1) / entry; // Giới hạn an toàn: Không quá 10% vốn mỗi lệnh
         size = Math.min(size, maxNotional);
 
         if (size > 0) {
@@ -405,12 +417,12 @@ async function traderLoop() {
           console.log(alertMsg);
           sendTelegram(alertMsg);
           
-          // --- AI SECONDARY CHECK ---
+          // --- BƯỚC KIỂM TRA CUỐI CÙNG VỚI AI (AI SECONDARY CHECK) ---
           const aiEval = await getAIAnalysis(signal, entry, botState.bid / botState.ask, bars);
           botState.aiReasoning = aiEval.reason;
 
           if (aiEval.decision === "REJECT") {
-            const rejectMsg = `🤖 *AI REJECTED TRADE*\nLý do: ${aiEval.reason}`;
+            const rejectMsg = `🤖 *AI TỪ CHỐI LỆNH*\nLý do: ${aiEval.reason}`;
             console.log(rejectMsg);
             sendTelegram(rejectMsg);
             
@@ -425,21 +437,22 @@ async function traderLoop() {
             botState.trades.unshift(tradeData);
             saveTrade(tradeData);
             
-            return;
+            return; // Dừng không vào lệnh nữa
           }
           
-          const confirmMsg = `🤖 *AI CONFIRMED TRADE* (Confidence: ${aiEval.confidence}%)\nLý do: ${aiEval.reason}`;
+          const confirmMsg = `🤖 *AI XÁC NHẬN LỆNH* (Độ tin cậy: ${aiEval.confidence}%)\nLý do: ${aiEval.reason}`;
           console.log(confirmMsg);
           sendTelegram(confirmMsg);
           
           try {
-            // Market Entry
+            // 4. Thực thi lệnh trên sàn (Execution)
+            // Lệnh thị trường để vào vị thế ngay
             await ex.createMarketOrder(PAIR, signal === 'LONG' ? 'buy' : 'sell', size);
             
-            // Set TP (Limit)
+            // Lệnh giới hạn để Chốt lời (Take Profit)
             await ex.createOrder(PAIR, 'limit', signal === 'LONG' ? 'sell' : 'buy', size, tp);
             
-            // Set SL (Stop Market)
+            // Lệnh Stop Market để Cắt lỗ (Stop Loss)
             await ex.createOrder(PAIR, 'stop_market', signal === 'LONG' ? 'sell' : 'buy', size, undefined, { 
               'stopPrice': sl,
               'reduceOnly': true 
@@ -461,17 +474,17 @@ async function traderLoop() {
             botState.trades.unshift(tradeData);
             saveTrade(tradeData);
           } catch (orderError) {
-            console.error("❌ Execution Failed:", orderError);
+            console.error("❌ Lỗi thực thi lệnh:", orderError);
           }
         }
       }
     }
 
   } catch (e) {
-    console.error("Trader Loop Error:", e);
+    console.error("Lỗi trong vòng lặp Trader:", e);
   }
 
-  setTimeout(traderLoop, 5000);
+  setTimeout(traderLoop, 5000); // Lặp lại sau mỗi 5 giây
 }
 
 async function startServer() {
