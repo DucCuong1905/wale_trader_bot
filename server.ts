@@ -235,6 +235,8 @@ function getOrderbookSignal() {
 function startWS() {
   const ws = new WebSocket("wss://ws.bitget.com/v2/ws/public");
 
+  let pingInterval: NodeJS.Timeout;
+
   ws.on('open', () => {
     console.log("🔌 Đã kết nối WebSocket Bitget");
     // Đăng ký nhận thông báo về Sổ lệnh (bids/asks) và Giá (ticker)
@@ -245,11 +247,21 @@ function startWS() {
         { instType: "USDT-FUTURES", channel: "ticker", instId: SYMBOL_ID }
       ]
     }));
+
+    // Gửi ping mỗi 20 giây để giữ kết nối không bị ngắt (Keep-alive)
+    pingInterval = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send("ping");
+      }
+    }, 20000);
   });
 
   ws.on('message', (data) => {
+    const raw = data.toString();
+    if (raw === "pong") return; // Nhận phản hồi pong từ sàn, không cần xử lý
+
     try {
-      const parsed = JSON.parse(data.toString());
+      const parsed = JSON.parse(raw);
       if (!parsed.data || !parsed.data[0]) return;
       const d = parsed.data[0];
 
@@ -269,6 +281,7 @@ function startWS() {
 
   ws.on('error', (e) => console.error("Lỗi WebSocket:", e));
   ws.on('close', () => {
+    clearInterval(pingInterval);
     console.warn("WebSocket bị đóng. Đang kết nối lại sau 5 giây...");
     setTimeout(startWS, 5000);
   });
