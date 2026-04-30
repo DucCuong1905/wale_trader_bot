@@ -592,6 +592,12 @@ async function traderLoop() {
  * Tích hợp Vite middleware và các API Routes
  */
 async function startServer() {
+  console.log("=========================================");
+  console.log("🚀 WHALE BOT IS STARTING...");
+  console.log(`⏰ Time: ${new Date().toISOString()}`);
+  console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log("=========================================");
+
   const app = express();
   const PORT = 3000;
 
