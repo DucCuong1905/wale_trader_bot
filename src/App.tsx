@@ -142,7 +142,7 @@ export default function App() {
           <div className="flex items-center gap-6">
             <div className="flex flex-col items-end">
               <span className="text-xs text-gray-400 font-medium">BTC/USDT</span>
-              <span className="font-mono text-lg font-bold">${lastPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+              <span className="font-mono text-lg font-bold">${(lastPrice || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
             </div>
             <div className="h-8 w-px bg-white/10 hidden sm:block" />
             <div className="flex items-center gap-2 bg-green-500/10 px-3 py-1.5 rounded-full border border-green-500/20">
@@ -211,8 +211,8 @@ export default function App() {
             
             <div className="h-[300px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={history.filter(h => h.balance).reverse().map(h => ({
-                  time: new Date(h.time).toLocaleTimeString(),
+                <AreaChart data={history.filter(h => h.balance && h.time).reverse().map(h => ({
+                  time: h.time ? new Date(h.time).toLocaleTimeString() : 'N/A',
                   balance: h.balance
                 }))}>
                   <defs>
@@ -273,7 +273,7 @@ export default function App() {
                   ) : history.map((item, idx) => (
                     <tr key={idx} className="hover:bg-white/[0.02] transition-colors group">
                       <td className="px-6 py-4 text-xs font-mono text-gray-400">
-                        {new Date(item.time).toLocaleString()}
+                        {item.time ? new Date(item.time).toLocaleString() : 'N/A'}
                       </td>
                       <td className="px-6 py-4">
                         <span className={cn(

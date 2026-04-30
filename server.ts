@@ -149,7 +149,7 @@ Return ONLY a JSON object:
  * Hàm gửi tin nhắn thông báo qua Telegram Bot
  * Sử dụng Token và Chat ID từ biến môi trường (.env)
  */
-// Cache chống spam
+// Cache chống spam Telegram
 const lastSentMessages = new Map<string, number>();
 
 async function sendTelegram(msg: string) {
@@ -159,7 +159,7 @@ async function sendTelegram(msg: string) {
 
   const now = Date.now();
   const lastTime = lastSentMessages.get(msg);
-  if (lastTime && now - lastTime < 60000) return;
+  if (lastTime && now - lastTime < 60000) return; // Không gửi trùng nội dung trong 60s
   lastSentMessages.set(msg, now);
 
   try {
@@ -173,6 +173,12 @@ async function sendTelegram(msg: string) {
         parse_mode: "Markdown"
       })
     });
+    // Dọn dẹp cache nếu quá lớn
+    if (lastSentMessages.size > 100) {
+      for (const [m, t] of lastSentMessages) {
+        if (now - t > 300000) lastSentMessages.delete(m);
+      }
+    }
   } catch (e) {
     console.error("Lỗi gửi Telegram:", e);
   }
@@ -603,34 +609,14 @@ async function startServer() {
   const app = express();
   const PORT = parseInt(process.env.PORT || '3000', 10);
 
-  // Debugging middleware for all requests
-  app.use((req, res, next) => {
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
-    next();
-  });
-
   app.use(cors());
   app.use(express.json());
 
-  // Lấy trạng thái hiện tại của Bot
-  app.get("/api/test", (req, res) => {
-    res.json({ message: "API is reachable" });
-  });
-
-  // Middleware ghi log các yêu cầu API
-  app.use((req, res, next) => {
-    if (req.url.startsWith('/api')) {
-      console.log(`[API] ${req.method} ${req.url}`);
-    }
-    next();
-  });
-
-  // Kiểm tra sức khỏe hệ thống (Health Check)
+  // API Routes
   app.get("/api/health", (req, res) => {
-    res.json({ status: "ok", time: new Date().toISOString(), node: process.version });
+    res.json({ status: "ok", time: new Date().toISOString() });
   });
 
-  // --- API ROUTES CHO FRONTEND ---
   app.get("/api/trading/status", (req, res) => {
     try {
       res.json({
@@ -645,63 +631,54 @@ async function startServer() {
         timestamp: new Date().toISOString()
       });
     } catch (e) {
-      res.status(500).json({ error: "Lỗi Server Nội Bộ" });
+      res.status(500).json({ error: "Lỗi Server" });
     }
-  });
-
-  app.get("/api/trading/balance", (req, res) => {
-    res.json({ total: botState.balance, currency: "USDT" });
   });
 
   app.get("/api/trading/history", (req, res) => {
     res.json(botState.trades);
   });
 
-  // Tích hợp Vite (Development Mode) hoặc phục vụ file tĩnh (Production)
-  try {
-    if (process.env.NODE_ENV !== "production") {
-      const vite = await createViteServer({
-        server: { middlewareMode: true },
-        appType: "spa",
-      });
-      app.use(vite.middlewares);
-    } else {
-      const distPath = path.join(process.cwd(), "dist");
-      if (fs.existsSync(distPath)) {
-        app.use(express.static(distPath));
-        app.get("*", (req, res) => res.sendFile(path.join(distPath, "index.html")));
-      }
+  // Tích hợp Vite
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), "dist");
+    if (fs.existsSync(distPath)) {
+      app.use(express.static(distPath));
+      app.get("*", (req, res) => res.sendFile(path.join(distPath, "index.html")));
     }
-  } catch (e) {
-    console.error("Lỗi thiết lập Vite:", e);
   }
 
-  // KHỞI CHẠY CÁC VÒNG LẶP (WebSocket & Trading Loop) sau khi server đã sẵn sàng
+  // Khởi chạy server
   const server = app.listen(PORT, "0.0.0.0", () => {
-    console.log(`🚀 Trading Server chạy tại http://0.0.0.0:${PORT}`);
+    console.log(`🚀 Whale Bot đang chạy tại cổng: ${PORT}`);
     
-    // Chỉ bắt đầu quét lệnh khi server đã chiếm được Port thành công
+    // Khởi động các tiến trình trading
     startWS();
     traderLoop();
-    sendTelegram("🐳 *Whale Bot Started (VPS)*\nBot đã sẵn sàng và đang quét lệnh...");
+    
+    sendTelegram("🐳 *Whale Bot Started*\nBot đã sẵn sàng và đang quét lệnh...");
   });
-
-  // Báo cáo sức khỏe định kỳ: Mỗi 4 tiếng
-  setInterval(async () => {
-    if (!botState.isRunning) return;
-    let msg = `🛰 *Health Report*\n🕒 Thời gian: ${new Date().toLocaleString('vi-VN')}\n📈 Giá hiện tại: $${botState.lastPrice.toLocaleString()}\n💰 Số dư: $${botState.balance.toFixed(2)}\n🔄 Trạng thái: ${botState.inPosition ? 'Đang giữ lệnh' : 'Đang quét sweep'}`;
-    sendTelegram(msg);
-  }, 1000 * 60 * 60 * 4);
 
   server.on('error', (e: any) => {
     if (e.code === 'EADDRINUSE') {
       console.error(`❌ LỖI: Cổng ${PORT} đã bị chiếm dụng!`);
+      console.error(`👉 Hãy chạy lệnh 'fuser -k ${PORT}/tcp' để giải phóng cổng.`);
       process.exit(1);
     }
   });
 
-  // Xử lý đóng server sạch sẽ
+  // Graceful Shutdown
   process.on('SIGINT', () => {
+    server.close(() => process.exit(0));
+  });
+
+  process.on('SIGTERM', () => {
     server.close(() => process.exit(0));
   });
 }
