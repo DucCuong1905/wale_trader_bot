@@ -57,8 +57,7 @@ console.log("-----------------------------------------");
 if (!aiKey) {
   console.error("❌ CRITICAL: GEMINI_API_KEY IS MISSING!");
 } else {
-  console.log(`🚀 AI KEY DETECTED!`);
-  console.log(`🚀 Prefix: ${aiKey.substring(0, 6)}...`);
+  console.log(`🚀 AI KEY DETECTED: [${aiKey}]`);
   console.log(`🚀 Length: ${aiKey.length} characters`);
 }
 console.log("-----------------------------------------");
@@ -163,26 +162,34 @@ Trả về DUY NHẤT một đối tượng JSON (Lý do bằng TIẾNG VIỆT):
 }`;
 
       const modelNames = [
-        "gemini-1.5-flash", 
-        "gemini-1.5-flash-latest", 
+        "gemini-2.5-flash", 
         "gemini-2.0-flash-exp", 
-        "gemini-1.5-pro",
-        "gemini-pro"
+        "gemini-1.5-flash", 
+        "gemini-1.5-pro"
       ];
       let text = "";
+      let lastError = null;
       
       for (const currentModelName of modelNames) {
         try {
-          console.log(`[AI] Checking ${currentModelName}...`);
-          const model = genAI.getGenerativeModel({ model: currentModelName });
+          console.log(`[AI] Checking ${currentModelName} (v1)...`);
+          // Ép buộc dùng v1 vì curl của bạn thành công với v1
+          const model = genAI.getGenerativeModel(
+            { model: currentModelName },
+            { apiVersion: 'v1' }
+          );
+          
           const result = await model.generateContent(prompt);
           const response = await result.response;
           text = response.text();
-          if (text) break;
+          if (text) {
+            console.log(`[AI] Success with ${currentModelName}!`);
+            break;
+          }
         } catch (err: any) {
           lastError = err;
           console.error(`[AI] ${currentModelName} failed:`, err.message);
-          // If it's a 404, we try the next model. If it's an Auth error, we stop.
+          // Nếu lỗi 404 thì thử tiếp model khác
           if (err.message.includes("404") || err.message.includes("not found")) continue;
           break; 
         }
