@@ -8,7 +8,7 @@ import * as ccxt from "ccxt";
 import WebSocket from "ws";
 import cors from "cors";
 
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 dotenv.config();
 
@@ -17,26 +17,23 @@ const __dirname = path.dirname(__filename);
 
 // --- AI CONFIG ---
 const getEnv = (key: string) => {
-  let val = (process.env[key] || "").trim();
+  const val = process.env[key];
   if (!val) return "";
   
-  // Nếu người dùng dán cả dòng kiểu: KEY="VALUE" hoặc KEY=VALUE
-  if (val.includes('=') && (val.startsWith(key) || val.includes('_'))) {
-    const parts = val.split('=');
-    val = parts.slice(1).join('=').trim();
-  }
-
-  // Bỏ dấu ngoặc kép hoặc đơn bao quanh
-  val = val.replace(/^["']|["']$/g, '').trim();
+  let cleaned = val.trim();
   
-  // Kiểm tra ký tự ẩn
-  const hasHidden = /[\x00-\x1F\x7F]/.test(val);
-  if (hasHidden) {
-    console.warn(`⚠️ Cảnh báo: Biến môi trường ${key} có chứa ký tự điều hướng hoặc ẩn!`);
-    val = val.replace(/[\x00-\x1F\x7F]/g, '');
+  // Xử lý trường hợp người dùng paste cả dòng "KEY=VALUE" vào giá trị của biến
+  if (cleaned.startsWith(`${key}=`)) {
+    cleaned = cleaned.substring(key.length + 1).trim();
   }
-
-  return val;
+  
+  // Bỏ dấu ngoặc kép hoặc đơn bao quanh (phòng trường hợp .env có ngoặc hoặc paste từ UI)
+  cleaned = cleaned.replace(/^["']|["']$/g, '').trim();
+  
+  // Loại bỏ các ký tự ẩn/điều hướng
+  cleaned = cleaned.replace(/[\x00-\x1F\x7F]/g, '');
+  
+  return cleaned;
 };
 
 const aiKey = getEnv("GEMINI_API_KEY");
@@ -46,7 +43,8 @@ if (!aiKey || aiKey === "MY_GEMINI_API_KEY" || aiKey === "") {
   // Log độ dài và ký tự đầu cuối để kiểm tra định dạng
   console.log(`🔑 AI Key Loaded: ${aiKey.substring(0, 6)}...${aiKey.substring(aiKey.length - 4)} (Length: ${aiKey.length})`);
 }
-const ai = new GoogleGenAI({ apiKey: aiKey });
+
+const genAI = new GoogleGenerativeAI(aiKey);
 const modelName = "gemini-1.5-flash"; 
 
 // --- CẤU HÌNH GIAO DỊCH (TRADING CONSTANTS) ---
@@ -145,13 +143,15 @@ Trả về DUY NHẤT một đối tượng JSON (Lý do bằng TIẾNG VIỆT):
   "confidence": 0-100
 }`;
 
-      const result = await ai.models.generateContent({
+      const model = genAI.getGenerativeModel({ 
         model: modelName,
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        config: { responseMimeType: "application/json" }
+        generationConfig: { responseMimeType: "application/json" }
       });
-
-      const text = result.text;
+      
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      const text = response.text();
+      
       if (!text) throw new Error("Empty AI response");
       
       const parsed = JSON.parse(text);
