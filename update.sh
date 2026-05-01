@@ -11,6 +11,7 @@ echo "------------------------------------------------"
 echo "🛑 Đang dừng Bot hiện tại..."
 pm2 stop $APP_NAME 2>/dev/null || true
 pm2 delete $APP_NAME 2>/dev/null || true
+pm2 delete "whale-bot" 2>/dev/null || true # Dọn dẹp tên cũ nếu còn sót
 
 # 2. Cập nhật code từ GitHub
 echo "📂 Đang kéo code mới nhất..."

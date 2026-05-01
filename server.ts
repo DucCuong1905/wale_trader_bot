@@ -226,15 +226,19 @@ function startWS() {
   ws.on('message', (data) => {
     try {
       const parsed = JSON.parse(data.toString());
-      if (!parsed.data || !parsed.data[0]) return;
-      const d = parsed.data[0];
-
-      if (d.bids) {
-        botState.bid = d.bids.reduce((sum: number, x: any) => sum + parseFloat(x[1]), 0);
-        botState.ask = d.asks.reduce((sum: number, x: any) => sum + parseFloat(x[1]), 0);
-      }
-      if (d.last) {
-        botState.lastPrice = parseFloat(d.last);
+      if (parsed.action === 'snapshot' || parsed.action === 'update') {
+        const d = parsed.data[0];
+        if (d.bids) {
+          botState.bid = d.bids.reduce((sum: number, x: any) => sum + parseFloat(x[1]), 0);
+          botState.ask = d.asks.reduce((sum: number, x: any) => sum + parseFloat(x[1]), 0);
+          // Fallback: If lastPrice is 0, use top of book
+          if (botState.lastPrice === 0 && d.bids.length > 0) {
+            botState.lastPrice = parseFloat(d.bids[0][0]);
+          }
+        }
+        if (d.lastPr) {
+          botState.lastPrice = parseFloat(d.lastPr);
+        }
       }
     } catch (e) { }
   });
