@@ -13,14 +13,16 @@ echo "🏗️ Đang build ứng dụng..."
 npm run build
 
 # 4. Khởi động lại service bằng PM2
-echo "🔄 Đang dọn dẹp và khởi động lại PM2..."
-# Xóa sạch cấu hình cũ để tránh lỗi cache hoặc permission từ trước
-pm2 delete whale-bot 2>/dev/null || true
+echo "🔄 Dọn dẹp triệt để và khởi động lại Bot..."
+# Xóa các process cũ có thể gây xung đột (whale-bot, whale-bo, v.v.)
+pm2 delete whale-bot whale-bo 2>/dev/null || true
+# Xóa sạch logs cũ
+pm2 flush
 
-# Khởi động Bot bằng cách gọi trực tiếp npx tsx
+# Khởi động Bot bằng npx tsx
 pm2 start "npx tsx server.ts" --name "whale-bot"
 
 # 5. Lưu trạng thái PM2
 pm2 save
 
-echo "✅ Đã cập nhật xong và Bot đang chạy!"
+echo "✅ Đã cập nhật xong và Bot đang chạy! Dùng lệnh 'pm2 logs whale-bot' để xem log mới."
