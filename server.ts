@@ -16,13 +16,27 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // --- AI CONFIG ---
-const getEnv = (key: string) => (process.env[key] || "").trim().replace(/^["']|["']$/g, '');
+const getEnv = (key: string) => {
+  const val = (process.env[key] || "").trim();
+  if (!val) return "";
+  
+  // Kiểm tra ký tự ẩn (newline, carriage return, bướm, etc.)
+  const hasHidden = /[\x00-\x1F\x7F]/.test(val);
+  if (hasHidden) {
+    console.warn(`⚠️ Cảnh báo: Biến môi trường ${key} có chứa ký tự ẩn!`);
+  }
+
+  // Nếu có ngoặc kép bao quanh thì bỏ đi (phòng trường hợp người dùng nhập cả ngoặc vào UI)
+  const cleaned = val.replace(/^["']|["']$/g, '').trim();
+  return cleaned;
+};
 
 const aiKey = getEnv("GEMINI_API_KEY");
 if (!aiKey || aiKey === "MY_GEMINI_API_KEY" || aiKey === "") {
   console.error("❌ CRITICAL: GEMINI_API_KEY is missing or invalid in .env file!");
 } else {
-  console.log(`🔑 AI Key Loaded: ${aiKey.substring(0, 6)}...${aiKey.substring(aiKey.length - 4)}`);
+  // Log độ dài và ký tự đầu cuối để kiểm tra định dạng
+  console.log(`🔑 AI Key Loaded: ${aiKey.substring(0, 6)}...${aiKey.substring(aiKey.length - 4)} (Length: ${aiKey.length})`);
 }
 const ai = new GoogleGenerativeAI(aiKey);
 const modelName = "gemini-1.5-flash"; 
@@ -500,6 +514,19 @@ async function startServer() {
 
   startWS();
   traderLoop();
+
+  // --- KIỂM TRA KẾT NỐI AI ---
+  (async () => {
+    console.log("🤖 Đang kiểm tra kết nối AI với API Key mới...");
+    const dummyBars = [[Date.now(), 70000, 71000, 69000, 70500, 100]];
+    const testEval = await getAIAnalysis("TEST_STARTUP", 70500, 1.2, dummyBars);
+    if (testEval && testEval.decision && !testEval.reason.includes("AI Service Error")) {
+      console.log(`✅ Kết nối AI thành công! Quyết định: ${testEval.decision}`);
+      console.log(`📝 AI trả lời: ${testEval.reason}`);
+    } else {
+      console.error("❌ AI vẫn chưa hoạt động. Hãy kiểm tra lại API Key trong file .env");
+    }
+  })();
   
   // --- BÁO CÁO ĐỊNH KỲ (5 PHÚT) ---
   setInterval(() => {
