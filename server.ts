@@ -40,12 +40,6 @@ const getEnv = (key: string) => {
   
   let cleaned = val.trim();
   
-  // Xử lý trường hợp người dùng paste "KEY=VALUE" vào giá trị
-  if (cleaned.includes('=') && (cleaned.startsWith(key) || cleaned.includes('_AI_'))) {
-    const parts = cleaned.split('=');
-    cleaned = parts.slice(1).join('=').trim();
-  }
-  
   // Bỏ ngoặc kép hoặc đơn bao quanh
   cleaned = cleaned.replace(/^["']|["']$/g, '').trim();
   return cleaned;
@@ -161,76 +155,24 @@ Trả về DUY NHẤT một đối tượng JSON (Lý do bằng TIẾNG VIỆT):
   "confidence": 0-100
 }`;
 
-      const modelNames = [
-        modelName,
-        "gemini-2.0-flash-exp", 
-        "gemini-1.5-flash", 
-        "gemini-1.5-pro"
-      ];
+      console.log(`[AI] Đang phân tích bằng ${modelName}...`);
       let text = "";
-      let lastError = null;
       
-      for (const currentModelName of modelNames) {
-        try {
-          if (currentModelName === modelName) {
-            console.log(`[AI] Đang phân tích bằng ${currentModelName}...`);
-          } else {
-            console.log(`[AI] Đang thử model dự phòng ${currentModelName}...`);
-          }
-
-          const model = genAI.getGenerativeModel(
-            { model: currentModelName },
-            { apiVersion: 'v1' }
-          );
-          
-          const result = await model.generateContent(prompt);
-          const response = await result.response;
-          text = response.text();
-          if (text) {
-            if (currentModelName !== modelName) {
-              console.log(`[AI] Thành công với model dự phòng: ${currentModelName}`);
-            }
-            break;
-          }
-        } catch (err: any) {
-          lastError = err;
-          // Silent failure for default model if we have fallbacks
-          if (currentModelName !== modelNames[modelNames.length - 1]) {
-             // Only log 404s if they happen on the first model to show why we are switching
-             if (err.message.includes("404")) {
-               console.warn(`[AI] Không tìm thấy ${currentModelName}, đang thử model tiếp theo...`);
-             }
-             continue;
-          }
-          console.error(`[AI] Model cuối cùng ${currentModelName} thất bại:`, err.message);
-          break; 
-        }
+      try {
+        const model = genAI.getGenerativeModel(
+          { model: modelName },
+          { apiVersion: 'v1' }
+        );
+        
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        text = response.text();
+      } catch (err: any) {
+        console.error(`[AI] ${modelName} thất bại:`, err.message);
+        throw err;
       }
       
-      if (!text) {
-        // TRƯỜNG HỢP CUỐI CÙNG: Thử bằng Fetch trực tiếp nếu SDK bị lỗi endpoint
-        try {
-          console.log("[AI] Đang thử FETCH trực tiếp (v1beta)...");
-          const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${aiKey}`;
-          const resp = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-          });
-          const data: any = await resp.json();
-          if (data.candidates && data.candidates[0].content) {
-            text = data.candidates[0].content.parts[0].text;
-            console.log("[AI] FETCH trực tiếp THÀNH CÔNG!");
-          } else if (data.error) {
-            throw new Error(`Lỗi Fetch trực tiếp: ${data.error.message} (Mã: ${data.error.code})`);
-          }
-        } catch (fetchErr: any) {
-          console.error("[AI] FETCH trực tiếp thất bại:", fetchErr.message);
-          throw lastError || fetchErr;
-        }
-      }
-      
-      if (!text) throw new Error("Could not get any response from AI");
+      if (!text) throw new Error("AI không trả về nội dung.");
       
       // Xử lý text để lấy JSON (đôi khi AI bao quanh bởi ```json ... ```)
       const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -557,13 +499,25 @@ async function traderLoop() {
 
           sendTelegram(`🤖 *AI XÁC NHẬN LỆNH* (${aiEval.confidence}%)\nLý do: ${aiEval.reason}`);
           try {
+            console.log(`[ORDER] Placing ${signal} order. Size: ${size.toFixed(4)}`);
             await ex.createMarketOrder(PAIR, signal === 'LONG' ? 'buy' : 'sell', size);
-            await ex.createOrder(PAIR, 'limit', signal === 'LONG' ? 'sell' : 'buy', size, tp);
-            await ex.createOrder(PAIR, 'stop_market', signal === 'LONG' ? 'sell' : 'buy', size, undefined, { 'stopPrice': sl, 'reduceOnly': true });
+            
+            // Set TP and SL
+            try {
+              await ex.createOrder(PAIR, 'limit', signal === 'LONG' ? 'sell' : 'buy', size, tp);
+              await ex.createOrder(PAIR, 'stop_market', signal === 'LONG' ? 'sell' : 'buy', size, undefined, { 'stopPrice': sl, 'reduceOnly': true });
+              console.log(`[ORDER] TP/SL set successfully.`);
+            } catch (tpslErr: any) {
+              console.error("⚠️ TP/SL Order Error:", tpslErr.message);
+              sendTelegram(`⚠️ *CẢNH BÁO*: Lệnh đã khớp nhưng không đặt được TP/SL tự động. Vui lòng kiểm tra sàn!\nLỗi: ${tpslErr.message}`);
+            }
+
             botState.lastTradeTime = Date.now();
             botState.inPosition = true;
-          } catch (e) {
-            console.error("❌ Order Error:", e);
+            sendTelegram(`✅ *ĐẶT LỆNH THÀNH CÔNG*\nBot đã thực thi lệnh ${signal} trên Bitget.`);
+          } catch (e: any) {
+            console.error("❌ Order Execution Error:", e);
+            sendTelegram(`❌ *LỖI ĐẶT LỆNH SÀN*\nKhông thể thực thi lệnh trên Bitget.\nLỗi: ${e.message}`);
           }
         }
       }
@@ -650,7 +604,7 @@ async function startServer() {
     }
   })();
 
-  // --- BÁO CÁO ĐỊNH KỲ (5 PHÚT) ---
+  // --- BÁO CÁO ĐỊNH KỲ (4 GIỜ) ---
   setInterval(() => {
     const wsStatus = botState.isWsConnected ? "✅ Đang kết nối" : "❌ Mất kết nối";
     const statusMsg = `📊 *BÁO CÁO TRẠNG THÁI*
@@ -660,7 +614,7 @@ async function startServer() {
 💼 Vị thế: ${botState.inPosition ? "Đang giữ lệnh" : "Trống"}
 💵 Số dư: $${botState.balance.toFixed(2)}`;
     sendTelegram(statusMsg);
-  }, 300000);
+  }, 14400000); // 4 giờ = 14,400,000ms
 
   sendTelegram("🐳 *Whale Bot Đã Khởi Chạy*\nBot đã đồng bộ và bắt đầu hoạt động...");
 
