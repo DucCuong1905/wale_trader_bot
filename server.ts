@@ -129,11 +129,15 @@ Return ONLY a JSON object:
 async function sendTelegram(msg: string) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
-  if (!token || !chatId) return;
+  
+  if (!token || !chatId) {
+    console.warn("⚠️ Telegram credentials missing. Message not sent.");
+    return;
+  }
 
   try {
     const url = `https://api.telegram.org/bot${token}/sendMessage`;
-    await fetch(url, {
+    const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -142,8 +146,13 @@ async function sendTelegram(msg: string) {
         parse_mode: "Markdown"
       })
     });
+    
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`❌ Telegram API Error: ${response.status} - ${errText}`);
+    }
   } catch (e) {
-    console.error("Telegram Error:", e);
+    console.error("❌ Telegram Network Error:", e);
   }
 }
 

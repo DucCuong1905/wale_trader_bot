@@ -14,8 +14,10 @@ npm run build
 
 # 4. Khởi động lại service bằng PM2
 echo "🔄 Đang kiểm tra và khởi động lại PM2..."
-pm2 delete whale-bot 2>/dev/null
-pm2 start "npm run dev" --name whale-bot
+# Xóa process cũ nếu có
+pm2 delete whale-bot 2>/dev/null || true
+# Khởi động mới bằng npm
+pm2 start npm --name "whale-bot" -- run dev
 
 # 5. Lưu trạng thái PM2
 pm2 save
