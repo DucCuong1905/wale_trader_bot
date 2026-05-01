@@ -8,7 +8,7 @@ git pull origin main
 echo "📦 Đang cài đặt dependencies..."
 npm install
 
-# 3. Build lại ứng dụng (nếu bạn sử dụng Vite/Frontend)
+# 3. Build lại ứng dụng
 echo "🏗️ Đang build ứng dụng..."
 npm run build
 
@@ -16,7 +16,7 @@ npm run build
 echo "🔄 Đang kiểm tra và khởi động lại PM2..."
 # Xóa process cũ nếu có
 pm2 delete whale-bot 2>/dev/null || true
-# Khởi động mới bằng npm
+# Khởi động mới bằng npm (Khuyên dùng cho script dev/start phức tạp)
 pm2 start npm --name "whale-bot" -- run dev
 
 # 5. Lưu trạng thái PM2

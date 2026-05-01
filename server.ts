@@ -16,7 +16,7 @@ const __dirname = path.dirname(__filename);
 
 // --- AI CONFIG ---
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
-const model = "gemini-1.5-flash"; // Changed to a more stable alias if needed, but keeping user's intent
+const modelName = "gemini-2.0-flash"; // Sử dụng tên model ổn định trong AI Studio
 
 // --- CẤU HÌNH GIAO DỊCH (TRADING CONSTANTS) ---
 const PAIR = "BTC/USDT:USDT"; // Cặp giao dịch (BTC Futures trên Bitget)
@@ -77,11 +77,9 @@ let botState = {
 };
 
 // --- LOGIC PHÂN TÍCH AI (AI ANALYSIS) ---
-// Hàm này gửi dữ liệu thị trường cho AI (Gemini) để đánh giá lại tín hiệu kỹ thuật
 async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number, bars: any[]) {
   try {
-    // Lấy 20 nến gần nhất để AI có cái nhìn tổng quan hơn về xu hướng
-    const context = bars.slice(-20).map((b, i) => {
+    const context = bars.slice(-20).map((b) => {
       const time = new Date(b[0]).toLocaleTimeString();
       return `[${time}] O:${b[1]} H:${b[2]} L:${b[3]} C:${b[4]} V:${b[5]}`;
     }).join("\n");
@@ -111,7 +109,8 @@ Return ONLY a JSON object:
   "confidence": 0-100
 }`;
 
-    const result = await ai.getGenerativeModel({ model }).generateContent({
+    const modelResource = ai.getGenerativeModel({ model: modelName });
+    const result = await modelResource.generateContent({
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       generationConfig: { responseMimeType: "application/json" }
     });
@@ -129,9 +128,8 @@ Return ONLY a JSON object:
 async function sendTelegram(msg: string) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
-  
   if (!token || !chatId) {
-    console.warn("⚠️ Telegram credentials missing. Message not sent.");
+    console.warn("⚠️ Telegram credentials missing.");
     return;
   }
 
@@ -146,13 +144,11 @@ async function sendTelegram(msg: string) {
         parse_mode: "Markdown"
       })
     });
-    
     if (!response.ok) {
-      const errText = await response.text();
-      console.error(`❌ Telegram API Error: ${response.status} - ${errText}`);
+        console.error(`❌ Telegram API error: ${response.status}`);
     }
   } catch (e) {
-    console.error("❌ Telegram Network Error:", e);
+    console.error("Telegram Error:", e);
   }
 }
 
@@ -180,30 +176,23 @@ function getExchange() {
   return exchange;
 }
 
-// Ported Logic from Python
-// Tính toán vùng thanh khoản (Liquidity) dựa trên đỉnh/đáy của các nến trước đó
 function getLiquidity(ohlcv: any[]) {
-  // OHLCV structure: [timestamp, open, high, low, close, volume]
-  const slice = ohlcv.slice(-6, -1); // Lấy 5 nến trước nến hiện tại
-  const highs = slice.map(b => b[2]); // Lấy giá cao nhất
-  const lows = slice.map(b => b[3]); // Lấy giá thấp nhất
+  const slice = ohlcv.slice(-6, -1);
+  const highs = slice.map(b => b[2]);
+  const lows = slice.map(b => b[3]);
   return {
-    eqHigh: Math.max(...highs), // Đỉnh cũ gần nhất
-    eqLow: Math.min(...lows)   // Đáy cũ gần nhất
+    eqHigh: Math.max(...highs),
+    eqLow: Math.min(...lows)
   };
 }
 
-// Phát hiện cú quét thanh khoản (Liquidity Sweep)
-// Xảy ra khi giá vượt qua đỉnh/đáy cũ nhưng đóng cửa quay lại bên trong
 function detectSweep(lastBar: any[], eqHigh: number, eqLow: number) {
   const [, , h, l, c] = lastBar;
-  const sweepHigh = h > eqHigh && c < eqHigh; // Quét đỉnh (Fake breakout lên)
-  const sweepLow = l < eqLow && c > eqLow;   // Quét đáy (Fake breakout xuống)
+  const sweepHigh = h > eqHigh && c < eqHigh;
+  const sweepLow = l < eqLow && c > eqLow;
   return { sweepHigh, sweepLow };
 }
 
-// Kiểm tra sự hấp thụ (Absorption)
-// Nhìn vào độ dài của râu nến (Wick). Nếu râu nến dài gấp đôi thân nến kèm Volume cao => Có dấu hiệu đảo chiều.
 function checkAbsorption(lastBar: any[]) {
   const [, o, h, l, c] = lastBar;
   const body = Math.abs(c - o);
@@ -211,17 +200,14 @@ function checkAbsorption(lastBar: any[]) {
   return wick > body * 2;
 }
 
-// Tín hiệu từ sổ lệnh (Orderbook)
-// Nếu khối lượng Mua lớn hơn Bán 1.2 lần => BULL, ngược lại => BEAR
 function getOrderbookSignal() {
   if (botState.bid === 0 || botState.ask === 0) return null;
   const ratio = botState.bid / botState.ask;
-  if (ratio > 1.2) return "BULL"; // Lực mua mạnh
-  if (ratio < 0.83) return "BEAR"; // Lực bán mạnh
+  if (ratio > 1.2) return "BULL";
+  if (ratio < 0.83) return "BEAR";
   return null;
 }
 
-// WebSocket Loop (Orderbook & Ticker)
 function startWS() {
   const ws = new WebSocket("wss://ws.bitget.com/v2/ws/public");
 
@@ -249,9 +235,7 @@ function startWS() {
       if (d.last) {
         botState.lastPrice = parseFloat(d.last);
       }
-    } catch (e) {
-      // Ignore parse errors
-    }
+    } catch (e) { }
   });
 
   ws.on('error', (e) => console.error("WS Error:", e));
@@ -264,35 +248,25 @@ function getAvgRange(ohlcv: any[], period: number = 14) {
   return sum / period;
 }
 
-// --- TECHNICAL INDICATORS ---
-
 function calcADX(ohlcv: any[], period: number = 14) {
   if (ohlcv.length < period * 2) return 0;
-
   let tr: number[] = [];
   let plusDM: number[] = [];
   let minusDM: number[] = [];
 
   for (let i = 1; i < ohlcv.length; i++) {
-    const [prevTs, prevO, prevH, prevL, prevC] = ohlcv[i - 1];
+    const prevC = ohlcv[i - 1][4];
     const [ts, o, h, l, c] = ohlcv[i];
+    const prevH = ohlcv[i - 1][2];
+    const prevL = ohlcv[i - 1][3];
 
-    const tr1 = h - l;
-    const tr2 = Math.abs(h - prevC);
-    const tr3 = Math.abs(l - prevC);
-    tr.push(Math.max(tr1, tr2, tr3));
-
+    tr.push(Math.max(h - l, Math.abs(h - prevC), Math.abs(l - prevC)));
     const upMove = h - prevH;
     const downMove = prevL - l;
-
-    if (upMove > downMove && upMove > 0) plusDM.push(upMove);
-    else plusDM.push(0);
-
-    if (downMove > upMove && downMove > 0) minusDM.push(downMove);
-    else minusDM.push(0);
+    plusDM.push(upMove > downMove && upMove > 0 ? upMove : 0);
+    minusDM.push(downMove > upMove && downMove > 0 ? downMove : 0);
   }
 
-  // Simple Moving Average for smoothing (Wilder's smoothing is standard but SMA is a close proxy)
   const smooth = (arr: number[]) => {
     let result = [arr.slice(0, period).reduce((a, b) => a + b, 0) / period];
     for (let i = period; i < arr.length; i++) {
@@ -301,292 +275,159 @@ function calcADX(ohlcv: any[], period: number = 14) {
     return result;
   };
 
-  const smoothTR = smooth(tr);
-  const smoothPlusDM = smooth(plusDM);
-  const smoothMinusDM = smooth(minusDM);
+  const str = smooth(tr);
+  const sdmP = smooth(plusDM);
+  const sdmM = smooth(minusDM);
 
   const dx: number[] = [];
-  for (let i = 0; i < smoothTR.length; i++) {
-    const plusDI = 100 * (smoothPlusDM[i] / smoothTR[i]);
-    const minusDI = 100 * (smoothMinusDM[i] / smoothTR[i]);
-    const sum = plusDI + minusDI;
-    dx.push(sum === 0 ? 0 : 100 * Math.abs(plusDI - minusDI) / sum);
+  for (let i = 0; i < str.length; i++) {
+    const pDI = 100 * (sdmP[i] / str[i]);
+    const mDI = 100 * (sdmM[i] / str[i]);
+    dx.push(100 * Math.abs(pDI - mDI) / (pDI + mDI || 1));
   }
-
   const adxList = smooth(dx);
   return adxList[adxList.length - 1];
 }
 
-// Vòng lặp giao dịch chính (Main Trader Loop)
 async function traderLoop() {
   const ex = getExchange();
   if (!ex) {
-    if (botState.isRunning) {
-      console.log("🔍 Scanning (Monitoring Mode - No API Keys)...");
-    }
+    if (botState.isRunning) console.log("🔍 Scanning (Monitoring Mode)...");
     setTimeout(traderLoop, 10000);
     return;
   }
 
   try {
-    // 1. Cập nhật thông tin tài khoản (Sync Account Info)
     const balanceInfo = await ex.fetchBalance();
     const currentBalance = balanceInfo.USDT ? (balanceInfo.USDT as any).total : 0;
     botState.balance = currentBalance;
 
-    // Reset số dư ngày mới lúc 00:00 UTC
     const today = new Date().toISOString().split('T')[0];
     if (botState.lastResetDate !== today) {
-      console.log(`🌅 Ngày mới bắt đầu: ${today}. Ghi nhận số dư đầu ngày: ${currentBalance}`);
       botState.dailyStartingBalance = currentBalance;
       botState.lastResetDate = today;
     }
 
-    // Kiểm tra giới hạn lỗ tối đa trong ngày (Daily Stop Loss)
     const dailyPnL = currentBalance - botState.dailyStartingBalance;
     const dailyLossPercent = botState.dailyStartingBalance > 0 ? (dailyPnL / botState.dailyStartingBalance) : 0;
 
     if (dailyLossPercent <= -MAX_DAILY_LOSS) {
-      console.warn(`🛑 Chạm giới hạn lỗ ngày (${(dailyLossPercent * 100).toFixed(2)}%). Dừng giao dịch cho đến ngày mai.`);
-      setTimeout(traderLoop, 60000 * 30); // Nghỉ 30 phút rồi check lại
+      setTimeout(traderLoop, 60000 * 30);
       return;
     }
 
-    // Kiểm tra vị thế hiện tại trên sàn
     const positions = await ex.fetchPositions([PAIR]);
     const isNowInPosition = positions.some(p => Math.abs(parseFloat(p.info.size || (p as any).contracts || 0)) > 0);
 
-    // Nếu vừa đóng vị thế (chốt lời/cắt lỗ xong)
     if (botState.inPosition && !isNowInPosition) {
-      const dailyPnL = currentBalance - botState.dailyStartingBalance;
       const pnlPercent = (dailyPnL / botState.dailyStartingBalance * 100).toFixed(2);
-
-      const tradeResult = {
-        type: 'CLOSE',
-        balance: currentBalance,
-        pnl: dailyPnL,
-        time: new Date().toISOString(),
-        status: 'CLOSED'
-      };
-
+      const tradeResult = { type: 'CLOSE', balance: currentBalance, pnl: dailyPnL, time: new Date().toISOString(), status: 'CLOSED' };
       botState.trades.unshift(tradeResult);
       saveTrade(tradeResult);
-
-      const closedMsg = `🔔 *VỊ THẾ ĐÃ ĐÓNG*\n💰 Số dư hiện tại: $${botState.balance.toFixed(2)}\n📊 PnL hôm nay: ${dailyPnL >= 0 ? '+' : ''}$${dailyPnL.toFixed(2)} (${pnlPercent}%)`;
-      sendTelegram(closedMsg);
+      sendTelegram(`🔔 *VỊ THẾ ĐÃ ĐÓNG*\n💰 Số dư: $${botState.balance.toFixed(2)}\n📊 PnL: ${dailyPnL >= 0 ? '+' : ''}$${dailyPnL.toFixed(2)} (${pnlPercent}%)`);
     }
 
     botState.inPosition = isNowInPosition;
-
-    // Kiểm tra thời gian chờ (Cooldown) và trạng thái lệnh
     if (botState.inPosition || (Date.now() - botState.lastTradeTime < COOLDOWN_MS)) {
       setTimeout(traderLoop, 5000);
       return;
     }
 
-    // 2. Phân tích kỹ thuật (Technical Analysis - Nến 15 phút)
     const bars = await ex.fetchOHLCV(PAIR, '15m', 100);
     if (!bars || bars.length < 30) return;
 
-    const adx = calcADX(bars, 14); // Chỉ báo ADX để xác định sức mạnh xu hướng
-    const { eqHigh, eqLow } = getLiquidity(bars); // Đỉnh/đáy thanh khoản
+    const adx = calcADX(bars, 14);
+    const { eqHigh, eqLow } = getLiquidity(bars);
     const lastBar = bars[bars.length - 1];
-    const { sweepHigh, sweepLow } = detectSweep(lastBar, eqHigh, eqLow); // Quét thanh khoản
-    const absorb = checkAbsorption(lastBar); // Hấp thụ giá
-    const obSignal = getOrderbookSignal(); // Tín hiệu từ sổ lệnh
+    const { sweepHigh, sweepLow } = detectSweep(lastBar, eqHigh, eqLow);
+    const absorb = checkAbsorption(lastBar);
+    const obSignal = getOrderbookSignal();
 
-    console.log(`📊 ADX: ${adx.toFixed(1)} | Seek: ${sweepLow ? 'SWEEP_LOW' : sweepHigh ? 'SWEEP_HIGH' : 'NONE'}`);
-
-    // LOGIC VÀO LỆNH:
-    // LONG: Quét đáy + Sổ lệnh Bullish + Nến hấp thụ + Xu hướng có lực (ADX > 20)
-    // SHORT: Quét đỉnh + Sổ lệnh Bearish + Nến hấp thụ + Xu hướng có lực (ADX > 20)
     let signal: 'LONG' | 'SHORT' | null = null;
     if (sweepLow && obSignal === "BULL" && absorb && adx > 20) signal = "LONG";
     if (sweepHigh && obSignal === "BEAR" && absorb && adx > 20) signal = "SHORT";
 
     if (signal) {
-      // 3. Tính toán thông số lệnh (Order Calculation)
       const entry = botState.lastPrice;
-      const rangeAvg = getAvgRange(bars, 14); // Độ biến động nến trung bình để đặt SL
-
+      const rangeAvg = getAvgRange(bars, 14);
       const sl = signal === "LONG" ? entry - rangeAvg : entry + rangeAvg;
       const tp = signal === "LONG" ? entry + (entry - sl) * RR : entry - (sl - entry) * RR;
 
-      // Tính toán kích thước (Size) theo % rủi ro
       const riskAmt = botState.balance * RISK_PER_TRADE;
       const stopDist = Math.abs(entry - sl);
 
       if (stopDist > 0) {
         let size = riskAmt / stopDist;
-        const maxNotional = (botState.balance * 0.1) / entry; // Giới hạn an toàn: Không quá 10% vốn mỗi lệnh
+        const maxNotional = (botState.balance * 0.1) / entry;
         size = Math.min(size, maxNotional);
 
         if (size > 0) {
-          const alertMsg = `🚀 *VÀO LỆNH ${signal}*\n💰 Giá: ${entry}\n🛑 SL: ${sl.toFixed(1)}\n🎯 TP: ${tp.toFixed(1)}\n📏 Size: ${size.toFixed(4)}`;
-          console.log(alertMsg);
-          sendTelegram(alertMsg);
-
-          // --- BƯỚC KIỂM TRA CUỐI CÙNG VỚI AI (AI SECONDARY CHECK) ---
+          sendTelegram(`🚀 *VÀO LỆNH ${signal}*\n💰 Giá: ${entry}\n🛑 SL: ${sl.toFixed(1)}\n🎯 TP: ${tp.toFixed(1)}`);
           const aiEval = await getAIAnalysis(signal, entry, botState.bid / botState.ask, bars);
           botState.aiReasoning = aiEval.reason;
 
           if (aiEval.decision === "REJECT") {
-            const rejectMsg = `🤖 *AI TỪ CHỐI LỆNH*\nLý do: ${aiEval.reason}`;
-            console.log(rejectMsg);
-            sendTelegram(rejectMsg);
-
-            const tradeData = {
-              type: signal,
-              price: entry,
-              time: new Date().toISOString(),
-              status: 'AI_REJECTED',
-              reason: aiEval.reason
-            };
-            botState.signals.unshift(tradeData);
-            botState.trades.unshift(tradeData);
-            saveTrade(tradeData);
-
-            return; // Dừng không vào lệnh nữa
+            sendTelegram(`🤖 *AI TỪ CHỐI LỆNH*\nLý do: ${aiEval.reason}`);
+            return;
           }
 
-          const confirmMsg = `🤖 *AI XÁC NHẬN LỆNH* (Độ tin cậy: ${aiEval.confidence}%)\nLý do: ${aiEval.reason}`;
-          console.log(confirmMsg);
-          sendTelegram(confirmMsg);
-
+          sendTelegram(`🤖 *AI XÁC NHẬN LỆNH* (${aiEval.confidence}%)\nLý do: ${aiEval.reason}`);
           try {
-            // 4. Thực thi lệnh trên sàn (Execution)
-            // Lệnh thị trường để vào vị thế ngay
             await ex.createMarketOrder(PAIR, signal === 'LONG' ? 'buy' : 'sell', size);
-
-            // Lệnh giới hạn để Chốt lời (Take Profit)
             await ex.createOrder(PAIR, 'limit', signal === 'LONG' ? 'sell' : 'buy', size, tp);
-
-            // Lệnh Stop Market để Cắt lỗ (Stop Loss)
-            await ex.createOrder(PAIR, 'stop_market', signal === 'LONG' ? 'sell' : 'buy', size, undefined, {
-              'stopPrice': sl,
-              'reduceOnly': true
-            });
-
+            await ex.createOrder(PAIR, 'stop_market', signal === 'LONG' ? 'sell' : 'buy', size, undefined, { 'stopPrice': sl, 'reduceOnly': true });
             botState.lastTradeTime = Date.now();
             botState.inPosition = true;
-
-            const tradeData = {
-              type: signal,
-              price: entry,
-              time: new Date().toISOString(),
-              status: 'EXECUTED',
-              sl,
-              tp,
-              size
-            };
-            botState.signals.unshift(tradeData);
-            botState.trades.unshift(tradeData);
-            saveTrade(tradeData);
-          } catch (orderError) {
-            console.error("❌ Lỗi thực thi lệnh:", orderError);
+          } catch (e) {
+            console.error("❌ Order Error:", e);
           }
         }
       }
     }
-
   } catch (e) {
-    console.error("Lỗi trong vòng lặp Trader:", e);
+    console.error("Trader Loop Error:", e);
   }
-
-  setTimeout(traderLoop, 5000); // Lặp lại sau mỗi 5 giây
+  setTimeout(traderLoop, 5000);
 }
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
-
   app.use(express.json());
 
-  // Logger Middleware
-  app.use((req, res, next) => {
-    if (req.url.startsWith('/api')) {
-      console.log(`[API] ${req.method} ${req.url}`);
-    }
-    next();
-  });
-
-  // Health Check
-  app.get("/api/health", (req, res) => {
-    console.log("[Health] Health check requested");
-    res.json({ status: "ok", time: new Date().toISOString(), node: process.version });
-  });
-
-  // API Routes
+  app.get("/api/health", (req, res) => res.json({ status: "ok" }));
   app.get("/api/trading/status", (req, res) => {
-    try {
-      res.json({
-        status: botState.isRunning ? "running" : "idle",
-        symbol: PAIR,
-        last_price: botState.lastPrice || 0,
-        bid_ratio: botState.ask !== 0 ? (botState.bid / botState.ask).toFixed(2) : "1.00",
-        in_position: botState.inPosition,
-        signals: botState.signals.slice(0, 10),
-        balance: botState.balance || 0,
-        ai_reasoning: botState.aiReasoning
-      });
-    } catch (e) {
-      console.error("Status API Error:", e);
-      res.status(500).json({ error: "Internal Server Error" });
-    }
-  });
-
-  app.get("/api/trading/balance", (req, res) => {
     res.json({
-      total: botState.balance,
-      currency: "USDT"
+      status: botState.isRunning ? "running" : "idle",
+      symbol: PAIR,
+      last_price: botState.lastPrice || 0,
+      bid_ratio: botState.ask !== 0 ? (botState.bid / botState.ask).toFixed(2) : "1.00",
+      in_position: botState.inPosition,
+      signals: botState.signals.slice(0, 10),
+      balance: botState.balance || 0,
+      ai_reasoning: botState.aiReasoning
     });
   });
 
-  app.get("/api/trading/history", (req, res) => {
-    res.json(botState.trades);
-  });
+  app.get("/api/trading/history", (req, res) => res.json(botState.trades));
 
-  // Start Loops
   startWS();
   traderLoop();
+  sendTelegram("🐳 *Whale Bot Started (Sync)*\nBot đã đồng bộ và đang hoạt động...");
 
-  // Telegram Start Notification
-  console.log("📨 Attempting to send Telegram start notification...");
-  sendTelegram("🐳 *Whale Bot Started (VPS)*\nBot đã sẵn sàng và đang quét lệnh...");
-
-  // Health Check: Mỗi 4 tiếng
-  setInterval(() => {
-    let msg = `🛰 *Health Report*\n🕒 Thời gian: ${new Date().toLocaleTimeString()}\n📈 Giá hiện tại: $${botState.lastPrice}\n💰 Số dư: $${botState.balance.toFixed(2)}\n🔄 Trạng thái: ${botState.inPosition ? 'Đang có vị thế' : 'Đang chờ sweep'}`;
-    if (!botState.isRunning) msg += `\n⚠️ Lý do: Bot đang tạm dừng (Lỗi hoặc Pause)`;
-    sendTelegram(msg);
-  }, 1000 * 60 * 60 * 4);
-
-  // Vite integration
-  try {
-    if (process.env.NODE_ENV !== "production") {
-      const vite = await createViteServer({
-        server: { middlewareMode: true },
-        appType: "spa",
-      });
-      app.use(vite.middlewares);
-      console.log("🛠 Vite middleware initialized");
-    } else {
-      const distPath = path.join(process.cwd(), "dist");
-      if (fs.existsSync(distPath)) {
-        app.use(express.static(distPath));
-        app.get("*", (req, res) => {
-          res.sendFile(path.join(distPath, "index.html"));
-        });
-      }
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), "dist");
+    if (fs.existsSync(distPath)) {
+      app.use(express.static(distPath));
+      app.get("*", (req, res) => res.sendFile(path.join(distPath, "index.html")));
     }
-  } catch (e) {
-    console.error("Vite setup error:", e);
   }
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`🚀 Trading Server running on http://localhost:${PORT}`);
-    console.log(`📡 WebSocket Listener: Active`);
-    console.log(`🔗 Node version: ${process.version}`);
   });
 }
 
