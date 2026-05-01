@@ -20,35 +20,28 @@ const getEnv = (key: string) => {
   const val = process.env[key];
   if (!val) return "";
   
-  // Loại bỏ mọi ký tự lạ, xuống dòng, khoảng trắng ở hai đầu
-  let cleaned = val.trim().replace(/[\n\r]/g, "");
+  let cleaned = val.trim();
   
-  // Xử lý trường hợp người dùng paste "KEY=VALUE"
+  // Xử lý trường hợp người dùng paste "KEY=VALUE" vào giá trị
   if (cleaned.includes('=') && (cleaned.startsWith(key) || cleaned.includes('_AI_'))) {
     const parts = cleaned.split('=');
     cleaned = parts.slice(1).join('=').trim();
   }
   
-  // Bỏ ngoặc kép/đơn
+  // Bỏ ngoặc kép hoặc đơn bao quanh
   cleaned = cleaned.replace(/^["']|["']$/g, '').trim();
-  
-  // Chỉ giữ lại các ký tự hợp lệ cho API Key (thường là chữ cái, số, gạch ngang, gạch dưới)
-  // Một số Key có thể có ký tự đặc biệt, nên ta chỉ lọc bỏ các ký tự điều hướng (control characters)
-  cleaned = cleaned.replace(/[\x00-\x1F\x7F]/g, '');
-  
   return cleaned;
 };
 
 // Ưu tiên dùng GEMINI_API_KEY từ hệ thống nếu có
 const aiKey = getEnv("GEMINI_API_KEY");
 if (!aiKey) {
-  console.error("❌ CRITICAL: GEMINI_API_KEY is missing!");
+  console.error("❌ CRITICAL: GEMINI_API_KEY is missing from environment!");
 } else {
-  console.log(`🔑 AI Key status: OK (Length: ${aiKey.length})`);
+  console.log(`🔑 AI Key Loaded (Length: ${aiKey.length})`);
 }
 
 const genAI = new GoogleGenerativeAI(aiKey);
-// Thử dùng version ổn định nhất
 const modelName = "gemini-1.5-flash"; 
 
 // --- CẤU HÌNH GIAO DỊCH (TRADING CONSTANTS) ---
@@ -147,19 +140,16 @@ Trả về DUY NHẤT một đối tượng JSON (Lý do bằng TIẾNG VIỆT):
   "confidence": 0-100
 }`;
 
-      const model = genAI.getGenerativeModel({ 
-        model: modelName,
-      }, { apiVersion: 'v1' }); // Cố định phiên bản v1 để tránh v1beta gây lỗi 404
+      const model = genAI.getGenerativeModel({ model: modelName });
       
-      // Cấu hình output JSON thông qua generationConfig
-      const result = await model.generateContent({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: { responseMimeType: "application/json" }
-      });
+      const result = await model.generateContent(prompt);
       const response = await result.response;
-      const text = response.text();
+      let text = response.text();
       
       if (!text) throw new Error("Empty AI response");
+      
+      // Làm sạch text trong trường hợp AI trả về markdown JSON blocks
+      text = text.replace(/```json\n?/g, "").replace(/```/g, "").trim();
       
       const parsed = JSON.parse(text);
       console.log(`[AI SUCCESS] Decision: ${parsed.decision} | Confidence: ${parsed.confidence}%`);
