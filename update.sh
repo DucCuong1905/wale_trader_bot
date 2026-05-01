@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # --- CẤU HÌNH ---
-APP_NAME="whale-bot"
+APP_NAME="whale"
 
 echo "------------------------------------------------"
 echo "🚀 ĐANG CẬP NHẬT WHALE BOT..."
