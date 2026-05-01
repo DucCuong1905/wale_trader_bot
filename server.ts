@@ -551,6 +551,7 @@ async function startServer() {
   traderLoop();
 
   // Telegram Start Notification
+  console.log("📨 Attempting to send Telegram start notification...");
   sendTelegram("🐳 *Whale Bot Started (VPS)*\nBot đã sẵn sàng và đang quét lệnh...");
 
   // Health Check: Mỗi 4 tiếng
