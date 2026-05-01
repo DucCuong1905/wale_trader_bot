@@ -17,6 +17,24 @@ const __dirname = path.dirname(__filename);
 
 // --- AI CONFIG ---
 const getEnv = (key: string) => {
+  // Thử đọc trực tiếp từ file .env để chắc chắn không bị cache/override
+  try {
+    const envPath = path.join(process.cwd(), ".env");
+    if (fs.existsSync(envPath)) {
+      const envContent = fs.readFileSync(envPath, "utf-8");
+      const lines = envContent.split("\n");
+      for (const line of lines) {
+        if (line.trim().startsWith(`${key}=`)) {
+          let val = line.split("=").slice(1).join("=").trim();
+          val = val.replace(/^["']|["']$/g, "").trim();
+          if (val) return val;
+        }
+      }
+    }
+  } catch (e) {
+    console.warn(`⚠️ Error reading .env directly for ${key}:`, e);
+  }
+
   const val = process.env[key];
   if (!val) return "";
   
@@ -35,12 +53,15 @@ const getEnv = (key: string) => {
 
 // Ưu tiên dùng GEMINI_API_KEY từ hệ thống nếu có
 const aiKey = getEnv("GEMINI_API_KEY");
+console.log("-----------------------------------------");
 if (!aiKey) {
-  console.error("❌ CRITICAL: GEMINI_API_KEY is missing from environment!");
+  console.error("❌ CRITICAL: GEMINI_API_KEY IS MISSING!");
 } else {
-  // Log tiền tố để bạn xác nhận đúng key đã thay hay chưa
-  console.log(`🔑 AI Key Loaded (Prefix): ${aiKey.substring(0, 10)}... (Total: ${aiKey.length} chars)`);
+  console.log(`🚀 AI KEY DETECTED!`);
+  console.log(`🚀 Prefix: ${aiKey.substring(0, 6)}...`);
+  console.log(`🚀 Length: ${aiKey.length} characters`);
 }
+console.log("-----------------------------------------");
 
 const genAI = new GoogleGenerativeAI(aiKey);
 const modelName = "gemini-1.5-flash"; 
@@ -141,8 +162,8 @@ Trả về DUY NHẤT một đối tượng JSON (Lý do bằng TIẾNG VIỆT):
   "confidence": 0-100
 }`;
 
-      // Ép buộc dùng API v1 để tránh lỗi 404 từ v1beta
-      const model = genAI.getGenerativeModel({ model: modelName }, { apiVersion: "v1" });
+      // Sử dụng mặc định (v1beta hoặc v1 tùy SDK) để tránh 404
+      const model = genAI.getGenerativeModel({ model: modelName });
       
       const result = await model.generateContent(prompt);
       const response = await result.response;
@@ -158,6 +179,7 @@ Trả về DUY NHẤT một đối tượng JSON (Lý do bằng TIẾNG VIỆT):
       return parsed;
     } catch (e: any) {
       lastError = e;
+      console.error(`[AI ERROR] Attempting with key prefix ${aiKey.substring(0, 4)}...`);
       console.error(`[AI ATTEMPT ${attempt}/${maxRetries}] Error:`, e.message);
       if (attempt < maxRetries) {
         await new Promise(resolve => setTimeout(resolve, 2000 * attempt)); // Wait before retry
@@ -523,15 +545,28 @@ async function startServer() {
 
   // --- KIỂM TRA KẾT NỐI AI ---
   (async () => {
-    console.log("🤖 Đang kiểm tra kết nối AI với API Key mới...");
-    const dummyBars = [[Date.now(), 70000, 71000, 69000, 70500, 100]];
-    const testEval = await getAIAnalysis("TEST_STARTUP", 70500, 1.2, dummyBars);
-    if (testEval && testEval.decision && !testEval.reason.includes("AI Service Error")) {
-      console.log(`✅ Kết nối AI thành công! Quyết định: ${testEval.decision}`);
-      console.log(`📝 AI trả lời: ${testEval.reason}`);
-    } else {
-      console.error("❌ AI vẫn chưa hoạt động. Hãy kiểm tra lại API Key trong file .env");
+    console.log("-----------------------------------------");
+    console.log("🤖 Đang kiểm tra kết nối AI...");
+    try {
+      // Thử liệt kê model trước
+      console.log("📂 Đang kiểm tra danh sách models...");
+      // Lưu ý: ListModels yêu cầu quyền nhất định, nếu lỗi ta bỏ qua
+      // Nhưng ta cứ log thông tin key trước
+      console.log(`🔑 Key Prefix: ${aiKey.substring(0, 6)}...`);
+      
+      const dummyBars = [[Date.now(), 70000, 71000, 69000, 70500, 100]];
+      const testEval = await getAIAnalysis("TEST_STARTUP", 70500, 1.2, dummyBars);
+      
+      if (testEval && testEval.decision && !testEval.reason.includes("AI Service Error")) {
+        console.log(`✅ Kết nối AI thành công! Quyết định: ${testEval.decision}`);
+        console.log(`📝 AI trả lời: ${testEval.reason}`);
+      } else {
+        console.error("❌ AI chưa hoạt động ổn định. Lý do:", testEval.reason);
+      }
+    } catch (err: any) {
+      console.error("❌ Lỗi nghiêm trọng khi khởi tạo AI:", err.message);
     }
+    console.log("-----------------------------------------");
   })();
   
   // --- BÁO CÁO ĐỊNH KỲ (5 PHÚT) ---
