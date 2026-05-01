@@ -38,7 +38,8 @@ const aiKey = getEnv("GEMINI_API_KEY");
 if (!aiKey) {
   console.error("❌ CRITICAL: GEMINI_API_KEY is missing from environment!");
 } else {
-  console.log(`🔑 AI Key Loaded (Length: ${aiKey.length})`);
+  // Log tiền tố để bạn xác nhận đúng key đã thay hay chưa
+  console.log(`🔑 AI Key Loaded (Prefix): ${aiKey.substring(0, 10)}... (Total: ${aiKey.length} chars)`);
 }
 
 const genAI = new GoogleGenerativeAI(aiKey);
@@ -140,7 +141,8 @@ Trả về DUY NHẤT một đối tượng JSON (Lý do bằng TIẾNG VIỆT):
   "confidence": 0-100
 }`;
 
-      const model = genAI.getGenerativeModel({ model: modelName });
+      // Ép buộc dùng API v1 để tránh lỗi 404 từ v1beta
+      const model = genAI.getGenerativeModel({ model: modelName }, { apiVersion: "v1" });
       
       const result = await model.generateContent(prompt);
       const response = await result.response;
