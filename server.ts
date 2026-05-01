@@ -163,7 +163,11 @@ Trả về DUY NHẤT một đối tượng JSON (Lý do bằng TIẾNG VIỆT):
 }`;
 
       // Sử dụng mặc định (v1beta hoặc v1 tùy SDK) để tránh 404
-      const model = genAI.getGenerativeModel({ model: modelName });
+      // Giải pháp ổn định nhất: Dùng v1 và bóc tách JSON thủ công để tránh lỗi cấu hình API
+      const model = genAI.getGenerativeModel(
+        { model: modelName },
+        { apiVersion: 'v1' } 
+      );
       
       const result = await model.generateContent(prompt);
       const response = await result.response;
@@ -171,8 +175,11 @@ Trả về DUY NHẤT một đối tượng JSON (Lý do bằng TIẾNG VIỆT):
       
       if (!text) throw new Error("Empty AI response");
       
-      // Làm sạch text trong trường hợp AI trả về markdown JSON blocks
-      text = text.replace(/```json\n?/g, "").replace(/```/g, "").trim();
+      // Xử lý text để lấy JSON (đôi khi AI bao quanh bởi ```json ... ```)
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        text = jsonMatch[0];
+      }
       
       const parsed = JSON.parse(text);
       console.log(`[AI SUCCESS] Decision: ${parsed.decision} | Confidence: ${parsed.confidence}%`);
