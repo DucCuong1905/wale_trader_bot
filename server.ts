@@ -74,7 +74,8 @@ let botState = {
   lastResetDate: "", // Ngày reset số dư gần nhất
   trades: loadTrades() as any[], // Lịch sử giao dịch
   signals: [] as any[], // Các tín hiệu đã phát hiện
-  aiReasoning: "Awaiting analysis..." // Phân tích gần nhất từ AI
+  aiReasoning: "Awaiting analysis...", // Phân tích gần nhất từ AI
+  isWsConnected: false // Trạng thái kết nối WebSocket
 };
 
 // --- LOGIC PHÂN TÍCH AI (AI ANALYSIS) ---
@@ -214,6 +215,7 @@ function startWS() {
 
   ws.on('open', () => {
     console.log("🔌 Connected to Bitget WS");
+    botState.isWsConnected = true;
     ws.send(JSON.stringify({
       op: "subscribe",
       args: [
@@ -243,8 +245,14 @@ function startWS() {
     } catch (e) { }
   });
 
-  ws.on('error', (e) => console.error("WS Error:", e));
-  ws.on('close', () => setTimeout(startWS, 5000));
+  ws.on('error', (e) => {
+    console.error("WS Error:", e);
+    botState.isWsConnected = false;
+  });
+  ws.on('close', () => {
+    botState.isWsConnected = false;
+    setTimeout(startWS, 5000);
+  });
 }
 
 function getAvgRange(ohlcv: any[], period: number = 14) {
@@ -427,6 +435,20 @@ async function startServer() {
 
   startWS();
   traderLoop();
+  
+  // --- BÁO CÁO ĐỊNH KỲ (5 PHÚT) ---
+  setInterval(() => {
+    const wsStatus = botState.isWsConnected ? "✅ Đang kết nối" : "❌ Mất kết nối";
+    const statusMsg = `📊 *BÁO CÁO TRẠNG THÁI (5P)*
+🌐 WebSocket: ${wsStatus}
+💰 Giá BTC: $${botState.lastPrice.toFixed(2)}
+⚖️ Bid/Ask: ${(botState.bid / (botState.ask || 1)).toFixed(2)}
+💼 Vị thế: ${botState.inPosition ? "Đang giữ lệnh" : "Trống"}
+💵 Số dư: $${botState.balance.toFixed(2)}`;
+    
+    sendTelegram(statusMsg);
+  }, 300000); // 5 phút = 300,000ms
+
   sendTelegram("🐳 *Whale Bot Started (Sync)*\nBot đã đồng bộ và đang hoạt động...");
 
   if (process.env.NODE_ENV !== "production") {
