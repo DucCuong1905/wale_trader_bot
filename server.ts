@@ -355,10 +355,17 @@ async function traderLoop() {
     const { sweepHigh, sweepLow } = detectSweep(lastBar, eqHigh, eqLow);
     const absorb = checkAbsorption(lastBar);
     const obSignal = getOrderbookSignal();
+    const obRatio = botState.ask !== 0 ? (botState.bid / botState.ask).toFixed(2) : "1.00";
+
+    // Detailed Log for debugging why no trades are happening
+    if (Date.now() - botState.lastTradeTime > COOLDOWN_MS) {
+       console.log(`[ANALYSIS] Price: ${botState.lastPrice} | ADX: ${adx.toFixed(1)} (Need >15) | Sweep: ${sweepLow ? "LOW" : sweepHigh ? "HIGH" : "NONE"} | Absorb: ${absorb} | OB Ratio: ${obRatio}`);
+    }
 
     let signal: 'LONG' | 'SHORT' | null = null;
-    if (sweepLow && obSignal === "BULL" && absorb && adx > 20) signal = "LONG";
-    if (sweepHigh && obSignal === "BEAR" && absorb && adx > 20) signal = "SHORT";
+    // Adjusted ADX from 20 to 15 for better sensitivity on 15m
+    if (sweepLow && obSignal === "BULL" && absorb && adx > 15) signal = "LONG";
+    if (sweepHigh && obSignal === "BEAR" && absorb && adx > 15) signal = "SHORT";
 
     if (signal) {
       const entry = botState.lastPrice;
