@@ -155,24 +155,46 @@ Trả về DUY NHẤT một đối tượng JSON (Lý do bằng TIẾNG VIỆT):
   "confidence": 0-100
 }`;
 
-      console.log(`[AI] Đang phân tích bằng ${modelName}...`);
+      // Danh sách các model ổn định để xoay vòng, tránh lỗi Quota (429)
+      const modelsToTry = [
+        modelName, // Model người dùng chọn (ví dụ 2.5-flash)
+        "gemini-1.5-flash", // Model cực nhanh, quota cao
+        "gemini-2.0-flash-exp" // Model mới nhất
+      ].filter((m, i, self) => m && self.indexOf(m) === i); // Lọc trùng và rỗng
+
+      console.log(`[AI] Đang phân tích thị trường...`);
       let text = "";
+      let lastError = null;
       
-      try {
-        const model = genAI.getGenerativeModel(
-          { model: modelName },
-          { apiVersion: 'v1' }
-        );
-        
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        text = response.text();
-      } catch (err: any) {
-        console.error(`[AI] ${modelName} thất bại:`, err.message);
-        throw err;
+      for (const currentModel of modelsToTry) {
+        try {
+          const model = genAI.getGenerativeModel(
+            { model: currentModel },
+            { apiVersion: 'v1' }
+          );
+          
+          const result = await model.generateContent(prompt);
+          const response = await result.response;
+          text = response.text();
+          
+          if (text) {
+            console.log(`✅ [AI] Thành công với model: ${currentModel}`);
+            break; 
+          }
+        } catch (err: any) {
+          lastError = err;
+          if (err.message.includes("429")) {
+            console.warn(`⚠️ [AI] Model ${currentModel} hết lượt (Quota), đang thử model khác...`);
+          } else {
+            console.error(`❌ [AI] Model ${currentModel} lỗi:`, err.message);
+          }
+          continue; // Thử model tiếp theo trong danh sách
+        }
       }
       
-      if (!text) throw new Error("AI không trả về nội dung.");
+      if (!text) {
+        throw new Error(lastError?.message || "Tất cả model AI đều từ chối hoặc hết tài nguyên.");
+      }
       
       // Xử lý text để lấy JSON (đôi khi AI bao quanh bởi ```json ... ```)
       const jsonMatch = text.match(/\{[\s\S]*\}/);
