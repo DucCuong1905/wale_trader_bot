@@ -199,7 +199,8 @@ function checkAbsorption(lastBar: any[]) {
   const [, o, h, l, c] = lastBar;
   const body = Math.abs(c - o);
   const wick = (h - l) - body;
-  return wick > body * 2;
+  // Relaxed absorption: wick must be greater than body (previously body * 2)
+  return wick > body;
 }
 
 function getOrderbookSignal() {
@@ -212,6 +213,7 @@ function getOrderbookSignal() {
 
 function startWS() {
   const ws = new WebSocket("wss://ws.bitget.com/v2/ws/public");
+  let pingInterval: any;
 
   ws.on('open', () => {
     console.log("🔌 Connected to Bitget WS");
@@ -223,11 +225,21 @@ function startWS() {
         { instType: "USDT-FUTURES", channel: "ticker", instId: SYMBOL_ID }
       ]
     }));
+
+    // Heartbeat
+    pingInterval = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send("ping");
+      }
+    }, 20000);
   });
 
   ws.on('message', (data) => {
     try {
-      const parsed = JSON.parse(data.toString());
+      const msg = data.toString();
+      if (msg === "pong") return;
+      
+      const parsed = JSON.parse(msg);
       if (parsed.action === 'snapshot' || parsed.action === 'update') {
         const d = parsed.data[0];
         if (d.bids) {
@@ -251,6 +263,7 @@ function startWS() {
   });
   ws.on('close', () => {
     botState.isWsConnected = false;
+    if (pingInterval) clearInterval(pingInterval);
     setTimeout(startWS, 5000);
   });
 }
@@ -346,8 +359,17 @@ async function traderLoop() {
       return;
     }
 
+    if (botState.lastPrice === 0) {
+      console.log("⏳ Waiting for WebSocket price data...");
+      setTimeout(traderLoop, 5000);
+      return;
+    }
+
     const bars = await ex.fetchOHLCV(PAIR, '15m', 100);
-    if (!bars || bars.length < 30) return;
+    if (!bars || bars.length < 30) {
+      setTimeout(traderLoop, 10000);
+      return;
+    }
 
     const adx = calcADX(bars, 14);
     const { eqHigh, eqLow } = getLiquidity(bars);
@@ -358,8 +380,8 @@ async function traderLoop() {
     const obRatio = botState.ask !== 0 ? (botState.bid / botState.ask).toFixed(2) : "1.00";
 
     // Detailed Log for debugging why no trades are happening
-    if (Date.now() - botState.lastTradeTime > COOLDOWN_MS) {
-       console.log(`[ANALYSIS] Price: ${botState.lastPrice} | ADX: ${adx.toFixed(1)} (Need >15) | Sweep: ${sweepLow ? "LOW" : sweepHigh ? "HIGH" : "NONE"} | Absorb: ${absorb} | OB Ratio: ${obRatio}`);
+    if (botState.lastPrice > 0 && (Date.now() - botState.lastTradeTime > COOLDOWN_MS)) {
+       console.log(`[ANALYSIS] Price: ${botState.lastPrice} | ADX: ${adx.toFixed(1)} (Min 15) | Sweep: ${sweepLow ? "LOW" : sweepHigh ? "HIGH" : "NONE"} | Absorb: ${absorb} | OB Ratio: ${obRatio}`);
     }
 
     let signal: 'LONG' | 'SHORT' | null = null;
@@ -383,7 +405,8 @@ async function traderLoop() {
 
         if (size > 0) {
           sendTelegram(`🚀 *VÀO LỆNH ${signal}*\n💰 Giá: ${entry}\n🛑 SL: ${sl.toFixed(1)}\n🎯 TP: ${tp.toFixed(1)}`);
-          const aiEval = await getAIAnalysis(signal, entry, botState.bid / botState.ask, bars);
+          const currentRatio = botState.ask !== 0 ? botState.bid / botState.ask : 1.0;
+          const aiEval = await getAIAnalysis(signal, entry, currentRatio, bars);
           botState.aiReasoning = aiEval.reason;
 
           if (aiEval.decision === "REJECT") {
