@@ -247,8 +247,36 @@ function getExchange() {
       secret,
       password,
       enableRateLimit: true,
-      options: { defaultType: 'future' }
+      options: { 
+        defaultType: 'future',
+        // Force one-way mode for Bitget if needed via options if possible
+      }
     });
+    
+    // Ép chế độ One-way (Unilateral) để tránh lỗi 40774
+    (async () => {
+      try {
+        console.log(`[INIT] Cấu hình tài khoản cho ${PAIR}...`);
+        
+        // 1. Thiết lập Đòn bẩy (Ví dụ: 10x - bạn có thể điều chỉnh)
+        try {
+          await (exchange as ccxt.bitget).setLeverage(10, PAIR);
+          console.log(`✅ Đòn bẩy thiết lập: 10x`);
+        } catch (e) {}
+
+        // 2. Thiết lập Margin Mode là Isolated để quản lý rủi ro tốt hơn
+        try {
+          await (exchange as ccxt.bitget).setMarginMode('isolated', PAIR);
+          console.log(`✅ Chế độ ký quỹ: Isolated`);
+        } catch (e) {}
+
+        // 3. Thiết lập chế độ One-way
+        await (exchange as any).setPositionMode(false, PAIR); 
+        console.log(`✅ Chế độ vị thế: One-way (Unilateral)`);
+      } catch (e: any) {
+        console.log(`ℹ️ Cấu hình tài khoản: ${e.message || 'Done'}`);
+      }
+    })();
   }
   return exchange;
 }
@@ -499,13 +527,28 @@ async function traderLoop() {
 
           sendTelegram(`🤖 *AI XÁC NHẬN LỆNH* (${aiEval.confidence}%)\nLý do: ${aiEval.reason}`);
           try {
-            console.log(`[ORDER] Placing ${signal} order. Size: ${size.toFixed(4)}`);
-            await ex.createMarketOrder(PAIR, signal === 'LONG' ? 'buy' : 'sell', size);
+            const amount = ex.amountToPrecision(PAIR, size);
+            console.log(`[ORDER] Placing ${signal} order. Size: ${amount}`);
             
-            // Set TP and SL
+            // Mở vị thế (Market Order)
+            await ex.createMarketOrder(PAIR, signal === 'LONG' ? 'buy' : 'sell', parseFloat(amount));
+            
+            // Đợi một chút để lệnh Market khớp hoàn toàn trước khi đặt TP/SL
+            await new Promise(r => setTimeout(r, 1000));
+
+            // Set TP và SL sử dụng reduceOnly: true cho chế độ One-way
             try {
-              await ex.createOrder(PAIR, 'limit', signal === 'LONG' ? 'sell' : 'buy', size, tp);
-              await ex.createOrder(PAIR, 'stop_market', signal === 'LONG' ? 'sell' : 'buy', size, undefined, { 'stopPrice': sl, 'reduceOnly': true });
+              // Chốt lời (Limit Order)
+              const tpPrice = ex.priceToPrecision(PAIR, tp);
+              await ex.createOrder(PAIR, 'limit', signal === 'LONG' ? 'sell' : 'buy', parseFloat(amount), parseFloat(tpPrice), { 'reduceOnly': true });
+              
+              // Cắt lỗ (Stop Market Order)
+              const slPrice = ex.priceToPrecision(PAIR, sl);
+              await ex.createOrder(PAIR, 'stop_market', signal === 'LONG' ? 'sell' : 'buy', parseFloat(amount), undefined, { 
+                'stopPrice': parseFloat(slPrice), 
+                'reduceOnly': true 
+              });
+              
               console.log(`[ORDER] TP/SL set successfully.`);
             } catch (tpslErr: any) {
               console.error("⚠️ TP/SL Order Error:", tpslErr.message);
