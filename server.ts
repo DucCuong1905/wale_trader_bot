@@ -162,18 +162,31 @@ Trả về DUY NHẤT một đối tượng JSON (Lý do bằng TIẾNG VIỆT):
   "confidence": 0-100
 }`;
 
-      // Sử dụng mặc định (v1beta hoặc v1 tùy SDK) để tránh 404
-      // Giải pháp ổn định nhất: Dùng v1 và bóc tách JSON thủ công để tránh lỗi cấu hình API
-      const model = genAI.getGenerativeModel(
-        { model: modelName },
-        { apiVersion: 'v1' } 
-      );
+      const modelNames = [modelName, "gemini-1.5-flash-latest", "gemini-1.5-pro", "gemini-2.0-flash-exp"];
+      let text = "";
       
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      let text = response.text();
+      for (const currentModelName of modelNames) {
+        try {
+          console.log(`[AI] Attempting with model: ${currentModelName}...`);
+          const model = genAI.getGenerativeModel({ model: currentModelName });
+          const result = await model.generateContent(prompt);
+          const response = await result.response;
+          text = response.text();
+          if (text) {
+            console.log(`[AI] Success with model: ${currentModelName}`);
+            break; 
+          }
+        } catch (err: any) {
+          console.error(`[AI] Model ${currentModelName} failed:`, err.message);
+          lastError = err;
+          // Nếu không phải lỗi 404 (ví dụ lỗi Key) thì không cần thử model khác
+          if (!err.message.includes("404") && !err.message.includes("not found")) {
+             break;
+          }
+        }
+      }
       
-      if (!text) throw new Error("Empty AI response");
+      if (!text) throw lastError || new Error("All models failed or empty response");
       
       // Xử lý text để lấy JSON (đôi khi AI bao quanh bởi ```json ... ```)
       const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -555,12 +568,21 @@ async function startServer() {
     console.log("-----------------------------------------");
     console.log("🤖 Đang kiểm tra kết nối AI...");
     try {
-      // Thử liệt kê model trước
-      console.log("📂 Đang kiểm tra danh sách models...");
-      // Lưu ý: ListModels yêu cầu quyền nhất định, nếu lỗi ta bỏ qua
-      // Nhưng ta cứ log thông tin key trước
       console.log(`🔑 Key Prefix: ${aiKey.substring(0, 6)}...`);
       
+      // Thử liệt kê models (chỉ dùng cho debug)
+      try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${aiKey}`);
+        const data = await response.json();
+        if (data.models) {
+          console.log("📂 Các model khả dụng cho Key này:", data.models.map((m: any) => m.name.replace("models/", "")));
+        } else {
+          console.log("📂 Không thể lấy danh sách model (Có thể Key chưa được kích hoạt Generative Language API)");
+        }
+      } catch (e) {
+        console.log("📂 Lỗi khi check danh sách model");
+      }
+
       const dummyBars = [[Date.now(), 70000, 71000, 69000, 70500, 100]];
       const testEval = await getAIAnalysis("TEST_STARTUP", 70500, 1.2, dummyBars);
       
