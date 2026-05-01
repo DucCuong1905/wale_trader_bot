@@ -281,29 +281,38 @@ function getExchange() {
   return exchange;
 }
 
-function getLiquidity(ohlcv: any[]) {
-  const slice = ohlcv.slice(-6, -1);
-  const highs = slice.map(b => b[2]);
-  const lows = slice.map(b => b[3]);
-  return {
-    eqHigh: Math.max(...highs),
-    eqLow: Math.min(...lows)
-  };
-}
+function detectWhaleSweep(bars: any[]) {
+  if (bars.length < 30) return { sweepHigh: false, sweepLow: false };
+  
+  // Kiểm tra ngược từ nến gần nhất về nến thứ 10
+  for (let i = bars.length - 1; i >= bars.length - 10; i--) {
+    const currentBar = bars[i];
+    const prev20 = bars.slice(i - 20, i);
+    if (prev20.length < 20) continue;
+    
+    const avgVol = prev20.reduce((s, b) => s + b[5], 0) / 20;
+    const [, o, h, l, c, v] = currentBar;
+    
+    // Điều kiện 1: Khối lượng đột biến >= 1.5x trung bình 20 nến trước
+    const isHighVolume = v >= avgVol * 1.5;
+    
+    const body = Math.abs(c - o);
+    const upperWick = h - Math.max(o, c);
+    const lowerWick = Math.min(o, c) - l;
 
-function detectSweep(lastBar: any[], eqHigh: number, eqLow: number) {
-  const [, , h, l, c] = lastBar;
-  const sweepHigh = h > eqHigh && c < eqHigh;
-  const sweepLow = l < eqLow && c > eqLow;
-  return { sweepHigh, sweepLow };
-}
-
-function checkAbsorption(lastBar: any[]) {
-  const [, o, h, l, c] = lastBar;
-  const body = Math.abs(c - o);
-  const wick = (h - l) - body;
-  // Relaxed absorption: wick must be greater than body (previously body * 2)
-  return wick > body;
+    // Điều kiện 2: Bóng nến >= Thân nến
+    // Bullish Rejection (Quét xuống - Sweep Low)
+    if (isHighVolume && lowerWick >= body && lowerWick > upperWick) {
+      return { sweepLow: true, sweepHigh: false, candleIndex: i };
+    }
+    
+    // Bearish Rejection (Quét lên - Sweep High)
+    if (isHighVolume && upperWick >= body && upperWick > lowerWick) {
+      return { sweepLow: false, sweepHigh: true, candleIndex: i };
+    }
+  }
+  
+  return { sweepHigh: false, sweepLow: false };
 }
 
 function getOrderbookSignal() {
@@ -485,20 +494,22 @@ async function traderLoop() {
     }
 
     const adx = calcADX(bars, 14);
-    const { eqHigh, eqLow } = getLiquidity(bars);
-    const lastBar = bars[bars.length - 1];
-    const { sweepHigh, sweepLow } = detectSweep(lastBar, eqHigh, eqLow);
-    const absorb = checkAbsorption(lastBar);
+    const sweepResult = detectWhaleSweep(bars);
+    const sweepLow = sweepResult.sweepLow;
+    const sweepHigh = sweepResult.sweepHigh;
     const obSignal = getOrderbookSignal();
     const obRatio = botState.ask !== 0 ? (botState.bid / botState.ask).toFixed(2) : "1.00";
 
-    // Detailed Log for debugging why no trades are happening
-    console.log(`[PHÂN TÍCH] Giá: ${botState.lastPrice} | ADX: ${adx.toFixed(1)} (Min 25) | Quét: ${sweepLow ? "THẤP" : sweepHigh ? "CAO" : "KHÔNG"} | Hấp thụ: ${absorb ? "CÓ" : "KHÔNG"} | Tỷ lệ OB: ${obRatio}`);
+    // Log chi tiết để theo dõi cú quét mới
+    if (sweepLow || sweepHigh) {
+      console.log(`[!] PHÁT HIỆN WHALE SWEEP: ${sweepLow ? "LONG/BUY" : "SHORT/SELL"} | Volume & Rejection đạt chuẩn.`);
+    }
+
+    console.log(`[PHÂN TÍCH] Giá: ${botState.lastPrice} | ADX: ${adx.toFixed(1)} (Min 25) | Quét Whale: ${sweepLow ? "LOW" : sweepHigh ? "HIGH" : "KHÔNG"} | Tỷ lệ OB: ${obRatio}`);
 
     let signal: 'LONG' | 'SHORT' | null = null;
-    // Adjusted ADX to 25
-    if (sweepLow && obSignal === "BULL" && absorb && adx >= 25) signal = "LONG";
-    if (sweepHigh && obSignal === "BEAR" && absorb && adx >= 25) signal = "SHORT";
+    if (sweepLow && obSignal === "BULL" && adx >= 25) signal = "LONG";
+    if (sweepHigh && obSignal === "BEAR" && adx >= 25) signal = "SHORT";
 
     if (signal) {
       const entry = botState.lastPrice;
