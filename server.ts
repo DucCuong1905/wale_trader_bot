@@ -162,9 +162,14 @@ Trả về DUY NHẤT một đối tượng JSON (Lý do bằng TIẾNG VIỆT):
   "confidence": 0-100
 }`;
 
-      const modelNames = [modelName, "gemini-1.5-flash"];
+      const modelNames = [
+        "gemini-1.5-flash", 
+        "gemini-1.5-flash-latest", 
+        "gemini-2.0-flash-exp", 
+        "gemini-1.5-pro",
+        "gemini-pro"
+      ];
       let text = "";
-      let lastError = null;
       
       for (const currentModelName of modelNames) {
         try {
@@ -177,7 +182,8 @@ Trả về DUY NHẤT một đối tượng JSON (Lý do bằng TIẾNG VIỆT):
         } catch (err: any) {
           lastError = err;
           console.error(`[AI] ${currentModelName} failed:`, err.message);
-          if (err.message.includes("404")) continue;
+          // If it's a 404, we try the next model. If it's an Auth error, we stop.
+          if (err.message.includes("404") || err.message.includes("not found")) continue;
           break; 
         }
       }
@@ -185,8 +191,8 @@ Trả về DUY NHẤT một đối tượng JSON (Lý do bằng TIẾNG VIỆT):
       if (!text) {
         // TRƯỜNG HỢP CUỐI CÙNG: Thử bằng Fetch trực tiếp nếu SDK bị lỗi endpoint
         try {
-          console.log("[AI] Trying direct FETCH as fallback...");
-          const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${aiKey}`;
+          console.log("[AI] Trying direct FETCH (v1beta) as fallback...");
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${aiKey}`;
           const resp = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -589,20 +595,33 @@ async function startServer() {
     try {
       console.log(`🔑 Key Prefix: ${aiKey.substring(0, 6)}...`);
       
-      // Thử liệt kê models (chỉ dùng cho debug)
+      // Thử liệt kê models
       try {
-        const url = `https://generativelanguage.googleapis.com/v1/models?key=${aiKey}`;
-        console.log(`📂 Testing API access: ${url.split("key=")[0]}key=***`);
-        const response = await fetch(url);
-        const data: any = await response.json();
+        const urlV1 = `https://generativelanguage.googleapis.com/v1/models?key=${aiKey}`;
+        const urlV1Beta = `https://generativelanguage.googleapis.com/v1beta/models?key=${aiKey}`;
         
-        if (data.models) {
-          console.log("✅ API Key OK! Các model khả dụng:", data.models.slice(0, 5).map((m: any) => m.name.split("/models/")[1]));
-        } else if (data.error) {
-          console.error(`❌ API Key Error: ${data.error.message} (Status: ${data.error.status})`);
-          if (data.error.message.includes("not found")) {
-            console.error("👉 LỖI: Key của bạn chưa được kích hoạt 'Generative Language API'. Hãy vào https://aistudio.google.com/app/apikey để tạo key mới!");
-          }
+        console.log(`📂 Kiểm tra models available (v1)...`);
+        const resp1 = await fetch(urlV1);
+        const data1: any = await resp1.json();
+        
+        if (data1.models) {
+          console.log("✅ Models (v1):", data1.models.map((m: any) => m.name.split("/models/")[1]).join(", "));
+        } else if (data1.error) {
+          console.log(`⚠️ v1 check error: ${data1.error.message}`);
+        }
+
+        console.log(`📂 Kiểm tra models available (v1beta)...`);
+        const resp2 = await fetch(urlV1Beta);
+        const data2: any = await resp2.json();
+        
+        if (data2.models) {
+          console.log("✅ Models (v1beta):", data2.models.map((m: any) => m.name.split("/models/")[1]).join(", "));
+        }
+        
+        if (!data1.models && !data2.models) {
+          console.error("❌ KHÔNG TÌM THẤY MODEL NÀO. Vui lòng kiểm tra:");
+          console.error("1. API Key đã được kích hoạt 'Generative Language API' chưa?");
+          console.error("2. Key có bị giới hạn IP/Referer không?");
         }
       } catch (e: any) {
         console.log("📂 Lỗi khi check danh sách model:", e.message);
