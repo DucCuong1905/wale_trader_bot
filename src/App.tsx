@@ -100,7 +100,7 @@ export default function App() {
       <div className="min-h-screen bg-[#0a0a0c] text-white flex items-center justify-center font-sans">
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-400 animate-pulse font-mono text-xs tracking-widest uppercase">Initializing Neural Engine...</p>
+          <p className="text-gray-400 animate-pulse font-mono text-xs tracking-widest uppercase">Đang khởi tạo hệ thống...</p>
         </div>
       </div>
     );
@@ -111,13 +111,13 @@ export default function App() {
       <div className="min-h-screen bg-[#0a0a0c] text-white flex items-center justify-center font-sans p-6">
         <div className="max-w-md w-full bg-red-500/10 border border-red-500/20 p-8 rounded-3xl text-center">
           <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-red-400 mb-2">Connection Failure</h2>
+          <h2 className="text-xl font-bold text-red-400 mb-2">Lỗi Kết Nối</h2>
           <p className="text-sm text-red-400/70 mb-6">{error}</p>
           <button 
             onClick={() => window.location.reload()}
             className="px-6 py-2 bg-red-500 text-white rounded-full text-sm font-bold hover:bg-red-600 transition-colors"
           >
-            Retry Connection
+            Thử Kết Nối Lại
           </button>
         </div>
       </div>
@@ -135,7 +135,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="font-bold text-lg leading-none">WhaleBot <span className="text-blue-500">v2.1</span></h1>
-              <span className="text-[10px] text-blue-400 font-mono tracking-widest uppercase opacity-70">Deep Liquidity Engine</span>
+              <span className="text-[10px] text-blue-400 font-mono tracking-widest uppercase opacity-70">Hệ Thống Thanh Khoản Sâu</span>
             </div>
           </div>
 
@@ -147,7 +147,7 @@ export default function App() {
             <div className="h-8 w-px bg-white/10 hidden sm:block" />
             <div className="flex items-center gap-2 bg-green-500/10 px-3 py-1.5 rounded-full border border-green-500/20">
               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-              <span className="text-xs font-semibold text-green-400"> LIVE API</span>
+              <span className="text-xs font-semibold text-green-400"> TRỰC TIẾP</span>
             </div>
           </div>
         </div>
@@ -159,23 +159,23 @@ export default function App() {
           {/* Quick Stats Grid */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <StatCard 
-              label="Account Balance" 
+              label="Số Dư Tài Khoản" 
               value={`$${(data?.balance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`} 
               change={data?.balance ? "+0.0%" : ""} 
               positive={true} 
               icon={<Wallet className="w-4 h-4" />} 
             />
             <StatCard 
-              label="Bot Status" 
-              value={data?.status === 'running' ? 'Active' : 'Idle'} 
-              change={data?.in_position ? "POSITION OPEN" : "WAITING"} 
+              label="Trạng Thái Bot" 
+              value={data?.status === 'running' ? 'Hoạt Động' : 'Nghỉ'} 
+              change={data?.in_position ? "ĐANG GIỮ LỆNH" : "ĐANG ĐỢI"} 
               positive={data?.status === 'running'} 
               icon={<TrendingUp className="w-4 h-4" />} 
             />
             <StatCard 
-              label="Last Detect" 
-              value={signals[0]?.type || "None"} 
-              subValue={signals[0] ? `At ${signals[0].price}` : "No signals yet"}
+              label="Tín Hiệu Cuối" 
+              value={signals[0]?.type || "Trống"} 
+              subValue={signals[0] ? `Tại ${signals[0].price}` : "Chưa có tín hiệu"}
               icon={<Activity className="w-4 h-4" />} 
             />
           </div>
@@ -186,10 +186,10 @@ export default function App() {
               <div className="p-2 bg-blue-600 rounded-lg shadow-[0_0_15px_rgba(37,99,235,0.4)]">
                 <Brain className="w-5 h-5 text-white" />
               </div>
-              <h3 className="font-semibold text-blue-100">AI Market Context Analysis</h3>
+              <h3 className="font-semibold text-blue-100">AI Phân Tích Bối Cảnh</h3>
             </div>
             <p className="text-blue-100/70 text-sm italic leading-relaxed">
-              "{data?.ai_reasoning || 'Waiting for the next signal to analyze market context with Gemini AI...'}"
+              "{data?.ai_reasoning || 'Đang chờ tín hiệu tiếp theo để phân tích bối cảnh thị trường bằng Gemini AI...'}"
             </p>
           </div>
 
@@ -200,12 +200,12 @@ export default function App() {
           <section className="bg-[#0f0f13] border border-white/5 rounded-2xl p-6 shadow-xl relative overflow-hidden">
             <div className="flex items-center justify-between mb-8">
               <div>
-                <h3 className="text-lg font-semibold">Growth Performance</h3>
-                <p className="text-sm text-gray-400">Track your equity curve over time</p>
+                <h3 className="text-lg font-semibold">Tăng Trưởng Tài Sản</h3>
+                <p className="text-sm text-gray-400">Theo dõi đường cong vốn của bạn</p>
               </div>
               <div className="flex gap-2">
                 <button className="px-3 py-1 rounded-md bg-white/5 hover:bg-white/10 text-xs transition-colors">1H</button>
-                <button className="px-3 py-1 rounded-md bg-blue-600 text-xs transition-colors font-semibold">ALL</button>
+                <button className="px-3 py-1 rounded-md bg-blue-600 text-xs transition-colors font-semibold">TẤT CẢ</button>
               </div>
             </div>
             
@@ -251,23 +251,23 @@ export default function App() {
           <section className="bg-[#0f0f13] border border-white/5 rounded-2xl overflow-hidden">
             <div className="p-6 border-b border-white/5 flex items-center gap-2">
               <History className="w-5 h-5 text-gray-400" />
-              <h3 className="font-semibold">Execution History</h3>
+              <h3 className="font-semibold">Lịch Sử Khớp Lệnh</h3>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left">
                 <thead className="bg-white/2 text-[10px] uppercase tracking-wider text-gray-400">
                   <tr>
-                    <th className="px-6 py-4 font-semibold">Time</th>
-                    <th className="px-6 py-4 font-semibold">Type</th>
-                    <th className="px-6 py-4 font-semibold">Details</th>
-                    <th className="px-6 py-4 font-semibold text-right">Result</th>
+                    <th className="px-6 py-4 font-semibold">Thời Gian</th>
+                    <th className="px-6 py-4 font-semibold">Loại</th>
+                    <th className="px-6 py-4 font-semibold">Chi Tiết</th>
+                    <th className="px-6 py-4 font-semibold text-right">Kết Quả</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
                   {history.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="px-6 py-12 text-center text-gray-500 text-sm">
-                        No trade history available yet.
+                        Chưa có lịch sử giao dịch.
                       </td>
                     </tr>
                   ) : history.map((item, idx) => (
@@ -282,13 +282,13 @@ export default function App() {
                           item.status === 'CLOSED' ? "bg-purple-500/10 border-purple-500/30 text-purple-400" :
                           "bg-gray-500/10 border-gray-500/30 text-gray-400"
                         )}>
-                          {item.status}
+                          {item.status === 'EXECUTED' ? 'KHỚP LỆNH' : item.status === 'CLOSED' ? 'ĐÃ ĐÓNG' : item.status}
                         </span>
                       </td>
                       <td className="px-6 py-4 font-mono text-sm">
                         {item.status === 'EXECUTED' && `${item.type} @ ${item.price}`}
                         {item.status === 'CLOSED' && `PnL: $${item.pnl?.toFixed(2)}`}
-                        {item.status === 'AI_REJECTED' && `REJECTED: ${item.reason}`}
+                        {item.status === 'AI_REJECTED' && `TỪ CHỐI: ${item.reason}`}
                       </td>
                       <td className={cn(
                         "px-6 py-4 text-right font-mono text-sm font-bold",
@@ -311,15 +311,15 @@ export default function App() {
             <div className="flex items-center justify-between mb-6">
               <h3 className="font-semibold flex items-center gap-2">
                 <Shield className="w-5 h-5 text-blue-400" />
-                Sentiment Engine
+                Chỉ Báo Tâm Lý
               </h3>
               <span className="text-[10px] text-gray-500 font-mono tracking-tighter">BITGET.WS.V2</span>
             </div>
 
             <div className="space-y-6">
               <div className="flex justify-between text-xs mb-2">
-                <span className="text-green-400 font-bold uppercase tracking-widest">Buy Pressure</span>
-                <span className="text-red-400 font-bold uppercase tracking-widest">Sell Pressure</span>
+                <span className="text-green-400 font-bold uppercase tracking-widest">Lực Mua</span>
+                <span className="text-red-400 font-bold uppercase tracking-widest">Lực Bán</span>
               </div>
               <div className="h-4 w-full bg-white/5 rounded-full flex overflow-hidden ring-4 ring-white/2">
                 <motion.div 
@@ -335,14 +335,14 @@ export default function App() {
               </div>
               <div className="flex justify-between items-baseline">
                 <span className="text-3xl font-bold font-mono tracking-tighter">{(bidRatio).toFixed(2)}</span>
-                <span className="text-xs text-gray-400">Orderbook Ratio</span>
+                <span className="text-xs text-gray-400">Tỷ Lệ Sổ Lệnh</span>
               </div>
               {bidRatio > 1.5 && (
                 <div className="p-3 bg-green-500/10 border border-green-500/20 rounded-xl flex items-center gap-3">
                   <TrendingUp className="w-5 h-5 text-green-400" />
                   <div>
-                    <h4 className="text-xs font-bold text-green-400 uppercase tracking-wide">Heavy Accumulation</h4>
-                    <p className="text-[10px] text-green-400/70">Whale buying detected in lower books</p>
+                    <h4 className="text-xs font-bold text-green-400 uppercase tracking-wide">Tích Lũy Mạnh</h4>
+                    <p className="text-[10px] text-green-400/70">Phát hiện cá voi đang gom hàng</p>
                   </div>
                 </div>
               )}
@@ -354,13 +354,13 @@ export default function App() {
             <div className="flex items-center justify-between mb-6">
               <h3 className="font-semibold flex items-center gap-2 text-blue-400">
                 <Zap className="w-5 h-5" />
-                Signal Log
+                Dòng Tín Hiệu
               </h3>
               <button 
                 onClick={addMockSignal}
                 className="p-1 px-2 text-[10px] font-bold bg-white/5 hover:bg-white/10 rounded transition-all active:scale-95"
               >
-                TEST DETECT
+                TEST TÍN HIỆU
               </button>
             </div>
 
@@ -368,7 +368,7 @@ export default function App() {
               <AnimatePresence>
                 {signals.length === 0 ? (
                   <div className="text-center py-12 border-2 border-dashed border-white/5 rounded-xl">
-                    <p className="text-xs text-gray-500">Waiting for liquidity sweep...</p>
+                    <p className="text-xs text-gray-500">Đang chờ quét thanh khoản...</p>
                   </div>
                 ) : signals.map((signal, idx) => (
                   <motion.div 
@@ -403,10 +403,10 @@ export default function App() {
           <div className="p-6 bg-red-950/20 border border-red-500/20 rounded-2xl">
             <div className="flex items-center gap-3 mb-2">
               <AlertTriangle className="w-5 h-5 text-red-500" />
-              <h4 className="text-sm font-bold text-red-500 uppercase tracking-wide">Risk Management</h4>
+              <h4 className="text-sm font-bold text-red-500 uppercase tracking-wide">Quản Trị Rủi Ro</h4>
             </div>
             <p className="text-xs text-red-400/80 leading-relaxed">
-              Bot logic depends on external liquidity sweeps. Always verify SL is confirmed by API before leaving unattended. Current leverage safety: <strong>Low</strong>.
+              Bot dựa trên các cú quét thanh khoản thực tế. Luôn kiểm tra lệnh SL đã được API xác nhận. Độ an toàn đòn bẩy hiện tại: <strong>THẤP</strong>.
             </p>
           </div>
         </div>
@@ -414,7 +414,7 @@ export default function App() {
 
       {/* Footer / Connection Status */}
       <footer className="max-w-[1400px] mx-auto px-6 py-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-4">
-        <p className="text-xs text-gray-500">© 2024 WhaleTrade. Licensed for algorithmic use only.</p>
+        <p className="text-xs text-gray-500">© 2024 WhaleTrade. Chỉ dành cho mục đích giao dịch thuật toán.</p>
         <div className="flex items-center gap-6">
           <FooterItem label="IP" value="152.42.***.***" />
           <FooterItem label="Latency" value="42ms" />

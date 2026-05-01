@@ -120,7 +120,7 @@ let botState = {
   lastResetDate: "", // Ngày reset số dư gần nhất
   trades: loadTrades() as any[], // Lịch sử giao dịch
   signals: [] as any[], // Các tín hiệu đã phát hiện
-  aiReasoning: "Awaiting analysis...", // Phân tích gần nhất từ AI
+  aiReasoning: "Đang chờ phân tích...", // Phân tích gần nhất từ AI
   isWsConnected: false // Trạng thái kết nối WebSocket
 };
 
@@ -173,9 +173,9 @@ Trả về DUY NHẤT một đối tượng JSON (Lý do bằng TIẾNG VIỆT):
       for (const currentModelName of modelNames) {
         try {
           if (currentModelName === modelName) {
-            console.log(`[AI] Analyzing with ${currentModelName}...`);
+            console.log(`[AI] Đang phân tích bằng ${currentModelName}...`);
           } else {
-            console.log(`[AI] Falling back to ${currentModelName}...`);
+            console.log(`[AI] Đang thử model dự phòng ${currentModelName}...`);
           }
 
           const model = genAI.getGenerativeModel(
@@ -188,7 +188,7 @@ Trả về DUY NHẤT một đối tượng JSON (Lý do bằng TIẾNG VIỆT):
           text = response.text();
           if (text) {
             if (currentModelName !== modelName) {
-              console.log(`[AI] Success with fallback model: ${currentModelName}`);
+              console.log(`[AI] Thành công với model dự phòng: ${currentModelName}`);
             }
             break;
           }
@@ -198,11 +198,11 @@ Trả về DUY NHẤT một đối tượng JSON (Lý do bằng TIẾNG VIỆT):
           if (currentModelName !== modelNames[modelNames.length - 1]) {
              // Only log 404s if they happen on the first model to show why we are switching
              if (err.message.includes("404")) {
-               console.warn(`[AI] ${currentModelName} not found, trying next...`);
+               console.warn(`[AI] Không tìm thấy ${currentModelName}, đang thử model tiếp theo...`);
              }
              continue;
           }
-          console.error(`[AI] Final model ${currentModelName} failed:`, err.message);
+          console.error(`[AI] Model cuối cùng ${currentModelName} thất bại:`, err.message);
           break; 
         }
       }
@@ -210,7 +210,7 @@ Trả về DUY NHẤT một đối tượng JSON (Lý do bằng TIẾNG VIỆT):
       if (!text) {
         // TRƯỜNG HỢP CUỐI CÙNG: Thử bằng Fetch trực tiếp nếu SDK bị lỗi endpoint
         try {
-          console.log("[AI] Trying direct FETCH (v1beta) as fallback...");
+          console.log("[AI] Đang thử FETCH trực tiếp (v1beta)...");
           const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${aiKey}`;
           const resp = await fetch(url, {
             method: 'POST',
@@ -220,12 +220,12 @@ Trả về DUY NHẤT một đối tượng JSON (Lý do bằng TIẾNG VIỆT):
           const data: any = await resp.json();
           if (data.candidates && data.candidates[0].content) {
             text = data.candidates[0].content.parts[0].text;
-            console.log("[AI] Direct FETCH Success!");
+            console.log("[AI] FETCH trực tiếp THÀNH CÔNG!");
           } else if (data.error) {
-            throw new Error(`Direct Fetch Error: ${data.error.message} (Code: ${data.error.code})`);
+            throw new Error(`Lỗi Fetch trực tiếp: ${data.error.message} (Mã: ${data.error.code})`);
           }
         } catch (fetchErr: any) {
-          console.error("[AI] Direct FETCH failed:", fetchErr.message);
+          console.error("[AI] FETCH trực tiếp thất bại:", fetchErr.message);
           throw lastError || fetchErr;
         }
       }
@@ -296,7 +296,7 @@ function getExchange() {
     const password = getEnv("BG_PASSPHRASE");
 
     if (!apiKey || !secret) {
-      console.warn("⚠️ API keys missing. Bot will run in monitoring mode.");
+      console.warn("⚠️ Thiếu API Key. Bot sẽ chạy ở chế độ chỉ giám sát.");
       return null;
     }
 
@@ -451,13 +451,13 @@ function calcADX(ohlcv: any[], period: number = 14) {
 async function traderLoop() {
   const ex = getExchange();
   if (!ex) {
-    if (botState.isRunning) console.log("🔍 Scanning (Monitoring Mode)...");
+    if (botState.isRunning) console.log("🔍 Đang quét thị trường (Chế độ giám sát)...");
     setTimeout(traderLoop, 10000);
     return;
   }
 
   try {
-    console.log("🔄 Trader Loop tick...");
+    console.log("🔄 Vòng lặp giao dịch đang chạy...");
     const balanceInfo = await ex.fetchBalance();
     const currentBalance = balanceInfo.USDT ? (balanceInfo.USDT as any).total : 0;
     botState.balance = currentBalance;
@@ -472,7 +472,7 @@ async function traderLoop() {
     const dailyLossPercent = botState.dailyStartingBalance > 0 ? (dailyPnL / botState.dailyStartingBalance) : 0;
 
     if (dailyLossPercent <= -MAX_DAILY_LOSS) {
-      console.log(`🛑 Daily loss limit reached (${(dailyLossPercent*100).toFixed(2)}%). Stopping trades for 30m.`);
+      console.log(`🛑 Đã chạm giới hạn lỗ ngày (${(dailyLossPercent*100).toFixed(2)}%). Dừng giao dịch trong 30 phút.`);
       setTimeout(traderLoop, 60000 * 30);
       return;
     }
@@ -501,15 +501,15 @@ async function traderLoop() {
     }
 
     if (botState.lastPrice === 0) {
-      console.log("⏳ Waiting for WebSocket price data...");
+      console.log("⏳ Đang chờ dữ liệu giá từ WebSocket...");
       setTimeout(traderLoop, 5000);
       return;
     }
 
-    console.log(`📊 Fetching candles for ${PAIR}...`);
+    console.log(`📊 Đang tải dữ liệu nến cho ${PAIR}...`);
     const bars = await ex.fetchOHLCV(PAIR, '15m', undefined, 100);
     if (!bars || bars.length < 30) {
-      console.log(`⚠️ Not enough candles (${bars?.length || 0}). Waiting...`);
+      console.log(`⚠️ Không đủ dữ liệu nến (${bars?.length || 0}). Đang chờ...`);
       setTimeout(traderLoop, 10000);
       return;
     }
@@ -523,7 +523,7 @@ async function traderLoop() {
     const obRatio = botState.ask !== 0 ? (botState.bid / botState.ask).toFixed(2) : "1.00";
 
     // Detailed Log for debugging why no trades are happening
-    console.log(`[ANALYSIS] Price: ${botState.lastPrice} | ADX: ${adx.toFixed(1)} (Min 25) | Sweep: ${sweepLow ? "LOW" : sweepHigh ? "HIGH" : "NONE"} | Absorb: ${absorb} | OB Ratio: ${obRatio}`);
+    console.log(`[PHÂN TÍCH] Giá: ${botState.lastPrice} | ADX: ${adx.toFixed(1)} (Min 25) | Quét: ${sweepLow ? "THẤP" : sweepHigh ? "CAO" : "KHÔNG"} | Hấp thụ: ${absorb ? "CÓ" : "KHÔNG"} | Tỷ lệ OB: ${obRatio}`);
 
     let signal: 'LONG' | 'SHORT' | null = null;
     // Adjusted ADX to 25
@@ -587,98 +587,94 @@ async function startServer() {
     next();
   });
 
+  // API routes defined BEFORE Vite middleware and other routes
   app.get("/api/health", (req, res) => res.json({ status: "ok" }));
+  
   app.get("/api/trading/status", (req, res) => {
-    console.log("Serving /api/trading/status");
-    res.json({
-      status: botState.isRunning ? "running" : "idle",
-      symbol: PAIR,
-      last_price: botState.lastPrice || 0,
-      bid_ratio: botState.ask !== 0 ? (botState.bid / botState.ask).toFixed(2) : "1.00",
-      in_position: botState.inPosition,
-      signals: botState.signals.slice(0, 10),
-      balance: botState.balance || 0,
-      ai_reasoning: botState.aiReasoning
-    });
+    try {
+      res.json({
+        status: botState.isRunning ? "running" : "idle",
+        symbol: PAIR,
+        last_price: botState.lastPrice || 0,
+        bid_ratio: botState.ask !== 0 ? (botState.bid / botState.ask).toFixed(2) : "1.00",
+        in_position: botState.inPosition,
+        signals: (botState.signals || []).slice(0, 10),
+        balance: botState.balance || 0,
+        ai_reasoning: botState.aiReasoning || "Đang chờ phân tích..."
+      });
+    } catch (err) {
+      console.error("Error in /api/trading/status:", err);
+      res.status(500).json({ error: "Internal Server Error" });
+    }
   });
 
-  app.get("/api/trading/history", (req, res) => res.json(botState.trades));
+  app.get("/api/trading/history", (req, res) => {
+    try {
+      res.json(botState.trades || []);
+    } catch (err) {
+      console.error("Error in /api/trading/history:", err);
+      res.status(500).json({ error: "Internal Server Error" });
+    }
+  });
 
+  // Start background processes
   startWS();
   traderLoop();
 
-  // --- KIỂM TRA KẾT NỐI AI ---
+  // --- KIỂM TRA KẾT NỐI AI (Background) ---
   (async () => {
     console.log("-----------------------------------------");
     console.log("🤖 Đang kiểm tra kết nối AI...");
     try {
-      console.log(`🔑 Key Prefix: ${aiKey.substring(0, 6)}...`);
-      
       // Thử liệt kê models
       try {
         const urlV1 = `https://generativelanguage.googleapis.com/v1/models?key=${aiKey}`;
-        const urlV1Beta = `https://generativelanguage.googleapis.com/v1beta/models?key=${aiKey}`;
-        
-        console.log(`📂 Kiểm tra models available (v1)...`);
-        const resp1 = await fetch(urlV1);
-        const data1: any = await resp1.json();
-        
-        if (data1.models) {
-          console.log("✅ Models (v1):", data1.models.map((m: any) => m.name.split("/models/")[1]).join(", "));
-        } else if (data1.error) {
-          console.log(`⚠️ v1 check error: ${data1.error.message}`);
+        const resp = await fetch(urlV1);
+        const data: any = await resp.json();
+        if (data.models) {
+          console.log("✅ AI API OK! Models (v1):", data.models.slice(0, 3).map((m: any) => m.name.split("/models/")[1]).join(", "));
         }
-
-        console.log(`📂 Kiểm tra models available (v1beta)...`);
-        const resp2 = await fetch(urlV1Beta);
-        const data2: any = await resp2.json();
-        
-        if (data2.models) {
-          console.log("✅ Models (v1beta):", data2.models.map((m: any) => m.name.split("/models/")[1]).join(", "));
-        }
-        
-        if (!data1.models && !data2.models) {
-          console.error("❌ KHÔNG TÌM THẤY MODEL NÀO. Vui lòng kiểm tra:");
-          console.error("1. API Key đã được kích hoạt 'Generative Language API' chưa?");
-          console.error("2. Key có bị giới hạn IP/Referer không?");
-        }
-      } catch (e: any) {
-        console.log("📂 Lỗi khi check danh sách model:", e.message);
-      }
+      } catch (e) {}
 
       const dummyBars = [[Date.now(), 70000, 71000, 69000, 70500, 100]];
       const testEval = await getAIAnalysis("TEST_STARTUP", 70500, 1.2, dummyBars);
       
       if (testEval && testEval.decision && !testEval.reason.includes("AI Service Error")) {
         console.log(`✅ Kết nối AI thành công! Quyết định: ${testEval.decision}`);
-        console.log(`📝 AI trả lời: ${testEval.reason}`);
-        botState.aiReasoning = testEval.reason; // Update UI with test result
+        botState.aiReasoning = testEval.reason;
       } else {
         console.error("❌ AI chưa hoạt động ổn định. Lý do:", testEval.reason);
       }
     } catch (err: any) {
       console.error("❌ Lỗi nghiêm trọng khi khởi tạo AI:", err.message);
     }
-    console.log("-----------------------------------------");
   })();
-  
+
   // --- BÁO CÁO ĐỊNH KỲ (5 PHÚT) ---
   setInterval(() => {
     const wsStatus = botState.isWsConnected ? "✅ Đang kết nối" : "❌ Mất kết nối";
-    const statusMsg = `📊 *BÁO CÁO TRẠNG THÁI (5P)*
+    const statusMsg = `📊 *BÁO CÁO TRẠNG THÁI*
 🌐 WebSocket: ${wsStatus}
 💰 Giá BTC: $${botState.lastPrice.toFixed(2)}
 ⚖️ Bid/Ask: ${(botState.bid / (botState.ask || 1)).toFixed(2)}
 💼 Vị thế: ${botState.inPosition ? "Đang giữ lệnh" : "Trống"}
 💵 Số dư: $${botState.balance.toFixed(2)}`;
-    
     sendTelegram(statusMsg);
-  }, 300000); // 5 phút = 300,000ms
+  }, 300000);
 
-  sendTelegram("🐳 *Whale Bot Started (Sync)*\nBot đã đồng bộ và đang hoạt động...");
+  sendTelegram("🐳 *Whale Bot Đã Khởi Chạy*\nBot đã đồng bộ và bắt đầu hoạt động...");
 
+  // Listen on PORT
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`🚀 Trading Server running on http://localhost:${PORT}`);
+  });
+
+  // Vite middleware or static serving
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
+    const vite = await createViteServer({ 
+      server: { middlewareMode: true }, 
+      appType: "spa" 
+    });
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
@@ -688,8 +684,10 @@ async function startServer() {
     }
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`🚀 Trading Server running on http://localhost:${PORT}`);
+  // Error handling middleware
+  app.use((err: any, req: any, res: any, next: any) => {
+    console.error("Express Error Handler:", err);
+    res.status(500).send("Something broke!");
   });
 }
 
