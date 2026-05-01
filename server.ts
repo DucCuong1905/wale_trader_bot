@@ -6,8 +6,9 @@ import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import * as ccxt from "ccxt";
 import WebSocket from "ws";
+import cors from "cors";
 
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 dotenv.config();
 
@@ -15,8 +16,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // --- AI CONFIG ---
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
-const modelName = "gemini-2.0-flash"; // Sử dụng tên model ổn định trong AI Studio
+const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+const modelName = "gemini-2.0-flash"; 
 
 // --- CẤU HÌNH GIAO DỊCH (TRADING CONSTANTS) ---
 const PAIR = "BTC/USDT:USDT"; // Cặp giao dịch (BTC Futures trên Bitget)
@@ -393,10 +394,19 @@ async function traderLoop() {
 async function startServer() {
   const app = express();
   const PORT = 3000;
+  
+  app.use(cors());
   app.use(express.json());
+
+  // Logging middleware
+  app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    next();
+  });
 
   app.get("/api/health", (req, res) => res.json({ status: "ok" }));
   app.get("/api/trading/status", (req, res) => {
+    console.log("Serving /api/trading/status");
     res.json({
       status: botState.isRunning ? "running" : "idle",
       symbol: PAIR,

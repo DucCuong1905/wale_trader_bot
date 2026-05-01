@@ -1,28 +1,46 @@
 #!/bin/bash
 
-# 1. Kéo code mới nhất từ GitHub
-echo "🚀 Đang kéo code mới từ GitHub..."
+# --- CẤU HÌNH ---
+APP_NAME="whale-bot"
+
+echo "------------------------------------------------"
+echo "🚀 ĐANG CẬP NHẬT WHALE BOT..."
+echo "------------------------------------------------"
+
+# 1. Dừng Bot cũ (nếu có)
+echo "🛑 Đang dừng Bot hiện tại..."
+pm2 stop $APP_NAME 2>/dev/null || true
+pm2 delete $APP_NAME 2>/dev/null || true
+
+# 2. Cập nhật code từ GitHub
+echo "📂 Đang kéo code mới nhất..."
+git reset --hard HEAD
 git pull origin main
 
-# 2. Cài đặt các thư viện mới (nếu có)
-echo "📦 Đang cài đặt dependencies..."
+# 3. Cài đặt thư viện
+echo "📦 Cài đặt dependencies (npm install)..."
 npm install
 
-# 3. Build lại ứng dụng
-echo "🏗️ Đang build ứng dụng..."
+# 4. Build Frontend (Vite)
+echo "🏗️ Đang build lại Frontend..."
 npm run build
 
-# 4. Khởi động lại service bằng PM2
-echo "🔄 Dọn dẹp triệt để và khởi động lại Bot..."
-# Xóa các process cũ có thể gây xung đột (whale-bot, whale-bo, v.v.)
-pm2 delete whale-bot whale-bo 2>/dev/null || true
-# Xóa sạch logs cũ
+# 5. Kiểm tra file server.ts
+if [ ! -f "server.ts" ]; then
+    echo "❌ LỖI: Không tìm thấy file server.ts!"
+    exit 1
+fi
+
+# 6. Khởi động lại Bot bằng PM2 (Dùng npx tsx để chạy TypeScript trực tiếp)
+echo "🔄 Đang khởi động lại Bot bằng PM2..."
 pm2 flush
+pm2 start "npx tsx server.ts" --name "$APP_NAME"
 
-# Khởi động Bot bằng npx tsx
-pm2 start "npx tsx server.ts" --name "whale-bot"
-
-# 5. Lưu trạng thái PM2
+# 7. Lưu cấu hình PM2
 pm2 save
 
-echo "✅ Đã cập nhật xong và Bot đang chạy! Dùng lệnh 'pm2 logs whale-bot' để xem log mới."
+echo "------------------------------------------------"
+echo "✅ CẬP NHẬT HOÀN TẤT!"
+echo "------------------------------------------------"
+echo "👉 Xem log Bot bằng lệnh: pm2 logs $APP_NAME"
+echo "------------------------------------------------"
