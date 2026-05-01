@@ -20,31 +20,35 @@ const getEnv = (key: string) => {
   const val = process.env[key];
   if (!val) return "";
   
-  let cleaned = val.trim();
+  // Loại bỏ mọi ký tự lạ, xuống dòng, khoảng trắng ở hai đầu
+  let cleaned = val.trim().replace(/[\n\r]/g, "");
   
-  // Xử lý trường hợp người dùng paste cả dòng "KEY=VALUE" vào giá trị của biến
-  if (cleaned.startsWith(`${key}=`)) {
-    cleaned = cleaned.substring(key.length + 1).trim();
+  // Xử lý trường hợp người dùng paste "KEY=VALUE"
+  if (cleaned.includes('=') && (cleaned.startsWith(key) || cleaned.includes('_AI_'))) {
+    const parts = cleaned.split('=');
+    cleaned = parts.slice(1).join('=').trim();
   }
   
-  // Bỏ dấu ngoặc kép hoặc đơn bao quanh (phòng trường hợp .env có ngoặc hoặc paste từ UI)
+  // Bỏ ngoặc kép/đơn
   cleaned = cleaned.replace(/^["']|["']$/g, '').trim();
   
-  // Loại bỏ các ký tự ẩn/điều hướng
+  // Chỉ giữ lại các ký tự hợp lệ cho API Key (thường là chữ cái, số, gạch ngang, gạch dưới)
+  // Một số Key có thể có ký tự đặc biệt, nên ta chỉ lọc bỏ các ký tự điều hướng (control characters)
   cleaned = cleaned.replace(/[\x00-\x1F\x7F]/g, '');
   
   return cleaned;
 };
 
+// Ưu tiên dùng GEMINI_API_KEY từ hệ thống nếu có
 const aiKey = getEnv("GEMINI_API_KEY");
-if (!aiKey || aiKey === "MY_GEMINI_API_KEY" || aiKey === "") {
-  console.error("❌ CRITICAL: GEMINI_API_KEY is missing or invalid in .env file!");
+if (!aiKey) {
+  console.error("❌ CRITICAL: GEMINI_API_KEY is missing!");
 } else {
-  // Log độ dài và ký tự đầu cuối để kiểm tra định dạng
-  console.log(`🔑 AI Key Loaded: ${aiKey.substring(0, 6)}...${aiKey.substring(aiKey.length - 4)} (Length: ${aiKey.length})`);
+  console.log(`🔑 AI Key status: OK (Length: ${aiKey.length})`);
 }
 
 const genAI = new GoogleGenerativeAI(aiKey);
+// Thử dùng version ổn định nhất
 const modelName = "gemini-1.5-flash"; 
 
 // --- CẤU HÌNH GIAO DỊCH (TRADING CONSTANTS) ---
@@ -145,10 +149,13 @@ Trả về DUY NHẤT một đối tượng JSON (Lý do bằng TIẾNG VIỆT):
 
       const model = genAI.getGenerativeModel({ 
         model: modelName,
+      }, { apiVersion: 'v1' }); // Cố định phiên bản v1 để tránh v1beta gây lỗi 404
+      
+      // Cấu hình output JSON thông qua generationConfig
+      const result = await model.generateContent({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
         generationConfig: { responseMimeType: "application/json" }
       });
-      
-      const result = await model.generateContent(prompt);
       const response = await result.response;
       const text = response.text();
       
