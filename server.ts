@@ -57,7 +57,7 @@ console.log("-----------------------------------------");
 if (!aiKey) {
   console.error("❌ CRITICAL: GEMINI_API_KEY IS MISSING!");
 } else {
-  console.log(`🚀 AI KEY DETECTED: [${aiKey}]`);
+  console.log(`🚀 AI KEY DETECTED! (Prefix: ${aiKey.substring(0, 6)}...)`);
   console.log(`🚀 Length: ${aiKey.length} characters`);
 }
 console.log("-----------------------------------------");
