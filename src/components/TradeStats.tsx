@@ -34,10 +34,11 @@ export default function TradeStats({ trades }: TradeStatsProps) {
   const stats = useMemo(() => {
     const now = new Date();
     
-    // Filter trades that have PnL (actual closed trades)
-    const closedTrades = trades.filter(t => t.status === 'CLOSED' && t.pnl !== undefined);
+    // Filter trades that have PnL and valid time
+    const closedTrades = trades.filter(t => t.status === 'CLOSED' && t.pnl !== undefined && t.time);
 
     const getGroupKey = (date: Date, p: Period) => {
+      if (isNaN(date.getTime())) return 'Invalid';
       if (p === 'day') {
         return date.toLocaleDateString();
       } else if (p === 'week') {

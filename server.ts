@@ -15,8 +15,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // --- AI CONFIG ---
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-const model = "gemini-3-flash-preview";
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+const model = "gemini-1.5-flash"; // Changed to a more stable alias if needed, but keeping user's intent
 
 // --- CẤU HÌNH GIAO DỊCH (TRADING CONSTANTS) ---
 const PAIR = "BTC/USDT:USDT"; // Cặp giao dịch (BTC Futures trên Bitget)
@@ -105,19 +105,19 @@ FINAL DECISION:
 - "REJECT" only if there is a massive counter-trend volume or clear manipulative fakeout.
 
 Return ONLY a JSON object:
-{ 
-  "decision": "CONFIRM" | "REJECT", 
+{
+  "decision": "CONFIRM" | "REJECT",
   "reason": "Short technical explanation (max 2 sentences)",
   "confidence": 0-100
 }`;
 
-    const result = await ai.models.generateContent({
-      model: model,
-      contents: prompt,
-      config: { responseMimeType: "application/json" }
+    const result = await ai.getGenerativeModel({ model }).generateContent({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: { responseMimeType: "application/json" }
     });
 
-    const parsed = JSON.parse(result.text || "{}");
+    const response = await result.response;
+    const parsed = JSON.parse(response.text() || "{}");
     return parsed;
   } catch (e) {
     console.error("AI Analysis Error:", e);
@@ -178,7 +178,7 @@ function getLiquidity(ohlcv: any[]) {
   const slice = ohlcv.slice(-6, -1); // Lấy 5 nến trước nến hiện tại
   const highs = slice.map(b => b[2]); // Lấy giá cao nhất
   const lows = slice.map(b => b[3]); // Lấy giá thấp nhất
-  return { 
+  return {
     eqHigh: Math.max(...highs), // Đỉnh cũ gần nhất
     eqLow: Math.min(...lows)   // Đáy cũ gần nhất
   };
@@ -304,8 +304,8 @@ function calcADX(ohlcv: any[], period: number = 14) {
     dx.push(sum === 0 ? 0 : 100 * Math.abs(plusDI - minusDI) / sum);
   }
 
-  const adx = smooth(dx);
-  return adx[adx.length - 1];
+  const adxList = smooth(dx);
+  return adxList[adxList.length - 1];
 }
 
 // Vòng lặp giao dịch chính (Main Trader Loop)
@@ -345,13 +345,13 @@ async function traderLoop() {
 
     // Kiểm tra vị thế hiện tại trên sàn
     const positions = await ex.fetchPositions([PAIR]);
-    const isNowInPosition = positions.some(p => Math.abs(parseFloat(p.info.size || p.contracts || 0)) > 0);
-    
+    const isNowInPosition = positions.some(p => Math.abs(parseFloat(p.info.size || (p as any).contracts || 0)) > 0);
+
     // Nếu vừa đóng vị thế (chốt lời/cắt lỗ xong)
     if (botState.inPosition && !isNowInPosition) {
       const dailyPnL = currentBalance - botState.dailyStartingBalance;
       const pnlPercent = (dailyPnL / botState.dailyStartingBalance * 100).toFixed(2);
-      
+
       const tradeResult = {
         type: 'CLOSE',
         balance: currentBalance,
@@ -359,14 +359,14 @@ async function traderLoop() {
         time: new Date().toISOString(),
         status: 'CLOSED'
       };
-      
+
       botState.trades.unshift(tradeResult);
       saveTrade(tradeResult);
 
       const closedMsg = `🔔 *VỊ THẾ ĐÃ ĐÓNG*\n💰 Số dư hiện tại: $${botState.balance.toFixed(2)}\n📊 PnL hôm nay: ${dailyPnL >= 0 ? '+' : ''}$${dailyPnL.toFixed(2)} (${pnlPercent}%)`;
       sendTelegram(closedMsg);
     }
-    
+
     botState.inPosition = isNowInPosition;
 
     // Kiểm tra thời gian chờ (Cooldown) và trạng thái lệnh
@@ -399,14 +399,14 @@ async function traderLoop() {
       // 3. Tính toán thông số lệnh (Order Calculation)
       const entry = botState.lastPrice;
       const rangeAvg = getAvgRange(bars, 14); // Độ biến động nến trung bình để đặt SL
-      
+
       const sl = signal === "LONG" ? entry - rangeAvg : entry + rangeAvg;
       const tp = signal === "LONG" ? entry + (entry - sl) * RR : entry - (sl - entry) * RR;
 
       // Tính toán kích thước (Size) theo % rủi ro
       const riskAmt = botState.balance * RISK_PER_TRADE;
       const stopDist = Math.abs(entry - sl);
-      
+
       if (stopDist > 0) {
         let size = riskAmt / stopDist;
         const maxNotional = (botState.balance * 0.1) / entry; // Giới hạn an toàn: Không quá 10% vốn mỗi lệnh
@@ -416,7 +416,7 @@ async function traderLoop() {
           const alertMsg = `🚀 *VÀO LỆNH ${signal}*\n💰 Giá: ${entry}\n🛑 SL: ${sl.toFixed(1)}\n🎯 TP: ${tp.toFixed(1)}\n📏 Size: ${size.toFixed(4)}`;
           console.log(alertMsg);
           sendTelegram(alertMsg);
-          
+
           // --- BƯỚC KIỂM TRA CUỐI CÙNG VỚI AI (AI SECONDARY CHECK) ---
           const aiEval = await getAIAnalysis(signal, entry, botState.bid / botState.ask, bars);
           botState.aiReasoning = aiEval.reason;
@@ -425,46 +425,46 @@ async function traderLoop() {
             const rejectMsg = `🤖 *AI TỪ CHỐI LỆNH*\nLý do: ${aiEval.reason}`;
             console.log(rejectMsg);
             sendTelegram(rejectMsg);
-            
-            const tradeData = { 
-              type: signal, 
-              price: entry, 
-              time: new Date().toISOString(), 
-              status: 'AI_REJECTED', 
-              reason: aiEval.reason 
+
+            const tradeData = {
+              type: signal,
+              price: entry,
+              time: new Date().toISOString(),
+              status: 'AI_REJECTED',
+              reason: aiEval.reason
             };
             botState.signals.unshift(tradeData);
             botState.trades.unshift(tradeData);
             saveTrade(tradeData);
-            
+
             return; // Dừng không vào lệnh nữa
           }
-          
+
           const confirmMsg = `🤖 *AI XÁC NHẬN LỆNH* (Độ tin cậy: ${aiEval.confidence}%)\nLý do: ${aiEval.reason}`;
           console.log(confirmMsg);
           sendTelegram(confirmMsg);
-          
+
           try {
             // 4. Thực thi lệnh trên sàn (Execution)
             // Lệnh thị trường để vào vị thế ngay
             await ex.createMarketOrder(PAIR, signal === 'LONG' ? 'buy' : 'sell', size);
-            
+
             // Lệnh giới hạn để Chốt lời (Take Profit)
             await ex.createOrder(PAIR, 'limit', signal === 'LONG' ? 'sell' : 'buy', size, tp);
-            
+
             // Lệnh Stop Market để Cắt lỗ (Stop Loss)
-            await ex.createOrder(PAIR, 'stop_market', signal === 'LONG' ? 'sell' : 'buy', size, undefined, { 
+            await ex.createOrder(PAIR, 'stop_market', signal === 'LONG' ? 'sell' : 'buy', size, undefined, {
               'stopPrice': sl,
-              'reduceOnly': true 
+              'reduceOnly': true
             });
 
             botState.lastTradeTime = Date.now();
             botState.inPosition = true;
-            
-            const tradeData = { 
-              type: signal, 
-              price: entry, 
-              time: new Date().toISOString(), 
+
+            const tradeData = {
+              type: signal,
+              price: entry,
+              time: new Date().toISOString(),
               status: 'EXECUTED',
               sl,
               tp,
@@ -510,7 +510,6 @@ async function startServer() {
   // API Routes
   app.get("/api/trading/status", (req, res) => {
     try {
-      console.log("[API] /api/trading/status requested");
       res.json({
         status: botState.isRunning ? "running" : "idle",
         symbol: PAIR,

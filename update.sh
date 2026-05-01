@@ -13,8 +13,9 @@ echo "🏗️ Đang build ứng dụng..."
 npm run build
 
 # 4. Khởi động lại service bằng PM2
-echo "🔄 Đang khởi động lại PM2..."
-pm2 restart whale-bot --update-env
+echo "🔄 Đang kiểm tra và khởi động lại PM2..."
+pm2 delete whale-bot 2>/dev/null
+pm2 start "npm run dev" --name whale-bot
 
 # 5. Lưu trạng thái PM2
 pm2 save
