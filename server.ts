@@ -63,7 +63,7 @@ if (!aiKey) {
 console.log("-----------------------------------------");
 
 const genAI = new GoogleGenerativeAI(aiKey);
-const modelName = "gemini-1.5-flash"; 
+const modelName = "gemini-2.5-flash"; 
 
 // --- CẤU HÌNH GIAO DỊCH (TRADING CONSTANTS) ---
 const PAIR = "BTC/USDT:USDT"; // Cặp giao dịch (BTC Futures trên Bitget)
@@ -162,7 +162,7 @@ Trả về DUY NHẤT một đối tượng JSON (Lý do bằng TIẾNG VIỆT):
 }`;
 
       const modelNames = [
-        "gemini-2.5-flash", 
+        modelName,
         "gemini-2.0-flash-exp", 
         "gemini-1.5-flash", 
         "gemini-1.5-pro"
@@ -172,8 +172,12 @@ Trả về DUY NHẤT một đối tượng JSON (Lý do bằng TIẾNG VIỆT):
       
       for (const currentModelName of modelNames) {
         try {
-          console.log(`[AI] Checking ${currentModelName} (v1)...`);
-          // Ép buộc dùng v1 vì curl của bạn thành công với v1
+          if (currentModelName === modelName) {
+            console.log(`[AI] Analyzing with ${currentModelName}...`);
+          } else {
+            console.log(`[AI] Falling back to ${currentModelName}...`);
+          }
+
           const model = genAI.getGenerativeModel(
             { model: currentModelName },
             { apiVersion: 'v1' }
@@ -183,14 +187,22 @@ Trả về DUY NHẤT một đối tượng JSON (Lý do bằng TIẾNG VIỆT):
           const response = await result.response;
           text = response.text();
           if (text) {
-            console.log(`[AI] Success with ${currentModelName}!`);
+            if (currentModelName !== modelName) {
+              console.log(`[AI] Success with fallback model: ${currentModelName}`);
+            }
             break;
           }
         } catch (err: any) {
           lastError = err;
-          console.error(`[AI] ${currentModelName} failed:`, err.message);
-          // Nếu lỗi 404 thì thử tiếp model khác
-          if (err.message.includes("404") || err.message.includes("not found")) continue;
+          // Silent failure for default model if we have fallbacks
+          if (currentModelName !== modelNames[modelNames.length - 1]) {
+             // Only log 404s if they happen on the first model to show why we are switching
+             if (err.message.includes("404")) {
+               console.warn(`[AI] ${currentModelName} not found, trying next...`);
+             }
+             continue;
+          }
+          console.error(`[AI] Final model ${currentModelName} failed:`, err.message);
           break; 
         }
       }
@@ -511,12 +523,12 @@ async function traderLoop() {
     const obRatio = botState.ask !== 0 ? (botState.bid / botState.ask).toFixed(2) : "1.00";
 
     // Detailed Log for debugging why no trades are happening
-    console.log(`[ANALYSIS] Price: ${botState.lastPrice} | ADX: ${adx.toFixed(1)} (Min 15) | Sweep: ${sweepLow ? "LOW" : sweepHigh ? "HIGH" : "NONE"} | Absorb: ${absorb} | OB Ratio: ${obRatio}`);
+    console.log(`[ANALYSIS] Price: ${botState.lastPrice} | ADX: ${adx.toFixed(1)} (Min 25) | Sweep: ${sweepLow ? "LOW" : sweepHigh ? "HIGH" : "NONE"} | Absorb: ${absorb} | OB Ratio: ${obRatio}`);
 
     let signal: 'LONG' | 'SHORT' | null = null;
-    // Adjusted ADX from 20 to 15 for better sensitivity on 15m
-    if (sweepLow && obSignal === "BULL" && absorb && adx > 15) signal = "LONG";
-    if (sweepHigh && obSignal === "BEAR" && absorb && adx > 15) signal = "SHORT";
+    // Adjusted ADX to 25
+    if (sweepLow && obSignal === "BULL" && absorb && adx >= 25) signal = "LONG";
+    if (sweepHigh && obSignal === "BEAR" && absorb && adx >= 25) signal = "SHORT";
 
     if (signal) {
       const entry = botState.lastPrice;
@@ -640,6 +652,7 @@ async function startServer() {
       if (testEval && testEval.decision && !testEval.reason.includes("AI Service Error")) {
         console.log(`✅ Kết nối AI thành công! Quyết định: ${testEval.decision}`);
         console.log(`📝 AI trả lời: ${testEval.reason}`);
+        botState.aiReasoning = testEval.reason; // Update UI with test result
       } else {
         console.error("❌ AI chưa hoạt động ổn định. Lý do:", testEval.reason);
       }
