@@ -162,31 +162,50 @@ Trả về DUY NHẤT một đối tượng JSON (Lý do bằng TIẾNG VIỆT):
   "confidence": 0-100
 }`;
 
-      const modelNames = [modelName, "gemini-1.5-flash-latest", "gemini-1.5-pro", "gemini-2.0-flash-exp"];
+      const modelNames = [modelName, "gemini-1.5-flash"];
       let text = "";
+      let lastError = null;
       
       for (const currentModelName of modelNames) {
         try {
-          console.log(`[AI] Attempting with model: ${currentModelName}...`);
+          console.log(`[AI] Checking ${currentModelName}...`);
           const model = genAI.getGenerativeModel({ model: currentModelName });
           const result = await model.generateContent(prompt);
           const response = await result.response;
           text = response.text();
-          if (text) {
-            console.log(`[AI] Success with model: ${currentModelName}`);
-            break; 
-          }
+          if (text) break;
         } catch (err: any) {
-          console.error(`[AI] Model ${currentModelName} failed:`, err.message);
           lastError = err;
-          // Nếu không phải lỗi 404 (ví dụ lỗi Key) thì không cần thử model khác
-          if (!err.message.includes("404") && !err.message.includes("not found")) {
-             break;
-          }
+          console.error(`[AI] ${currentModelName} failed:`, err.message);
+          if (err.message.includes("404")) continue;
+          break; 
         }
       }
       
-      if (!text) throw lastError || new Error("All models failed or empty response");
+      if (!text) {
+        // TRƯỜNG HỢP CUỐI CÙNG: Thử bằng Fetch trực tiếp nếu SDK bị lỗi endpoint
+        try {
+          console.log("[AI] Trying direct FETCH as fallback...");
+          const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${aiKey}`;
+          const resp = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+          });
+          const data: any = await resp.json();
+          if (data.candidates && data.candidates[0].content) {
+            text = data.candidates[0].content.parts[0].text;
+            console.log("[AI] Direct FETCH Success!");
+          } else if (data.error) {
+            throw new Error(`Direct Fetch Error: ${data.error.message} (Code: ${data.error.code})`);
+          }
+        } catch (fetchErr: any) {
+          console.error("[AI] Direct FETCH failed:", fetchErr.message);
+          throw lastError || fetchErr;
+        }
+      }
+      
+      if (!text) throw new Error("Could not get any response from AI");
       
       // Xử lý text để lấy JSON (đôi khi AI bao quanh bởi ```json ... ```)
       const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -572,15 +591,21 @@ async function startServer() {
       
       // Thử liệt kê models (chỉ dùng cho debug)
       try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${aiKey}`);
-        const data = await response.json();
+        const url = `https://generativelanguage.googleapis.com/v1/models?key=${aiKey}`;
+        console.log(`📂 Testing API access: ${url.split("key=")[0]}key=***`);
+        const response = await fetch(url);
+        const data: any = await response.json();
+        
         if (data.models) {
-          console.log("📂 Các model khả dụng cho Key này:", data.models.map((m: any) => m.name.replace("models/", "")));
-        } else {
-          console.log("📂 Không thể lấy danh sách model (Có thể Key chưa được kích hoạt Generative Language API)");
+          console.log("✅ API Key OK! Các model khả dụng:", data.models.slice(0, 5).map((m: any) => m.name.split("/models/")[1]));
+        } else if (data.error) {
+          console.error(`❌ API Key Error: ${data.error.message} (Status: ${data.error.status})`);
+          if (data.error.message.includes("not found")) {
+            console.error("👉 LỖI: Key của bạn chưa được kích hoạt 'Generative Language API'. Hãy vào https://aistudio.google.com/app/apikey để tạo key mới!");
+          }
         }
-      } catch (e) {
-        console.log("📂 Lỗi khi check danh sách model");
+      } catch (e: any) {
+        console.log("📂 Lỗi khi check danh sách model:", e.message);
       }
 
       const dummyBars = [[Date.now(), 70000, 71000, 69000, 70500, 100]];
