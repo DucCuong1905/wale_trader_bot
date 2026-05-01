@@ -16,8 +16,16 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // --- AI CONFIG ---
-const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
-const modelName = "gemini-2.0-flash"; 
+const getEnv = (key: string) => (process.env[key] || "").trim().replace(/^["']|["']$/g, '');
+
+const aiKey = getEnv("GEMINI_API_KEY");
+if (!aiKey || aiKey === "MY_GEMINI_API_KEY" || aiKey === "") {
+  console.error("❌ CRITICAL: GEMINI_API_KEY is missing or invalid in .env file!");
+} else {
+  console.log(`🔑 AI Key Loaded: ${aiKey.substring(0, 6)}...${aiKey.substring(aiKey.length - 4)}`);
+}
+const ai = new GoogleGenerativeAI(aiKey);
+const modelName = "gemini-1.5-flash"; 
 
 // --- CẤU HÌNH GIAO DỊCH (TRADING CONSTANTS) ---
 const PAIR = "BTC/USDT:USDT"; // Cặp giao dịch (BTC Futures trên Bitget)
@@ -80,56 +88,75 @@ let botState = {
 
 // --- LOGIC PHÂN TÍCH AI (AI ANALYSIS) ---
 async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number, bars: any[]) {
-  try {
-    const context = bars.slice(-20).map((b) => {
-      const time = new Date(b[0]).toLocaleTimeString();
-      return `[${time}] O:${b[1]} H:${b[2]} L:${b[3]} C:${b[4]} V:${b[5]}`;
-    }).join("\n");
+  const maxRetries = 3;
+  let lastError: any = null;
 
-    const prompt = `You are an aggressive high-frequency whale trader. Your goal is to capture market momentum and liquidity sweeps.
-SIGNAL TO EVALUATE: ${signal}
-CURRENT PRICE: ${lastPrice}
-ORDERBOOK BID/ASK RATIO: ${obRatio}
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const context = bars.slice(-20).map((b) => {
+        const time = new Date(b[0]).toLocaleTimeString();
+        return `[${time}] O:${b[1]} H:${b[2]} L:${b[3]} C:${b[4]} V:${b[5]}`;
+      }).join("\n");
 
-MARKET CONTEXT (Last 20 candles):
+      const prompt = `Bạn là một nhà giao dịch cá voi (whale trader) chuyên nghiệp, quyết đoán. Mục tiêu là bắt các cú quét thanh khoản (liquidity sweeps) và động lượng thị trường.
+TÍN HIỆU CẦN ĐÁNH GIÁ: ${signal}
+GIÁ HIỆN TẠI: ${lastPrice}
+TỶ LỆ ORDERBOOK BID/ASK: ${obRatio}
+
+BỐI CẢNH THỊ TRƯỜNG (20 nến gần nhất):
 ${context}
 
-ANALYSIS GUIDELINES:
-- Be decisive. If the market structure is even slightly aligned with the ${signal} signal, CONFIRM it.
-- Look for early signs of reversal after a liquidity sweep.
-- Accept moderate risks if the Bid/Ask ratio supports the move.
-- We are playing for 2.5 RR, so we can afford some stops as long as we catch the big sweeps.
+HƯỚNG DẪN PHÂN TÍCH:
+- Quyết đoán. Nếu cấu trúc thị trường khớp hoặc hỗ trợ tín hiệu ${signal}, hãy CONFIRM.
+- Tìm kiếm các dấu hiệu đảo chiều sớm sau khi quét thanh khoản.
+- Chấp nhận rủi ro vừa phải nếu tỷ lệ Bid/Ask ủng hộ xu hướng.
+- Chúng ta đánh RR 2.5, nên có thể chấp nhận một số lệnh stop out nếu bắt được các cú quét lớn thành công.
 
-FINAL DECISION:
-- "CONFIRM" if the signal has at least 60% probability based on your experience.
-- "REJECT" only if there is a massive counter-trend volume or clear manipulative fakeout.
+QUYẾT ĐỊNH CUỐI CÙNG:
+- "CONFIRM" nếu tín hiệu có ít nhất 60% xác suất thắng theo kinh nghiệm của bạn.
+- "REJECT" chỉ khi có khối lượng ngược xu hướng cực lớn hoặc tín hiệu giả mạo (fakeout) rõ ràng.
 
-Return ONLY a JSON object:
+Trả về DUY NHẤT một đối tượng JSON (Lý do bằng TIẾNG VIỆT):
 {
   "decision": "CONFIRM" | "REJECT",
-  "reason": "Short technical explanation (max 2 sentences)",
+  "reason": "Giải thích kỹ thuật ngắn gọn bằng tiếng Việt (tối đa 2 câu)",
   "confidence": 0-100
 }`;
 
-    const modelResource = ai.getGenerativeModel({ model: modelName });
-    const result = await modelResource.generateContent({
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: "application/json" }
-    });
+      const modelResource = ai.getGenerativeModel({ model: modelName });
+      const result = await modelResource.generateContent({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { responseMimeType: "application/json" }
+      });
 
-    const response = await result.response;
-    const parsed = JSON.parse(response.text() || "{}");
-    return parsed;
-  } catch (e) {
-    console.error("AI Analysis Error:", e);
-    return { decision: "REJECT", reason: "AI Service Error", confidence: 0 };
+      const response = await result.response;
+      const text = response.text();
+      if (!text) throw new Error("Empty AI response");
+      
+      const parsed = JSON.parse(text);
+      console.log(`[AI SUCCESS] Decision: ${parsed.decision} | Confidence: ${parsed.confidence}%`);
+      return parsed;
+    } catch (e: any) {
+      lastError = e;
+      console.error(`[AI ATTEMPT ${attempt}/${maxRetries}] Error:`, e.message);
+      if (attempt < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, 2000 * attempt)); // Wait before retry
+      }
+    }
   }
+
+  const errorMsg = lastError?.message || "Unknown AI error";
+  return { 
+    decision: "REJECT", 
+    reason: `AI Service Error: ${errorMsg}`, 
+    confidence: 0 
+  };
 }
 
 // --- TELEGRAM HELPER ---
 async function sendTelegram(msg: string) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
+  const token = getEnv("TELEGRAM_BOT_TOKEN");
+  const chatId = getEnv("TELEGRAM_CHAT_ID");
   if (!token || !chatId) {
     console.warn("⚠️ Telegram credentials missing.");
     return;
@@ -158,9 +185,9 @@ async function sendTelegram(msg: string) {
 let exchange: ccxt.bitget | null = null;
 function getExchange() {
   if (!exchange) {
-    const apiKey = process.env.BG_API_KEY;
-    const secret = process.env.BG_SECRET_KEY;
-    const password = process.env.BG_PASSPHRASE;
+    const apiKey = getEnv("BG_API_KEY");
+    const secret = getEnv("BG_SECRET_KEY");
+    const password = getEnv("BG_PASSPHRASE");
 
     if (!apiKey || !secret) {
       console.warn("⚠️ API keys missing. Bot will run in monitoring mode.");
@@ -324,6 +351,7 @@ async function traderLoop() {
   }
 
   try {
+    console.log("🔄 Trader Loop tick...");
     const balanceInfo = await ex.fetchBalance();
     const currentBalance = balanceInfo.USDT ? (balanceInfo.USDT as any).total : 0;
     botState.balance = currentBalance;
@@ -338,6 +366,7 @@ async function traderLoop() {
     const dailyLossPercent = botState.dailyStartingBalance > 0 ? (dailyPnL / botState.dailyStartingBalance) : 0;
 
     if (dailyLossPercent <= -MAX_DAILY_LOSS) {
+      console.log(`🛑 Daily loss limit reached (${(dailyLossPercent*100).toFixed(2)}%). Stopping trades for 30m.`);
       setTimeout(traderLoop, 60000 * 30);
       return;
     }
@@ -354,7 +383,13 @@ async function traderLoop() {
     }
 
     botState.inPosition = isNowInPosition;
-    if (botState.inPosition || (Date.now() - botState.lastTradeTime < COOLDOWN_MS)) {
+    if (botState.inPosition) {
+      // Monitor position for TP/SL is handled by Exchange or our Stop Loss orders
+      setTimeout(traderLoop, 10000);
+      return;
+    }
+
+    if (Date.now() - botState.lastTradeTime < COOLDOWN_MS) {
       setTimeout(traderLoop, 5000);
       return;
     }
@@ -365,8 +400,10 @@ async function traderLoop() {
       return;
     }
 
-    const bars = await ex.fetchOHLCV(PAIR, '15m', 100);
+    console.log(`📊 Fetching candles for ${PAIR}...`);
+    const bars = await ex.fetchOHLCV(PAIR, '15m', undefined, 100);
     if (!bars || bars.length < 30) {
+      console.log(`⚠️ Not enough candles (${bars?.length || 0}). Waiting...`);
       setTimeout(traderLoop, 10000);
       return;
     }
@@ -380,9 +417,7 @@ async function traderLoop() {
     const obRatio = botState.ask !== 0 ? (botState.bid / botState.ask).toFixed(2) : "1.00";
 
     // Detailed Log for debugging why no trades are happening
-    if (botState.lastPrice > 0 && (Date.now() - botState.lastTradeTime > COOLDOWN_MS)) {
-       console.log(`[ANALYSIS] Price: ${botState.lastPrice} | ADX: ${adx.toFixed(1)} (Min 15) | Sweep: ${sweepLow ? "LOW" : sweepHigh ? "HIGH" : "NONE"} | Absorb: ${absorb} | OB Ratio: ${obRatio}`);
-    }
+    console.log(`[ANALYSIS] Price: ${botState.lastPrice} | ADX: ${adx.toFixed(1)} (Min 15) | Sweep: ${sweepLow ? "LOW" : sweepHigh ? "HIGH" : "NONE"} | Absorb: ${absorb} | OB Ratio: ${obRatio}`);
 
     let signal: 'LONG' | 'SHORT' | null = null;
     // Adjusted ADX from 20 to 15 for better sensitivity on 15m
