@@ -115,6 +115,7 @@ let botState = {
   trades: loadTrades() as any[], // Lịch sử giao dịch
   signals: [] as any[], // Các tín hiệu đã phát hiện
   lastNotifiedCandle: -1, // Lưu index nến cuối cùng đã báo telegram
+  obRatioEMA: 1.0, // Tỷ lệ Bid/Ask đã được làm mượt (EMA)
   aiReasoning: "Đang chờ phân tích...", // Phân tích gần nhất từ AI
   isWsConnected: false // Trạng thái kết nối WebSocket
 };
@@ -329,9 +330,10 @@ function detectWhaleSweep(bars: any[]) {
 
 function getOrderbookSignal() {
   if (botState.bid === 0 || botState.ask === 0) return null;
-  const ratio = botState.bid / botState.ask;
-  if (ratio > 1.2) return "BULL";
-  if (ratio < 0.83) return "BEAR";
+  // Sử dụng EMA để tránh nhiễu từ lệnh ảo (Spoofing)
+  const ratio = botState.obRatioEMA;
+  if (ratio > 1.25) return "BULL";
+  if (ratio < 0.8) return "BEAR";
   return null;
 }
 
@@ -369,6 +371,11 @@ function startWS() {
         if (d.bids) {
           botState.bid = d.bids.reduce((sum: number, x: any) => sum + parseFloat(x[1]), 0);
           botState.ask = d.asks.reduce((sum: number, x: any) => sum + parseFloat(x[1]), 0);
+          
+          // Cập nhật EMA cho OB Ratio (Alpha = 0.1 ~ trung bình khoảng 10-20 lần cập nhật gần nhất)
+          const currentRatio = botState.ask !== 0 ? botState.bid / botState.ask : 1.0;
+          botState.obRatioEMA = (currentRatio * 0.1) + (botState.obRatioEMA * 0.9);
+
           // Fallback: If lastPrice is 0, use top of book
           if (botState.lastPrice === 0 && d.bids.length > 0) {
             botState.lastPrice = parseFloat(d.bids[0][0]);
@@ -542,7 +549,7 @@ async function traderLoop() {
     const adx = calcADX(bars, 14);
     // sweepResult, sweepLow, sweepHigh đã được tính ở trên, không khai báo lại
     const obSignal = getOrderbookSignal();
-    const obRatio = botState.ask !== 0 ? (botState.bid / botState.ask).toFixed(2) : "1.00";
+    const obRatio = botState.obRatioEMA.toFixed(2);
 
     // Log chi tiết để theo dõi cú quét mới
     if (sweepLow || sweepHigh) {
@@ -664,7 +671,7 @@ async function startServer() {
         status: botState.isRunning ? "running" : "idle",
         symbol: PAIR,
         last_price: botState.lastPrice || 0,
-        bid_ratio: botState.ask !== 0 ? (botState.bid / botState.ask).toFixed(2) : "1.00",
+        bid_ratio: botState.obRatioEMA.toFixed(2), // Trả về tỷ lệ đã làm mượt
         in_position: botState.inPosition,
         signals: (botState.signals || []).slice(0, 10),
         balance: botState.balance || 0,
@@ -685,7 +692,12 @@ async function startServer() {
     }
   });
 
-  // Start background processes
+  // --- START SERVER ---
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`🚀 Trading Server running on http://localhost:${PORT}`);
+  });
+
+  // Start background processes AFTER server is listening
   startWS();
   traderLoop();
 
@@ -724,11 +736,16 @@ async function startServer() {
 
   // Vite middleware or static serving
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({ 
-      server: { middlewareMode: true }, 
-      appType: "spa" 
-    });
-    app.use(vite.middlewares);
+    try {
+      const vite = await createViteServer({ 
+        server: { middlewareMode: true }, 
+        appType: "spa" 
+      });
+      app.use(vite.middlewares);
+      console.log("✅ Vite middleware loaded");
+    } catch (ve) {
+      console.error("❌ Failed to load Vite middleware:", ve);
+    }
   } else {
     const distPath = path.join(process.cwd(), "dist");
     if (fs.existsSync(distPath)) {
@@ -740,13 +757,12 @@ async function startServer() {
   // Error handling middleware
   app.use((err: any, req: any, res: any, next: any) => {
     console.error("Express Error Handler:", err);
-    res.status(500).send("Something broke!");
-  });
-
-  // Listen on PORT - Moved to the end
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`🚀 Trading Server running on http://localhost:${PORT}`);
+    if (!res.headersSent) {
+      res.status(500).send("Internal Server Error");
+    }
   });
 }
 
-startServer();
+startServer().catch(err => {
+  console.error("❌ CRITICAL: startServer failed to launch:", err);
+});
