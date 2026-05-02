@@ -466,6 +466,24 @@ async function traderLoop() {
       return;
     }
 
+    // --- KIỂM TRA THỜI GIAN ĐÓNG NẾN (CANDLE CLOSE CONSTRAINT) ---
+    const timeframeMs = 15 * 60 * 1000; // 15 phút
+    const now = Date.now();
+    const nextClose = Math.ceil(now / timeframeMs) * timeframeMs;
+    const timeToClose = nextClose - now;
+    const secondsToClose = Math.floor(timeToClose / 1000);
+
+    if (secondsToClose > 10) {
+      // Nếu còn nhiều hơn 10 giây, bot sẽ chỉ đứng ngoài quan sát
+      if (now % 60000 < 5000) { // Log mỗi phút một lần cho đỡ loãng
+        console.log(`⏳ Đang chờ nến đóng... (Còn ${secondsToClose}s nữa)`);
+      }
+      setTimeout(traderLoop, 5000);
+      return;
+    }
+
+    console.log(`🎯 [ENTRY WINDOW] Chỉ còn ${secondsToClose}s trước khi đóng nến. Tiến hành kiểm tra tín hiệu...`);
+
     console.log(`📊 Đang tải dữ liệu nến cho ${PAIR}...`);
     const bars = await ex.fetchOHLCV(PAIR, '15m', undefined, 100);
     if (!bars || bars.length < 30) {
