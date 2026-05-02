@@ -265,31 +265,50 @@ function getExchange() {
 function detectWhaleSweep(bars: any[]) {
   if (bars.length < 30) return { sweepHigh: false, sweepLow: false };
   
-  // Kiểm tra ngược từ nến gần nhất về nến thứ 10
-  for (let i = bars.length - 1; i >= bars.length - 10; i--) {
+  // Chúng ta chỉ quan tâm đến 3 nến gần nhất (đặc biệt là nến vừa đóng/đang đóng)
+  // để đảm bảo tín hiệu còn nóng hổi
+  for (let i = bars.length - 1; i >= bars.length - 3; i--) {
     const currentBar = bars[i];
-    const prev20 = bars.slice(i - 20, i);
-    if (prev20.length < 20) continue;
+    const prevPeriod = bars.slice(i - 25, i); // Nhìn lại 25 nến trước đó
+    if (prevPeriod.length < 25) continue;
     
-    const avgVol = prev20.reduce((s, b) => s + b[5], 0) / 20;
     const [, o, h, l, c, v] = currentBar;
     
-    // Điều kiện 1: Khối lượng đột biến >= 1.5x trung bình 20 nến trước
-    const isHighVolume = v >= avgVol * 1.5;
+    // Tìm mốc Liquidity (Đỉnh/Đáy rõ ràng nhất trong vùng)
+    const prevHigh = Math.max(...prevPeriod.map(b => b[2]));
+    const prevLow = Math.min(...prevPeriod.map(b => b[3]));
     
+    // Khối lượng trung bình
+    const avgVol = prevPeriod.reduce((s, b) => s + b[5], 0) / 25;
+    
+    const isHighVolume = v >= avgVol * 1.5;
     const body = Math.abs(c - o);
+    const totalSize = h - l;
+    if (totalSize === 0) continue;
+
     const upperWick = h - Math.max(o, c);
     const lowerWick = Math.min(o, c) - l;
 
-    // Điều kiện 2: Bóng nến >= Thân nến
-    // Bullish Rejection (Quét xuống - Sweep Low)
-    if (isHighVolume && lowerWick >= body && lowerWick > upperWick) {
-      return { sweepLow: true, sweepHigh: false, candleIndex: i };
+    // --- LOGIC SWEEP LOW (Quét Đáy - Bullish) ---
+    // 1. Phải quét qua đáy thấp nhất của 25 nến trước
+    // 2. GIÁ ĐÓNG CỬA PHẢI NẰM TRÊN ĐÁY CŨ (Reclamation)
+    // 3. Râu dưới phải dài và chiếm ưu thế (ít nhất 60% nến)
+    if (isHighVolume && l < prevLow && c > prevLow) {
+      const lowerWickRatio = lowerWick / totalSize;
+      if (lowerWickRatio >= 0.6 && lowerWick > upperWick) {
+        return { sweepLow: true, sweepHigh: false, candleIndex: i };
+      }
     }
     
-    // Bearish Rejection (Quét lên - Sweep High)
-    if (isHighVolume && upperWick >= body && upperWick > lowerWick) {
-      return { sweepLow: false, sweepHigh: true, candleIndex: i };
+    // --- LOGIC SWEEP HIGH (Quét Đỉnh - Bearish) ---
+    // 1. Phải quét qua đỉnh cao nhất của 25 nến trước
+    // 2. GIÁ ĐÓNG CỬA PHẢI NẰM DƯỚI ĐỈNH CŨ (Reclamation)
+    // 3. Râu trên phải dài và chiếm ưu thế (ít nhất 60% nến)
+    if (isHighVolume && h > prevHigh && c < prevHigh) {
+      const upperWickRatio = upperWick / totalSize;
+      if (upperWickRatio >= 0.6 && upperWick > lowerWick) {
+        return { sweepLow: false, sweepHigh: true, candleIndex: i };
+      }
     }
   }
   
