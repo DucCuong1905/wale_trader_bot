@@ -156,7 +156,7 @@ Trả về DUY NHẤT một đối tượng JSON (Lý do bằng TIẾNG VIỆT):
     
     const model = genAI.getGenerativeModel(
       { model: modelName },
-      { apiVersion: 'v1' }
+      { apiVersion: 'v1beta' }
     );
     
     const result = await model.generateContent(prompt);
