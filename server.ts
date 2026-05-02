@@ -114,6 +114,7 @@ let botState = {
   lastResetDate: "", // Ngày reset số dư gần nhất
   trades: loadTrades() as any[], // Lịch sử giao dịch
   signals: [] as any[], // Các tín hiệu đã phát hiện
+  lastNotifiedCandle: -1, // Lưu index nến cuối cùng đã báo telegram
   aiReasoning: "Đang chờ phân tích...", // Phân tích gần nhất từ AI
   isWsConnected: false // Trạng thái kết nối WebSocket
 };
@@ -263,14 +264,13 @@ function getExchange() {
 }
 
 function detectWhaleSweep(bars: any[]) {
-  if (bars.length < 30) return { sweepHigh: false, sweepLow: false };
+  if (bars.length < 25) return { sweepHigh: false, sweepLow: false };
   
   // Chúng ta chỉ quan tâm đến 3 nến gần nhất (đặc biệt là nến vừa đóng/đang đóng)
-  // để đảm bảo tín hiệu còn nóng hổi
   for (let i = bars.length - 1; i >= bars.length - 3; i--) {
     const currentBar = bars[i];
-    const prevPeriod = bars.slice(i - 25, i); // Nhìn lại 25 nến trước đó
-    if (prevPeriod.length < 25) continue;
+    const prevPeriod = bars.slice(i - 20, i); // Nhìn lại 20 nến trước đó
+    if (prevPeriod.length < 20) continue;
     
     const [, o, h, l, c, v] = currentBar;
     
@@ -278,36 +278,48 @@ function detectWhaleSweep(bars: any[]) {
     const prevHigh = Math.max(...prevPeriod.map(b => b[2]));
     const prevLow = Math.min(...prevPeriod.map(b => b[3]));
     
-    // Khối lượng trung bình
-    const avgVol = prevPeriod.reduce((s, b) => s + b[5], 0) / 25;
+    // Tính toán Volume và Displacement
+    const maxVol = Math.max(...prevPeriod.map(b => b[5]));
+    const volRatio = v / maxVol;
+    const isClimaxVol = volRatio >= 0.8; 
     
-    const isHighVolume = v >= avgVol * 1.5;
     const body = Math.abs(c - o);
     const totalSize = h - l;
     if (totalSize === 0) continue;
 
+    const bodyRatio = body / totalSize;
+    const hasDisplacement = bodyRatio > 0.25; 
+
     const upperWick = h - Math.max(o, c);
     const lowerWick = Math.min(o, c) - l;
+    const lowerWickRatio = lowerWick / totalSize;
+    const upperWickRatio = upperWick / totalSize;
+
+    // --- AUDIT LOG CHO MỖI NẾN CÓ VOLUME LỚN ---
+    if (isClimaxVol || l < prevLow || h > prevHigh) {
+        console.log(`--- [AUDIT NẾN ${i}] ---`);
+        console.log(`📊 Vol/MaxVol: ${(volRatio * 100).toFixed(1)}% | Thân/Nến: ${(bodyRatio * 100).toFixed(1)}%`);
+        console.log(`🕯️ Đỉnh cũ: ${prevHigh} | Đáy cũ: ${prevLow} | Low nến: ${l} | High nến: ${h}`);
+        console.log(`⚓ Râu dưới: ${(lowerWickRatio * 100).toFixed(1)}% | Râu trên: ${(upperWickRatio * 100).toFixed(1)}%`);
+    }
 
     // --- LOGIC SWEEP LOW (Quét Đáy - Bullish) ---
-    // 1. Phải quét qua đáy thấp nhất của 25 nến trước
-    // 2. GIÁ ĐÓNG CỬA PHẢI NẰM TRÊN ĐÁY CŨ (Reclamation)
-    // 3. Râu dưới phải dài và chiếm ưu thế (ít nhất 60% nến)
-    if (isHighVolume && l < prevLow && c > prevLow) {
-      const lowerWickRatio = lowerWick / totalSize;
-      if (lowerWickRatio >= 0.6 && lowerWick > upperWick) {
+    if (isClimaxVol && l < prevLow && c > prevLow) {
+      if (lowerWickRatio >= 0.5 && lowerWick > upperWick && hasDisplacement) {
+        console.log(`✅ [SWEEP LOW MATCHED] Nến ${i} thỏa mãn tất cả điều kiện Bullish.`);
         return { sweepLow: true, sweepHigh: false, candleIndex: i };
+      } else {
+        console.log(`❌ [SWEEP LOW FAILED] Không thỏa mãn: Wick (${(lowerWickRatio*100).toFixed(1)}% >= 50%) hoặc Displacement.`);
       }
     }
     
     // --- LOGIC SWEEP HIGH (Quét Đỉnh - Bearish) ---
-    // 1. Phải quét qua đỉnh cao nhất của 25 nến trước
-    // 2. GIÁ ĐÓNG CỬA PHẢI NẰM DƯỚI ĐỈNH CŨ (Reclamation)
-    // 3. Râu trên phải dài và chiếm ưu thế (ít nhất 60% nến)
-    if (isHighVolume && h > prevHigh && c < prevHigh) {
-      const upperWickRatio = upperWick / totalSize;
-      if (upperWickRatio >= 0.6 && upperWick > lowerWick) {
+    if (isClimaxVol && h > prevHigh && c < prevHigh) {
+      if (upperWickRatio >= 0.5 && upperWick > lowerWick && hasDisplacement) {
+        console.log(`✅ [SWEEP HIGH MATCHED] Nến ${i} thỏa mãn tất cả điều kiện Bearish.`);
         return { sweepLow: false, sweepHigh: true, candleIndex: i };
+      } else {
+        console.log(`❌ [SWEEP HIGH FAILED] Không thỏa mãn: Wick (${(upperWickRatio*100).toFixed(1)}% >= 50%) hoặc Displacement.`);
       }
     }
   }
@@ -485,6 +497,31 @@ async function traderLoop() {
       return;
     }
 
+    console.log(`🎯 [MONITORING] Đang kiểm tra tín hiệu Whale Sweep...`);
+    const bars = await ex.fetchOHLCV(PAIR, '15m', undefined, 100);
+    if (!bars || bars.length < 30) {
+      console.log(`⚠️ Không đủ dữ liệu nến (${bars?.length || 0}). Đang chờ...`);
+      setTimeout(traderLoop, 10000);
+      return;
+    }
+
+    // --- TELEGRAM ALERTS FOR SWEEPS ---
+    const sweepResult = detectWhaleSweep(bars);
+    const sweepLow = sweepResult.sweepLow;
+    const sweepHigh = sweepResult.sweepHigh;
+    const candleIndex = (sweepResult as any).candleIndex;
+
+    if ((sweepLow || sweepHigh) && candleIndex !== botState.lastNotifiedCandle) {
+        const type = sweepLow ? "🟢 QUÉT ĐÁY (SWEEP LOW)" : "🔴 QUÉT ĐỈNH (SWEEP HIGH)";
+        const currentPrice = bars[bars.length - 1][4];
+        const msg = `🐋 *PHÁT HIỆN WHALE SWEEP*\n\n` +
+                   `🔍 Loại: ${type}\n` +
+                   `💰 Giá hiện tại: ${currentPrice}\n` +
+                   `📊 P/S: Đây là tín hiệu tiềm năng. Bot sẽ tự động đánh giá nến này 10s trước khi đóng để quyết định vào lệnh.`;
+        sendTelegram(msg);
+        botState.lastNotifiedCandle = candleIndex;
+    }
+
     // --- KIỂM TRA THỜI GIAN ĐÓNG NẾN (CANDLE CLOSE CONSTRAINT) ---
     const timeframeMs = 15 * 60 * 1000; // 15 phút
     const now = Date.now();
@@ -493,23 +530,14 @@ async function traderLoop() {
     const secondsToClose = Math.floor(timeToClose / 1000);
 
     if (secondsToClose > 10) {
-      // Nếu còn nhiều hơn 10 giây, bot sẽ chỉ đứng ngoài quan sát
-      if (now % 60000 < 5000) { // Log mỗi phút một lần cho đỡ loãng
+      if (now % 60000 < 10000) { // Log mỗi phút một lần
         console.log(`⏳ Đang chờ nến đóng... (Còn ${secondsToClose}s nữa)`);
       }
       setTimeout(traderLoop, 5000);
       return;
     }
 
-    console.log(`🎯 [ENTRY WINDOW] Chỉ còn ${secondsToClose}s trước khi đóng nến. Tiến hành kiểm tra tín hiệu...`);
-
-    console.log(`📊 Đang tải dữ liệu nến cho ${PAIR}...`);
-    const bars = await ex.fetchOHLCV(PAIR, '15m', undefined, 100);
-    if (!bars || bars.length < 30) {
-      console.log(`⚠️ Không đủ dữ liệu nến (${bars?.length || 0}). Đang chờ...`);
-      setTimeout(traderLoop, 10000);
-      return;
-    }
+    console.log(`🎯 [ENTRY WINDOW] Chỉ còn ${secondsToClose}s trước khi đóng nến. Tiến hành kiểm tra tín hiệu cuối cùng...`);
 
     const adx = calcADX(bars, 14);
     const sweepResult = detectWhaleSweep(bars);
@@ -544,10 +572,25 @@ async function traderLoop() {
         size = Math.min(size, maxNotional);
 
         if (size > 0) {
-          sendTelegram(`🚀 *VÀO LỆNH ${signal}*\n💰 Giá: ${entry}\n🛑 SL: ${sl.toFixed(1)}\n🎯 TP: ${tp.toFixed(1)}`);
           const currentRatio = botState.ask !== 0 ? botState.bid / botState.ask : 1.0;
+          
+          // Lưu tín hiệu vào danh sách signals
+          const signalInfo = {
+            time: new Date().toISOString(),
+            type: signal,
+            price: entry,
+            obRatio: currentRatio.toFixed(2),
+            adx: adx.toFixed(1),
+            sweep: sweepLow ? "LOW" : "HIGH",
+            status: "PENDING"
+          };
+          botState.signals.unshift(signalInfo);
+          if (botState.signals.length > 50) botState.signals.pop();
+
+          sendTelegram(`🚀 *VÀO LỆNH ${signal}*\n💰 Giá: ${entry}\n🛑 SL: ${sl.toFixed(1)}\n🎯 TP: ${tp.toFixed(1)}`);
           const aiEval = await getAIAnalysis(signal, entry, currentRatio, bars);
           botState.aiReasoning = aiEval.reason;
+          signalInfo.status = aiEval.decision;
 
           if (aiEval.decision === "REJECT") {
             sendTelegram(`🤖 *AI TỪ CHỐI LỆNH*\nLý do: ${aiEval.reason}`);
