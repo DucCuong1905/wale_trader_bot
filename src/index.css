@@ -8,8 +8,25 @@
 
 @layer base {
   body {
-    @apply bg-[#0a0a0c] text-white antialiased;
+    @apply bg-[#0c0c14] text-white antialiased;
   }
+}
+
+/* Glow effects */
+.glow-blue {
+  box-shadow: 0 0 15px rgba(59, 130, 246, 0.15);
+}
+
+.glow-green {
+  box-shadow: 0 0 15px rgba(34, 197, 94, 0.15);
+}
+
+.glow-red {
+  box-shadow: 0 0 15px rgba(239, 68, 68, 0.15);
+}
+
+.glass-card {
+  @apply bg-[#14141e] border border-white/10 shadow-xl;
 }
 
 /* Custom chart tooltips */

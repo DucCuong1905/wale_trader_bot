@@ -120,17 +120,14 @@ let botState = {
 
 // --- LOGIC PHÂN TÍCH AI (AI ANALYSIS) ---
 async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number, bars: any[]) {
-  const maxRetries = 3;
-  let lastError: any = null;
+  // Chỉ dùng duy nhất model trả phí và không retry để log sạch
+  try {
+    const context = bars.slice(-20).map((b) => {
+      const time = new Date(b[0]).toLocaleTimeString();
+      return `[${time}] O:${b[1]} H:${b[2]} L:${b[3]} C:${b[4]} V:${b[5]}`;
+    }).join("\n");
 
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      const context = bars.slice(-20).map((b) => {
-        const time = new Date(b[0]).toLocaleTimeString();
-        return `[${time}] O:${b[1]} H:${b[2]} L:${b[3]} C:${b[4]} V:${b[5]}`;
-      }).join("\n");
-
-      const prompt = `Bạn là một nhà giao dịch cá voi (whale trader) chuyên nghiệp, quyết đoán. Mục tiêu là bắt các cú quét thanh khoản (liquidity sweeps) và động lượng thị trường.
+    const prompt = `Bạn là một nhà giao dịch cá voi (whale trader) chuyên nghiệp, quyết đoán. Mục tiêu là bắt các cú quét thanh khoản (liquidity sweeps) và động lượng thị trường.
 TÍN HIỆU CẦN ĐÁNH GIÁ: ${signal}
 GIÁ HIỆN TẠI: ${lastPrice}
 TỶ LỆ ORDERBOOK BID/ASK: ${obRatio}
@@ -155,50 +152,34 @@ Trả về DUY NHẤT một đối tượng JSON (Lý do bằng TIẾNG VIỆT):
   "confidence": 0-100
 }`;
 
-      console.log(`[AI] Đang phân tích thị trường bằng ${modelName}...`);
-      let text = "";
-      
-      try {
-        const model = genAI.getGenerativeModel(
-          { model: modelName },
-          { apiVersion: 'v1' }
-        );
-        
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        text = response.text();
-      } catch (err: any) {
-        console.error(`❌ [AI] ${modelName} lỗi:`, err.message);
-        throw err;
-      }
-      
-      if (!text) throw new Error("AI không trả về nội dung.");
-      
-      // Xử lý text để lấy JSON (đôi khi AI bao quanh bởi ```json ... ```)
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        text = jsonMatch[0];
-      }
-      
-      const parsed = JSON.parse(text);
-      console.log(`[AI SUCCESS] Decision: ${parsed.decision} | Confidence: ${parsed.confidence}%`);
-      return parsed;
-    } catch (e: any) {
-      lastError = e;
-      console.error(`[AI ERROR] Attempting with key prefix ${aiKey.substring(0, 4)}...`);
-      console.error(`[AI ATTEMPT ${attempt}/${maxRetries}] Error:`, e.message);
-      if (attempt < maxRetries) {
-        await new Promise(resolve => setTimeout(resolve, 2000 * attempt)); // Wait before retry
-      }
-    }
+    console.log(`[AI] Đang phân tích bằng ${modelName}...`);
+    
+    const model = genAI.getGenerativeModel(
+      { model: modelName },
+      { apiVersion: 'v1' }
+    );
+    
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+    
+    if (!text) throw new Error("AI không trả về nội dung.");
+    
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    const cleanText = jsonMatch ? jsonMatch[0] : text;
+    const parsed = JSON.parse(cleanText);
+    
+    console.log(`[AI SUCCESS] ${parsed.decision} (${parsed.confidence}%)`);
+    return parsed;
+    
+  } catch (e: any) {
+    console.error(`❌ [AI ERROR] ${modelName}:`, e.message);
+    return { 
+      decision: "REJECT", 
+      reason: `AI Error: ${e.message}`, 
+      confidence: 0 
+    };
   }
-
-  const errorMsg = lastError?.message || "Unknown AI error";
-  return { 
-    decision: "REJECT", 
-    reason: `AI Service Error: ${errorMsg}`, 
-    confidence: 0 
-  };
 }
 
 // --- TELEGRAM HELPER ---
@@ -600,6 +581,7 @@ async function startServer() {
   
   app.get("/api/trading/status", (req, res) => {
     try {
+      console.log(`[API] Serving status request at ${new Date().toLocaleTimeString()}`);
       res.json({
         status: botState.isRunning ? "running" : "idle",
         symbol: PAIR,
@@ -632,23 +614,13 @@ async function startServer() {
   // --- KIỂM TRA KẾT NỐI AI (Background) ---
   (async () => {
     console.log("-----------------------------------------");
-    console.log("🤖 Đang kiểm tra kết nối AI...");
+    console.log(`🤖 Đang kiểm tra kết nối AI (${modelName})...`);
     try {
-      // Thử liệt kê models
-      try {
-        const urlV1 = `https://generativelanguage.googleapis.com/v1/models?key=${aiKey}`;
-        const resp = await fetch(urlV1);
-        const data: any = await resp.json();
-        if (data.models) {
-          console.log("✅ AI API OK! Models (v1):", data.models.slice(0, 3).map((m: any) => m.name.split("/models/")[1]).join(", "));
-        }
-      } catch (e) {}
-
       const dummyBars = [[Date.now(), 70000, 71000, 69000, 70500, 100]];
       const testEval = await getAIAnalysis("TEST_STARTUP", 70500, 1.2, dummyBars);
       
-      if (testEval && testEval.decision && !testEval.reason.includes("AI Service Error")) {
-        console.log(`✅ Kết nối AI thành công! Quyết định: ${testEval.decision}`);
+      if (testEval && testEval.decision && !testEval.reason.includes("AI Error")) {
+        console.log(`✅ Kết nối AI thành công!`);
         botState.aiReasoning = testEval.reason;
       } else {
         console.error("❌ AI chưa hoạt động ổn định. Lý do:", testEval.reason);
@@ -672,11 +644,6 @@ async function startServer() {
 
   sendTelegram("🐳 *Whale Bot Đã Khởi Chạy*\nBot đã đồng bộ và bắt đầu hoạt động...");
 
-  // Listen on PORT
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`🚀 Trading Server running on http://localhost:${PORT}`);
-  });
-
   // Vite middleware or static serving
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({ 
@@ -696,6 +663,11 @@ async function startServer() {
   app.use((err: any, req: any, res: any, next: any) => {
     console.error("Express Error Handler:", err);
     res.status(500).send("Something broke!");
+  });
+
+  // Listen on PORT - Moved to the end
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`🚀 Trading Server running on http://localhost:${PORT}`);
   });
 }
 
