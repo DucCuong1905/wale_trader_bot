@@ -57,7 +57,7 @@ if (!aiKey) {
 console.log("-----------------------------------------");
 
 const genAI = new GoogleGenerativeAI(aiKey);
-const modelName = "gemini-2.5-flash"; 
+const modelName = "gemini-3-flash-preview"; 
 
 // --- CẤU HÌNH GIAO DỊCH (TRADING CONSTANTS) ---
 const PAIR = "BTC/USDT:USDT"; // Cặp giao dịch (BTC Futures trên Bitget)
