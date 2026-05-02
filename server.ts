@@ -499,7 +499,7 @@ async function traderLoop() {
 
     console.log(`🎯 [MONITORING] Đang kiểm tra tín hiệu Whale Sweep...`);
     const bars = await ex.fetchOHLCV(PAIR, '15m', undefined, 100);
-    if (!bars || bars.length < 30) {
+    if (!bars || bars.length < 25) {
       console.log(`⚠️ Không đủ dữ liệu nến (${bars?.length || 0}). Đang chờ...`);
       setTimeout(traderLoop, 10000);
       return;
@@ -540,9 +540,7 @@ async function traderLoop() {
     console.log(`🎯 [ENTRY WINDOW] Chỉ còn ${secondsToClose}s trước khi đóng nến. Tiến hành kiểm tra tín hiệu cuối cùng...`);
 
     const adx = calcADX(bars, 14);
-    const sweepResult = detectWhaleSweep(bars);
-    const sweepLow = sweepResult.sweepLow;
-    const sweepHigh = sweepResult.sweepHigh;
+    // sweepResult, sweepLow, sweepHigh đã được tính ở trên, không khai báo lại
     const obSignal = getOrderbookSignal();
     const obRatio = botState.ask !== 0 ? (botState.bid / botState.ask).toFixed(2) : "1.00";
 
