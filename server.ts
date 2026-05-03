@@ -367,26 +367,30 @@ function startWS() {
       const sName = streamName.toLowerCase();
 
       if (sName.includes('@depth')) {
-        if (d.bids && d.asks) {
-          botState.bid = d.bids.reduce((sum: number, x: any) => sum + parseFloat(x[1]), 0);
-          botState.ask = d.asks.reduce((sum: number, x: any) => sum + parseFloat(x[1]), 0);
+        // Binance Depth dùng 'b' cho bids và 'a' cho asks
+        const bids = d.b || d.bids;
+        const asks = d.a || d.asks;
+
+        if (bids && asks) {
+          botState.bid = bids.reduce((sum: number, x: any) => sum + parseFloat(x[1]), 0);
+          botState.ask = asks.reduce((sum: number, x: any) => sum + parseFloat(x[1]), 0);
           
           const currentRatio = botState.ask !== 0 ? botState.bid / botState.ask : 1.0;
           botState.obRatioEMA = (currentRatio * 0.1) + (botState.obRatioEMA * 0.9);
 
           // FALLBACK: Nếu lastPrice chưa có, lấy giá Best Bid từ Depth
-          if (botState.lastPrice === 0 && d.bids.length > 0) {
-            botState.lastPrice = parseFloat(d.bids[0][0]);
+          if (botState.lastPrice === 0 && bids.length > 0) {
+            botState.lastPrice = parseFloat(bids[0][0]);
             console.log(`🎯 Đã khởi tạo giá ban đầu từ Depth: $${botState.lastPrice}`);
           }
         }
       } else if (sName.includes('@ticker') || sName.includes('@miniticker')) {
         // d.c là Close Price trong miniTicker hoặc Ticker
-        if (d.c) {
+        const price = d.c || d.p;
+        if (price) {
           const oldPrice = botState.lastPrice;
-          botState.lastPrice = parseFloat(d.c);
+          botState.lastPrice = parseFloat(price);
           
-          // Thông báo khi lần đầu có giá
           if (oldPrice === 0 && botState.lastPrice > 0) {
             console.log(`🚀 WebSocket Price Synced: $${botState.lastPrice}`);
           }

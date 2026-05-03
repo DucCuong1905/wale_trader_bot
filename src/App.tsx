@@ -327,7 +327,7 @@ export default function App() {
                 <Shield className="w-6 h-6 text-blue-400" />
                 Chỉ Báo Tâm Lý
               </h3>
-              <span className="text-[10px] text-slate-500 font-mono font-bold tracking-widest">BITGET.WS.V2</span>
+              <span className="text-[10px] text-slate-500 font-mono font-bold tracking-widest">BINANCE.WS.FUTURES</span>
             </div>
 
             <div className="space-y-8">
