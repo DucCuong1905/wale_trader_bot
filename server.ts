@@ -355,12 +355,17 @@ function startWS() {
       const payload = JSON.parse(msg);
       
       // Combined streams trả về object { stream: "...", data: { ... } }
-      const streamName = payload.stream;
+      const streamName = payload.stream || "";
       const d = payload.data;
 
       if (!d) return;
 
-      if (streamName.includes('@depth')) {
+      // Log mỗi 100 tin nhắn để tránh spam log nhưng vẫn biết WS đang chạy
+      if (Math.random() < 0.01) {
+        console.log(`[WS DEBUG] Nhận dữ liệu từ stream: ${streamName}, Giá hiện tại: ${botState.lastPrice}`);
+      }
+
+      if (streamName.toLowerCase().includes('@depth')) {
         if (d.bids && d.asks) {
           botState.bid = d.bids.reduce((sum: number, x: any) => sum + parseFloat(x[1]), 0);
           botState.ask = d.asks.reduce((sum: number, x: any) => sum + parseFloat(x[1]), 0);
@@ -368,10 +373,11 @@ function startWS() {
           const currentRatio = botState.ask !== 0 ? botState.bid / botState.ask : 1.0;
           botState.obRatioEMA = (currentRatio * 0.1) + (botState.obRatioEMA * 0.9);
         }
-      } else if (streamName.includes('@ticker')) {
-        // d.c là Last Price
-        if (d.c) {
-          botState.lastPrice = parseFloat(d.c);
+      } else if (streamName.toLowerCase().includes('@ticker') || streamName.toLowerCase().includes('@markprice')) {
+        // d.c là Last Price (Ticker), d.p là Mark Price
+        const price = d.c || d.p;
+        if (price) {
+          botState.lastPrice = parseFloat(price);
         }
       }
     } catch (e) { }
