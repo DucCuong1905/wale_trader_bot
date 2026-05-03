@@ -129,7 +129,8 @@ let botState = {
   aiReasoning: "Đang chờ phân tích...", // Phân tích gần nhất từ AI
   isWsConnected: false, // Trạng thái kết nối WebSocket
   recentWhaleTrades: [] as WhaleTrade[], // Lịch sử Whale Trades khớp thực tế
-  lastReportHour: -1, // Lưu giờ cuối cùng đã báo intel report
+  lastReportMinute: -1, // Lưu phút cuối cùng đã báo intel report
+  latestSweepStatus: "None" as "None" | "High" | "Low", // Trạng thái quét thanh khoản gần nhất
 };
 
 // --- LOGIC PHÂN TÍCH AI (AI ANALYSIS) ---
@@ -554,6 +555,8 @@ async function traderLoop() {
     const sweepHigh = sweepResult.sweepHigh;
     const candleIndex = (sweepResult as any).candleIndex;
 
+    botState.latestSweepStatus = sweepLow ? "Low" : (sweepHigh ? "High" : "None");
+
     if ((sweepLow || sweepHigh) && candleIndex !== botState.lastNotifiedCandle) {
         const type = sweepLow ? "🟢 QUÉT ĐÁY (SWEEP LOW)" : "🔴 QUÉT ĐỈNH (SWEEP HIGH)";
         const currentPrice = bars[bars.length - 1][4];
@@ -794,30 +797,32 @@ async function startServer() {
     }
   })();
 
-  // --- BÁO CÁO INTEL ĐỊNH KỲ (MỖI 1 GIỜ) ---
-  // Báo cáo lúc 10 giây trước khi kết thúc nến giờ (Phút 59, giây 50)
+  // --- BÁO CÁO INTEL ĐỊNH KỲ (MỖI 15 PHÚT) ---
+  // Báo cáo lúc 10 giây trước khi kết thúc nến 15p (Phút 14/29/44/59, giây 50)
   setInterval(() => {
     const now = new Date();
     const seconds = now.getSeconds();
     const minute = now.getMinutes();
-    const hour = now.getHours();
     
-    if (minute === 59 && seconds === 50 && botState.lastReportHour !== hour) {
-      botState.lastReportHour = hour;
+    const isReportMinute = (minute + 1) % 15 === 0;
+    
+    if (isReportMinute && seconds === 50 && botState.lastReportMinute !== minute) {
+      botState.lastReportMinute = minute;
       
       const buyVol = botState.recentWhaleTrades.filter(t => t.side === 'buy').reduce((s, t) => s + t.amount, 0);
       const sellVol = botState.recentWhaleTrades.filter(t => t.side === 'sell').reduce((s, t) => s + t.amount, 0);
       const net = (buyVol - sellVol) / 1000;
       
-      const intelMsg = `📝 *BẢN TIN INTEL (1h)*\n\n` +
+      const sweepIcon = botState.latestSweepStatus === 'Low' ? "🟢 LOW" : (botState.latestSweepStatus === 'High' ? "🔴 HIGH" : "❌ None");
+      
+      const intelMsg = `📝 *BẢN TIN INTEL (15m)*\n\n` +
         `🌐 WS Binance: ${botState.isWsConnected ? "✅ Online" : "❌ Offline"}\n` +
         `💰 BTC Price: *$${botState.lastPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}*\n` +
+        `🧹 Sweep Level: *${sweepIcon}*\n` +
         `⚖️ OB Ratio: *${botState.obRatioEMA.toFixed(2)}*\n` +
-        `📈 ADX: *${botState.adx.toFixed(1)}* (Trend: ${botState.plusDI.toFixed(1)}/${botState.minusDI.toFixed(1)})\n` +
-        `🐋 Whale Buy: $${(buyVol/1000).toFixed(1)}k\n` +
-        `🐋 Whale Sell: $${(sellVol/1000).toFixed(1)}k\n` +
-        `📊 Whale Net: ${net >= 0 ? '🟢 +' : '🔴 '}${net.toFixed(1)}k\n\n` +
-        `_Báo cáo định kỳ mỗi giờ..._`;
+        `📈 ADX: *${botState.adx.toFixed(1)}* (${botState.plusDI.toFixed(1)}/${botState.minusDI.toFixed(1)})\n` +
+        `🐋 Whale Net: ${net >= 0 ? '🟢 +' : '🔴 '}${net.toFixed(1)}k\n\n` +
+        `_Chuẩn bị đóng nến và thực thi chiến lược..._`;
       
       sendTelegram(intelMsg);
     }
