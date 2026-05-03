@@ -794,63 +794,6 @@ async function startServer() {
     }
   });
 
-  // API TEST ORDER: Only for manual triggering to test API keys
-  app.get("/api/test-long-order", async (req, res) => {
-    const ex = getExchange();
-    if (!ex) {
-      return res.status(400).json({ error: "Binance API Key not configured" });
-    }
-
-    try {
-      console.log("🛠️ EXECUTING TEST LONG ORDER (2$ Margin, 10x Leverage)...");
-      
-      // 1. Set leverage
-      await ex.setLeverage(10, PAIR);
-      
-      // 2. Fetch price
-      const ticker = await ex.fetchTicker(PAIR);
-      const price = ticker.last || botState.lastPrice;
-      
-      // 3. Calculate quantity (2$ Margin * 10x Leverage = 20$ Position Size)
-      const qty = 20 / price;
-      const precisionQty = ex.amountToPrecision(PAIR, qty);
-      
-      // 4. Place Market Order
-      const order = await ex.createMarketOrder(PAIR, 'buy', parseFloat(precisionQty));
-      
-      sendTelegram(`🛠️ *LỆNH TEST KHỞI CHẠY*\n💰 Volume: ~20$ (Ký quỹ 2$)\n📊 Giá khớp: ${price}\n✅ Trạng thái: ${order.status}\n⏱️ *Tự động đóng sau 5 phút*`);
-      
-      // Tự động đóng lệnh sau 5 phút (300,000 ms)
-      setTimeout(async () => {
-        try {
-          console.log("⏱️ Đang thực hiện tự động đóng lệnh test sau 5 phút...");
-          const closeOrder = await ex.createMarketOrder(PAIR, 'sell', parseFloat(precisionQty));
-          sendTelegram(`⏱️ *TỰ ĐỘNG ĐÓNG LỆNH TEST*\n✅ Đã thoát vị thế sau 5 phút.\n📊 Trạng thái: ${closeOrder.status}`);
-        } catch (err: any) {
-          console.error("❌ Không thể tự động đóng lệnh test:", err);
-          sendTelegram(`❌ *LỖI TỰ ĐỘNG ĐÓNG LỆNH TEST*\nLỗi: ${err.message}`);
-        }
-      }, 300000);
-
-      res.json({
-        success: true,
-        message: "Lệnh Test Long đã được gửi đi!",
-        order_id: order.id,
-        price: price,
-        quantity: precisionQty,
-        estimated_margin: "2 USDT"
-      });
-    } catch (e: any) {
-      console.error("❌ Test Order Failed:", e);
-      sendTelegram(`❌ *LỖI LỆNH TEST*\nLỗi: ${e.message}\n💡 Kiểm tra số dư Futures và quyền API Key.`);
-      res.status(500).json({ 
-        success: false, 
-        error: e.message,
-        hint: "Hãy chắc chắn ví Futures có tối thiểu 2.5 USDT và API Key có đủ quyền (Futures Enable)."
-      });
-    }
-  });
-
   // API Catch-all: Ensure any unknown /api route returns JSON, not HTML
   app.all("/api/*", (req, res) => {
     res.status(404).json({ error: `API Route ${req.method} ${req.url} not found` });
@@ -887,45 +830,6 @@ async function startServer() {
   startWS();
   traderLoop();
   
-  // Chạy lệnh test 2$ ngay khi khởi động để check API (Chỉ chạy 1 lần)
-  (async () => {
-    await new Promise(r => setTimeout(r, 5000)); // Đợi 5s cho hệ thống ổn định
-    const ex = getExchange();
-    if (ex) {
-      try {
-        console.log("🛠️ Thực hiện lệnh TEST MARKET LONG 2$ (Startup)...");
-        await ex.setLeverage(10, PAIR);
-        const ticker = await ex.fetchTicker(PAIR);
-        const price = ticker.last || botState.lastPrice;
-        
-        // Tính volume: 20$ hoặc tối thiểu 0.001 BTC (Binance Limit)
-        let qty = 20 / price;
-        if (qty < 0.001) {
-          console.log(`⚠️ Volume $20 (~${qty.toFixed(5)} BTC) quá nhỏ. Tăng lên 0.001 BTC để khớp lệnh.`);
-          qty = 0.001;
-        }
-        
-        const precisionQty = ex.amountToPrecision(PAIR, qty);
-        const finalQty = parseFloat(precisionQty);
-        const marginUsed = (finalQty * price) / 10;
-        
-        await ex.createMarketOrder(PAIR, 'buy', finalQty);
-        sendTelegram(`🚀 *API TEST SUCCESS*\nĐã khớp lệnh Long ${finalQty} BTC (~$${(finalQty * price).toFixed(1)})\n💰 Ký quỹ ước tính: ~${marginUsed.toFixed(2)} USDT (x10)\n⏱️ Lệnh này sẽ tự đóng sau 5 phút.`);
-        
-        setTimeout(async () => {
-          try {
-            await ex.createMarketOrder(PAIR, 'sell', finalQty);
-            sendTelegram(`✅ *TEST COMPLETE*: Đã tự động đóng lệnh test.`);
-          } catch (err: any) {
-            sendTelegram(`❌ *LỖI ĐÓNG LỆNH TEST*: ${err.message}`);
-          }
-        }, 300000);
-      } catch (e: any) {
-        sendTelegram(`❌ *API TEST FAILED*: ${e.message}`);
-      }
-    }
-  })();
-
   console.log("✅ Background Processes Initialized.");
 
   // --- KIỂM TRA KẾT NỐI AI (Background) ---
@@ -947,7 +851,7 @@ async function startServer() {
     }
   })();
 
-  sendTelegram(`🐳 *Whale Bot Đã Sẵn Sàng*\n🚀 Server PID: ${process.pid}\n🛠️ [Click để Test Lệnh Long 2$](https://${process.env.VITE_APP_URL || 'your-app-url'}/api/test-long-order)`);
+  sendTelegram(`🐳 *Whale Bot Đã Sẵn Sàng*\n🚀 Server PID: ${process.pid}`);
 
   // Error handling middleware
   app.use((err: any, req: any, res: any, next: any) => {
