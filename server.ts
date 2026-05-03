@@ -130,7 +130,8 @@ let botState = {
   isWsConnected: false, // Trạng thái kết nối WebSocket
   apiError: "" as string, // Lưu lỗi API nếu có
   recentWhaleTrades: [] as WhaleTrade[], // Lịch sử Whale Trades khớp thực tế
-  lastReportMinute: -1, // Lưu phút cuối cùng đã báo intel report
+  lastReportMinute: -1, 
+  lastReportKey: "", // Khóa duy nhất để chặn trùng lặp báo cáo
   latestSweepStatus: "None" as "None" | "High" | "Low", // Trạng thái quét thanh khoản gần nhất
 };
 
@@ -819,37 +820,42 @@ async function startServer() {
   })();
 
   // --- BÁO CÁO INTEL ĐỊNH KỲ (MỖI 15 PHÚT) ---
-  // Báo cáo lúc 10 giây trước khi kết thúc nến 15p (Phút 14/29/44/59, giây 50)
+  // Báo cáo lúc 10 giây trước khi kết thúc nến 15p (Phút 14/29/44/59, giây 50-55)
   setInterval(() => {
     const now = new Date();
-    const seconds = now.getSeconds();
     const minute = now.getMinutes();
+    const seconds = now.getSeconds();
     
-    const isReportMinute = (minute + 1) % 15 === 0;
+    // Kiểm tra xem có phải phút cuối của khung 15p (14, 29, 44, 59)
+    const isTargetMinute = (minute + 1) % 15 === 0;
     
-    // Chỉ gửi ở giây thứ 50 của phút cuối cùng trong nến 15p
-    if (isReportMinute && seconds === 50 && botState.lastReportMinute !== minute) {
-      botState.lastReportMinute = minute;
+    if (isTargetMinute && seconds >= 50 && seconds <= 56) {
+      // Tạo khóa duy nhất cho khung 15p này: ví dụ "2024-05-03-06-14"
+      const reportKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}-${now.getHours()}-${minute}`;
       
-      const buyVol = botState.recentWhaleTrades.filter(t => t.side === 'buy').reduce((s, t) => s + t.amount, 0);
-      const sellVol = botState.recentWhaleTrades.filter(t => t.side === 'sell').reduce((s, t) => s + t.amount, 0);
-      const net = (buyVol - sellVol) / 1000;
-      
-      const sweepIcon = botState.latestSweepStatus === 'Low' ? "🟢 QUÉT ĐÁY (LOW)" : (botState.latestSweepStatus === 'High' ? "🔴 QUÉT ĐỈNH (HIGH)" : "❌ KHÔNG (NONE)");
-      const wsStatus = botState.isWsConnected ? "✅ STREAMING" : "❌ OFFLINE";
-      
-      const intelMsg = `📝 *BẢN TIN INTEL (15M)*\n\n` +
-        `🌐 WS Binance: ${wsStatus}\n` +
-        `💰 BTC Price: *$${botState.lastPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}*\n` +
-        `🧹 Sweep: *${sweepIcon}*\n` +
-        `⚖️ OB Ratio: *${botState.obRatioEMA.toFixed(2)}*\n` +
-        `📈 ADX: *${botState.adx.toFixed(1)}* (Trends: ${botState.plusDI.toFixed(1)} / ${botState.minusDI.toFixed(1)})\n` +
-        `🐋 Whale Net: ${net >= 0 ? '🟢 +' : '🔴 '}${net.toFixed(1)}k\n\n` +
-        `_Chuẩn bị đóng nến và thực thi chiến lược..._`;
-      
-      sendTelegram(intelMsg);
+      if (botState.lastReportKey !== reportKey) {
+        botState.lastReportKey = reportKey;
+        
+        const buyVol = botState.recentWhaleTrades.filter(t => t.side === 'buy').reduce((s, t) => s + t.amount, 0);
+        const sellVol = botState.recentWhaleTrades.filter(t => t.side === 'sell').reduce((s, t) => s + t.amount, 0);
+        const net = (buyVol - sellVol) / 1000;
+        
+        const sweepIcon = botState.latestSweepStatus === 'Low' ? "🟢 QUÉT ĐÁY (LOW)" : (botState.latestSweepStatus === 'High' ? "🔴 QUÉT ĐỈNH (HIGH)" : "❌ KHÔNG (NONE)");
+        const wsStatus = botState.isWsConnected ? "✅ STREAMING" : "❌ OFFLINE";
+        
+        const intelMsg = `📝 *BẢN TIN INTEL (15M)*\n\n` +
+          `🌐 WS Binance: ${wsStatus}\n` +
+          `💰 BTC Price: *$${botState.lastPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}*\n` +
+          `🧹 Sweep: *${sweepIcon}*\n` +
+          `⚖️ OB Ratio: *${botState.obRatioEMA.toFixed(2)}*\n` +
+          `📈 ADX: *${botState.adx.toFixed(1)}* (Trends: ${botState.plusDI.toFixed(1)} / ${botState.minusDI.toFixed(1)})\n` +
+          `🐋 Whale Net: ${net >= 0 ? '🟢 +' : '🔴 '}${net.toFixed(1)}k\n\n` +
+          `_Chuẩn bị đóng nến và thực thi chiến lược..._`;
+        
+        sendTelegram(intelMsg);
+      }
     }
-  }, 1000);
+  }, 2000); // Kiểm tra mỗi 2 giây để giảm tải và tránh lặp trong cùng 1 giây
 
   sendTelegram("🐳 *Whale Bot Đã Sẵn Sàng*");
 
