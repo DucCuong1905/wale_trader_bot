@@ -662,10 +662,17 @@ async function traderLoop() {
 
       if (stopDist > 0) {
         let size = riskAmt / stopDist;
-        const maxNotional = (botState.balance * 0.1) / entry;
-        size = Math.min(size, maxNotional);
+        
+        // Đảm bảo khối lượng tối thiểu là 0.001 BTC (Binance Futures limit)
+        // Và giới hạn tối đa không vượt quá 50% vốn (để an toàn) nếu tính theo Margin x10
+        const minBTC = 0.001; 
+        const maxNotionalValue = botState.balance * 5; // Cho phép vị thế tối đa gấp 5 lần vốn (Leverage x5 thực tế)
+        const maxSize = maxNotionalValue / entry;
 
-        if (size > 0) {
+        size = Math.max(size, minBTC);
+        size = Math.min(size, maxSize);
+
+        if (size >= minBTC) {
           const currentRatio = botState.ask !== 0 ? botState.bid / botState.ask : 1.0;
           
           // Lưu tín hiệu vào danh sách signals
