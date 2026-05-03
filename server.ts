@@ -161,7 +161,7 @@ HƯỚNG DẪN RA QUYẾT ĐỊNH CHUYÊN SÂU:
 1. Xác định "Hidden Pressure": Nếu Orderbook nghiêng về Bid (.ratio > 1) nhưng Whale Trades đang xả hàng thực tế (Sell > Buy), đây là tín hiệu dụ mua (Bull Trap). Hãy REJECT.
 2. Dòng tiền thật: Ưu tiên dữ liệu Whale Trades khớp thực tế. Nếu tỷ lệ Orderbook (OB Ratio) yếu nhưng Whale Trades khớp cực mạnh cùng chiều tín hiệu, hãy CONFIRM.
 3. Động lượng: Nếu cú quét thanh khoản đi kèm với Whale Trades cùng chiều lớn (> $100k net), đây là thiết lập High-Probability.
-4. Quản trị rủi ro: Bot đang sử dụng SL tại đáy/đỉnh nến Sweep. Nếu nến Sweep quá dài (vượt quá 2% biến động), hãy REJECT vì rủi ro quá lớn.
+4. Quản trị rủi ro: Đánh giá độ dài của nến (Volatility). Nếu thị trường đang biến động quá hỗn loạn hoặc nến quét thanh khoản có râu quá dài so với thân nến (dấu hiệu rút chân không dứt khoát), hãy cân nhắc REJECT.
 
 Trả về duy nhất JSON:
 {
@@ -660,14 +660,9 @@ async function traderLoop() {
       console.log(`🚀 [SIGNAL FOUND] Phát hiện tín hiệu ${signal}. Đang gửi cho AI phân tích...`);
       const entry = botState.lastPrice;
       
-      // Stop Loss động: Sử dụng đáy/đỉnh nến quét thanh khoản (Sweep Candle)
-      const sweepCandle = bars[sweepResult.candleIndex];
-      let sl = 0;
-      if (signal === "LONG") {
-        sl = sweepCandle[3] * 0.9995; // Thêm 0.05% margin an toàn dưới đáy nến
-      } else {
-        sl = sweepCandle[2] * 1.0005; // Thêm 0.05% margin an toàn trên đỉnh nến
-      }
+      // Stop Loss động: Sử dụng khoảng cách biến động trung bình (ATR-like) để tránh quét râu
+      const rangeAvg = getAvgRange(bars, 14);
+      const sl = signal === "LONG" ? entry - rangeAvg : entry + rangeAvg;
       
       const tp = signal === "LONG" ? entry + (entry - sl) * RR : entry - (sl - entry) * RR;
 
