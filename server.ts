@@ -129,7 +129,7 @@ let botState = {
   aiReasoning: "Đang chờ phân tích...", // Phân tích gần nhất từ AI
   isWsConnected: false, // Trạng thái kết nối WebSocket
   recentWhaleTrades: [] as WhaleTrade[], // Lịch sử Whale Trades khớp thực tế
-  lastReportMinute: -1, // Lưu phút cuối cùng đã báo intel report
+  lastReportHour: -1, // Lưu giờ cuối cùng đã báo intel report
 };
 
 // --- LOGIC PHÂN TÍCH AI (AI ANALYSIS) ---
@@ -794,41 +794,30 @@ async function startServer() {
     }
   })();
 
-  // --- BÁO CÁO ĐỊNH KỲ (4 GIỜ) ---
-  setInterval(() => {
-    const wsStatus = botState.isWsConnected ? "✅ Đang kết nối" : "❌ Mất kết nối";
-    const statusMsg = `📊 *BÁO CÁO TRẠNG THÁI*
-🌐 WebSocket: ${wsStatus}
-💰 Giá BTC: $${botState.lastPrice.toFixed(2)}
-⚖️ Bid/Ask: ${(botState.bid / (botState.ask || 1)).toFixed(2)}
-💼 Vị thế: ${botState.inPosition ? "Đang giữ lệnh" : "Trống"}
-💵 Số dư: $${botState.balance.toFixed(2)}`;
-    sendTelegram(statusMsg);
-  }, 14400000); // 4 giờ = 14,400,000ms
-
-  // --- BÁO CÁO INTEL 10S TRƯỚC ĐÓNG NẾN (MỖI PHÚT) ---
+  // --- BÁO CÁO INTEL ĐỊNH KỲ (MỖI 1 GIỜ) ---
+  // Báo cáo lúc 10 giây trước khi kết thúc nến giờ (Phút 59, giây 50)
   setInterval(() => {
     const now = new Date();
     const seconds = now.getSeconds();
     const minute = now.getMinutes();
+    const hour = now.getHours();
     
-    // Giây thứ 50 của mỗi phút (10s trước khi đóng nến 1m)
-    if (seconds >= 50 && seconds <= 55 && botState.lastReportMinute !== minute) {
-      botState.lastReportMinute = minute;
+    if (minute === 59 && seconds === 50 && botState.lastReportHour !== hour) {
+      botState.lastReportHour = hour;
       
       const buyVol = botState.recentWhaleTrades.filter(t => t.side === 'buy').reduce((s, t) => s + t.amount, 0);
       const sellVol = botState.recentWhaleTrades.filter(t => t.side === 'sell').reduce((s, t) => s + t.amount, 0);
       const net = (buyVol - sellVol) / 1000;
       
-      const intelMsg = `📝 *BẢN TIN INTEL (1m)*\n\n` +
+      const intelMsg = `📝 *BẢN TIN INTEL (1h)*\n\n` +
         `🌐 WS Binance: ${botState.isWsConnected ? "✅ Online" : "❌ Offline"}\n` +
         `💰 BTC Price: *$${botState.lastPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}*\n` +
         `⚖️ OB Ratio: *${botState.obRatioEMA.toFixed(2)}*\n` +
-        `📈 ADX: *${botState.adx.toFixed(1)}* (Trends: ${botState.plusDI.toFixed(1)} / ${botState.minusDI.toFixed(1)})\n` +
+        `📈 ADX: *${botState.adx.toFixed(1)}* (Trend: ${botState.plusDI.toFixed(1)}/${botState.minusDI.toFixed(1)})\n` +
         `🐋 Whale Buy: $${(buyVol/1000).toFixed(1)}k\n` +
         `🐋 Whale Sell: $${(sellVol/1000).toFixed(1)}k\n` +
         `📊 Whale Net: ${net >= 0 ? '🟢 +' : '🔴 '}${net.toFixed(1)}k\n\n` +
-        `_Đang chuẩn bị chốt nến và đánh giá tín hiệu..._`;
+        `_Báo cáo định kỳ mỗi giờ..._`;
       
       sendTelegram(intelMsg);
     }
