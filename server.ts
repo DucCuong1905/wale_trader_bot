@@ -339,13 +339,13 @@ function getOrderbookSignal() {
 
 function startWS() {
   // Binance Combined Streams: https://binance-docs.github.io/apidocs/futures/en/#combined-streams
-  // Lấy cả Orderbook (@depth20) để tính Whale Ratio và Ticker (@ticker) để lấy giá đóng cửa liên tục
-  const streams = `${SYMBOL_ID}@depth20@100ms/${SYMBOL_ID}@ticker`;
+  // @depth20: Whale Ratio, @miniTicker: Giá liên tục (nhẹ hơn @ticker)
+  const streams = `${SYMBOL_ID}@depth20@100ms/${SYMBOL_ID}@miniTicker`;
   const wsUrl = `wss://fstream.binance.com/stream?streams=${streams}`;
   const ws = new WebSocket(wsUrl);
 
   ws.on('open', () => {
-    console.log("🔌 Connected to Binance WS (Combined Streams)");
+    console.log("🔌 Connected to Binance WS (Combined Streams: Depth & Ticker)");
     botState.isWsConnected = true;
   });
 
@@ -354,30 +354,42 @@ function startWS() {
       const msg = data.toString();
       const payload = JSON.parse(msg);
       
-      // Combined streams trả về object { stream: "...", data: { ... } }
       const streamName = payload.stream || "";
       const d = payload.data;
 
       if (!d) return;
 
-      // Log mỗi 100 tin nhắn để tránh spam log nhưng vẫn biết WS đang chạy
-      if (Math.random() < 0.01) {
-        console.log(`[WS DEBUG] Nhận dữ liệu từ stream: ${streamName}, Giá hiện tại: ${botState.lastPrice}`);
+      // Log để kiểm tra nếu giá vẫn là 0
+      if (botState.lastPrice === 0 && Math.random() < 0.05) {
+        console.log(`[WS SYNC] Đang chờ giá... Nhận stream: ${streamName}`);
       }
 
-      if (streamName.toLowerCase().includes('@depth')) {
+      const sName = streamName.toLowerCase();
+
+      if (sName.includes('@depth')) {
         if (d.bids && d.asks) {
           botState.bid = d.bids.reduce((sum: number, x: any) => sum + parseFloat(x[1]), 0);
           botState.ask = d.asks.reduce((sum: number, x: any) => sum + parseFloat(x[1]), 0);
           
           const currentRatio = botState.ask !== 0 ? botState.bid / botState.ask : 1.0;
           botState.obRatioEMA = (currentRatio * 0.1) + (botState.obRatioEMA * 0.9);
+
+          // FALLBACK: Nếu lastPrice chưa có, lấy giá Best Bid từ Depth
+          if (botState.lastPrice === 0 && d.bids.length > 0) {
+            botState.lastPrice = parseFloat(d.bids[0][0]);
+            console.log(`🎯 Đã khởi tạo giá ban đầu từ Depth: $${botState.lastPrice}`);
+          }
         }
-      } else if (streamName.toLowerCase().includes('@ticker') || streamName.toLowerCase().includes('@markprice')) {
-        // d.c là Last Price (Ticker), d.p là Mark Price
-        const price = d.c || d.p;
-        if (price) {
-          botState.lastPrice = parseFloat(price);
+      } else if (sName.includes('@ticker') || sName.includes('@miniticker')) {
+        // d.c là Close Price trong miniTicker hoặc Ticker
+        if (d.c) {
+          const oldPrice = botState.lastPrice;
+          botState.lastPrice = parseFloat(d.c);
+          
+          // Thông báo khi lần đầu có giá
+          if (oldPrice === 0 && botState.lastPrice > 0) {
+            console.log(`🚀 WebSocket Price Synced: $${botState.lastPrice}`);
+          }
         }
       }
     } catch (e) { }
