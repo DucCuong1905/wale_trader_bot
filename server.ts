@@ -646,12 +646,11 @@ async function startServer() {
   
   app.get("/api/trading/status", (req, res) => {
     try {
-      console.log(`[API] Serving status request at ${new Date().toLocaleTimeString()}`);
       res.json({
         status: botState.isRunning ? "running" : "idle",
         symbol: PAIR,
         last_price: botState.lastPrice || 0,
-        bid_ratio: botState.obRatioEMA.toFixed(2), // Trả về tỷ lệ đã làm mượt
+        bid_ratio: botState.obRatioEMA.toFixed(2),
         in_position: botState.inPosition,
         signals: (botState.signals || []).slice(0, 10),
         balance: botState.balance || 0,
@@ -671,6 +670,27 @@ async function startServer() {
       res.status(500).json({ error: "Internal Server Error" });
     }
   });
+
+  // Vite middleware or static serving
+  if (process.env.NODE_ENV !== "production") {
+    try {
+      console.log("🛠️ Initializing Vite middleware...");
+      const vite = await createViteServer({ 
+        server: { middlewareMode: true }, 
+        appType: "spa" 
+      });
+      app.use(vite.middlewares);
+      console.log("✅ Vite middleware loaded");
+    } catch (ve) {
+      console.error("❌ Failed to load Vite middleware:", ve);
+    }
+  } else {
+    const distPath = path.join(process.cwd(), "dist");
+    if (fs.existsSync(distPath)) {
+      app.use(express.static(distPath));
+      app.get("*", (req, res) => res.sendFile(path.join(distPath, "index.html")));
+    }
+  }
 
   // --- START SERVER ---
   app.listen(PORT, "0.0.0.0", () => {
@@ -712,27 +732,7 @@ async function startServer() {
     sendTelegram(statusMsg);
   }, 14400000); // 4 giờ = 14,400,000ms
 
-  sendTelegram("🐳 *Whale Bot Đã Khởi Chạy*\nBot đã đồng bộ và bắt đầu hoạt động...");
-
-  // Vite middleware or static serving
-  if (process.env.NODE_ENV !== "production") {
-    try {
-      const vite = await createViteServer({ 
-        server: { middlewareMode: true }, 
-        appType: "spa" 
-      });
-      app.use(vite.middlewares);
-      console.log("✅ Vite middleware loaded");
-    } catch (ve) {
-      console.error("❌ Failed to load Vite middleware:", ve);
-    }
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    if (fs.existsSync(distPath)) {
-      app.use(express.static(distPath));
-      app.get("*", (req, res) => res.sendFile(path.join(distPath, "index.html")));
-    }
-  }
+  sendTelegram("🐳 *Whale Bot Đã Khởi Chạy với Binance*\nBot đã đồng bộ và bắt đầu hoạt động...");
 
   // Error handling middleware
   app.use((err: any, req: any, res: any, next: any) => {
