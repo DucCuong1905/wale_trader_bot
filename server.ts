@@ -369,41 +369,38 @@ function startWS() {
       const sName = streamName.toLowerCase();
 
       if (sName.includes('@depth')) {
-        // Binance Depth dùng 'b' cho bids và 'a' cho asks
         const bids = d.b || d.bids;
         const asks = d.a || d.asks;
 
-        if (bids && asks) {
+        if (bids && Array.isArray(bids) && asks && Array.isArray(asks)) {
           botState.bid = bids.reduce((sum: number, x: any) => sum + parseFloat(x[1]), 0);
           botState.ask = asks.reduce((sum: number, x: any) => sum + parseFloat(x[1]), 0);
           
           const currentRatio = botState.ask !== 0 ? botState.bid / botState.ask : 1.0;
           botState.obRatioEMA = (currentRatio * 0.1) + (botState.obRatioEMA * 0.9);
 
-          // FALLBACK: Nếu lastPrice chưa có, lấy giá Best Bid từ Depth
           if (botState.lastPrice === 0 && bids.length > 0) {
             botState.lastPrice = parseFloat(bids[0][0]);
-            console.log(`🎯 Đã khởi tạo giá ban đầu từ Depth: $${botState.lastPrice}`);
+            console.log(`🎯 [INIT] Giá khởi tạo từ Depth: $${botState.lastPrice}`);
           }
         }
-      } else if (sName.includes('@ticker') || sName.includes('@miniticker')) {
-        const price = d.c || d.p;
+      } else if (sName.includes('@ticker') || sName.includes('@miniticker') || sName.includes('@aggtrade')) {
+        const price = d.c || d.p; // c cho ticker, p cho trade
         if (price) {
           const oldPrice = botState.lastPrice;
           botState.lastPrice = parseFloat(price);
-          
           if (oldPrice === 0 && botState.lastPrice > 0) {
-            console.log(`🚀 WebSocket Price Synced: $${botState.lastPrice}`);
+            console.log(`🚀 [SYNC] WebSocket Price Active: $${botState.lastPrice}`);
           }
         }
-      } else if (sName.includes('@aggtrade')) {
-        // q: quantity, p: price, m: is buyersmaker
+      } 
+
+      if (sName.includes('@aggtrade')) {
         const qty = parseFloat(d.q);
         const price = parseFloat(d.p);
         const amount = qty * price;
         const side = d.m ? 'sell' : 'buy';
 
-        // Lọc lệnh khớp lớn (Whale trades > $30,000)
         if (amount > 30000) {
           botState.recentWhaleTrades.push({ time: Date.now(), side, amount, price });
           

@@ -49,8 +49,7 @@ export default function App() {
 
     const fetchData = async () => {
       try {
-        console.log("Fetching status from /api/trading/status...");
-        const res = await fetch('/api/trading/status');
+        const res = await fetch(`/api/trading/status?t=${Date.now()}`);
         if (!res.ok) {
           const text = await res.text();
           throw new Error(`Status API error: ${res.status} - ${text.substring(0, 50)}`);
