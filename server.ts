@@ -128,6 +128,7 @@ let botState = {
   minusDI: 0, // Chỉ số -DI
   aiReasoning: "Đang chờ phân tích...", // Phân tích gần nhất từ AI
   isWsConnected: false, // Trạng thái kết nối WebSocket
+  apiError: "" as string, // Lưu lỗi API nếu có
   recentWhaleTrades: [] as WhaleTrade[], // Lịch sử Whale Trades khớp thực tế
   lastReportMinute: -1, // Lưu phút cuối cùng đã báo intel report
   latestSweepStatus: "None" as "None" | "High" | "Low", // Trạng thái quét thanh khoản gần nhất
@@ -233,7 +234,7 @@ function getExchange() {
     const secret = getEnv("BINANCE_API_SECRET");
 
     if (!apiKey || !secret) {
-      console.warn("⚠️ Thiếu API Key Binance. Bot sẽ chạy ở chế độ chỉ giám sát.");
+      botState.apiError = "Thiếu BINANCE_API_KEY hoặc BINANCE_API_SECRET trong cài đặt.";
       return null;
     }
 
@@ -493,7 +494,21 @@ async function traderLoop() {
 
   try {
     console.log("🔄 Vòng lặp giao dịch đang chạy...");
-    const balanceInfo = await ex.fetchBalance();
+    let balanceInfo;
+    try {
+      balanceInfo = await ex.fetchBalance();
+      botState.apiError = ""; // Clear error on success
+    } catch (e: any) {
+      if (e instanceof ccxt.AuthenticationError) {
+        botState.apiError = "Lỗi xác thực Binance: API Key hoặc Secret không hợp lệ / Thiếu quyền Futures.";
+        console.error("❌ " + botState.apiError);
+      } else {
+        botState.apiError = `Lỗi kết nối sàn: ${e.message}`;
+      }
+      setTimeout(traderLoop, 15000);
+      return;
+    }
+
     const currentBalance = balanceInfo.USDT ? (balanceInfo.USDT as any).total : 0;
     botState.balance = currentBalance;
 
@@ -719,6 +734,7 @@ async function startServer() {
         symbol: PAIR,
         last_price: botState.lastPrice || 0,
         is_ws_connected: botState.isWsConnected,
+        api_error: botState.apiError,
         bid_ratio: botState.obRatioEMA.toFixed(2),
         in_position: botState.inPosition,
         signals: (botState.signals || []).slice(0, 10),
@@ -746,6 +762,11 @@ async function startServer() {
       console.error("Error in /api/trading/history:", err);
       res.status(500).json({ error: "Internal Server Error" });
     }
+  });
+
+  // API Catch-all: Ensure any unknown /api route returns JSON, not HTML
+  app.all("/api/*", (req, res) => {
+    res.status(404).json({ error: `API Route ${req.method} ${req.url} not found` });
   });
 
   // Vite middleware or static serving
@@ -806,6 +827,7 @@ async function startServer() {
     
     const isReportMinute = (minute + 1) % 15 === 0;
     
+    // Chỉ gửi ở giây thứ 50 của phút cuối cùng trong nến 15p
     if (isReportMinute && seconds === 50 && botState.lastReportMinute !== minute) {
       botState.lastReportMinute = minute;
       
@@ -813,14 +835,15 @@ async function startServer() {
       const sellVol = botState.recentWhaleTrades.filter(t => t.side === 'sell').reduce((s, t) => s + t.amount, 0);
       const net = (buyVol - sellVol) / 1000;
       
-      const sweepIcon = botState.latestSweepStatus === 'Low' ? "🟢 LOW" : (botState.latestSweepStatus === 'High' ? "🔴 HIGH" : "❌ None");
+      const sweepIcon = botState.latestSweepStatus === 'Low' ? "🟢 QUÉT ĐÁY (LOW)" : (botState.latestSweepStatus === 'High' ? "🔴 QUÉT ĐỈNH (HIGH)" : "❌ KHÔNG (NONE)");
+      const wsStatus = botState.isWsConnected ? "✅ STREAMING" : "❌ OFFLINE";
       
-      const intelMsg = `📝 *BẢN TIN INTEL (15m)*\n\n` +
-        `🌐 WS Binance: ${botState.isWsConnected ? "✅ Online" : "❌ Offline"}\n` +
+      const intelMsg = `📝 *BẢN TIN INTEL (15M)*\n\n` +
+        `🌐 WS Binance: ${wsStatus}\n` +
         `💰 BTC Price: *$${botState.lastPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}*\n` +
-        `🧹 Sweep Level: *${sweepIcon}*\n` +
+        `🧹 Sweep: *${sweepIcon}*\n` +
         `⚖️ OB Ratio: *${botState.obRatioEMA.toFixed(2)}*\n` +
-        `📈 ADX: *${botState.adx.toFixed(1)}* (${botState.plusDI.toFixed(1)}/${botState.minusDI.toFixed(1)})\n` +
+        `📈 ADX: *${botState.adx.toFixed(1)}* (Trends: ${botState.plusDI.toFixed(1)} / ${botState.minusDI.toFixed(1)})\n` +
         `🐋 Whale Net: ${net >= 0 ? '🟢 +' : '🔴 '}${net.toFixed(1)}k\n\n` +
         `_Chuẩn bị đóng nến và thực thi chiến lược..._`;
       
@@ -828,7 +851,7 @@ async function startServer() {
     }
   }, 1000);
 
-  sendTelegram("🐳 *Whale Bot Đã Khởi Chạy với Binance*");
+  sendTelegram("🐳 *Whale Bot Đã Sẵn Sàng*");
 
   // Error handling middleware
   app.use((err: any, req: any, res: any, next: any) => {

@@ -45,50 +45,50 @@ export default function App() {
 
   useEffect(() => {
     let retryCount = 0;
-    const maxRetries = 5;
+    const maxRetries = 15; // Thử lại trong khoảng 7.5 giây trước khi báo lỗi cứng
     let timerId: any;
 
     const fetchData = async () => {
       try {
         const res = await fetch(`/api/trading/status?cache_bust=${Date.now()}`);
+        
         if (!res.ok) {
           const text = await res.text();
-          throw new Error(`Status API error: ${res.status} - ${text.substring(0, 50)}`);
+          throw new Error(`Server báo lỗi ${res.status}`);
         }
+
+        const contentType = res.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+          throw new Error("Dữ liệu không hợp lệ (Server đang khởi động)");
+        }
+
         const json = await res.json();
         
-        // Cập nhật dữ liệu từ API
         setData(json);
         setLastPrice(json.last_price);
         setBidRatio(parseFloat(json.bid_ratio));
         setSignals(json.signals);
 
-        try {
-          const histRes = await fetch('/api/trading/history');
-          if (histRes.ok) {
-            const histJson = await histRes.json();
-            setHistory(histJson);
-          }
-        } catch (hErr) {
-          console.warn("History fetch failed, but status ok", hErr);
-        }
-        
+        // Fetch history silently
+        fetch('/api/trading/history')
+          .then(r => r.json())
+          .then(setHistory)
+          .catch(() => {});
+
         setError(null);
-        retryCount = 0; // Reset on success
+        retryCount = 0;
       } catch (e: any) {
         if (e.name === 'AbortError') return;
-        console.error("Failed to fetch status:", e);
         
         if (retryCount < maxRetries) {
           retryCount++;
-          console.log(`Retrying fetch in 2s (${retryCount}/${maxRetries})...`);
+          console.warn(`Fetch error, retrying ${retryCount}/${maxRetries}...`);
         } else {
-          setError(`Lỗi kết nối Engine: ${e.message || "Không xác định"}. Vui lòng kiểm tra Server đang chạy ở port 3000.`);
+          setError(`Mất kết nối với Engine: ${e.message}. Vui lòng kiểm tra cài đặt API Key Binance.`);
         }
       } finally {
         setLoading(false);
-        // Tần suất cực cao cho cảm giác realtime (300ms)
-        timerId = setTimeout(fetchData, 300);
+        timerId = setTimeout(fetchData, 1000);
       }
     };
 
@@ -174,6 +174,28 @@ export default function App() {
       </header>
 
       <main className="max-w-[1400px] mx-auto p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* API Error Alert */}
+        {data?.api_error && (
+          <div className="lg:col-span-12">
+            <motion.div 
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              className="bg-red-500/10 border border-red-500/30 p-5 rounded-[1.5rem] flex items-center gap-4 glow-red mb-2"
+            >
+              <div className="p-2 bg-red-500 rounded-xl shadow-lg shadow-red-500/40">
+                <AlertTriangle className="w-5 h-5 text-white" />
+              </div>
+              <div className="flex-1">
+                <h4 className="text-xs font-black text-red-100 uppercase tracking-widest mb-0.5">CẢNH BÁO HỆ THỐNG GIAO DỊCH</h4>
+                <p className="text-sm text-red-200/80 font-medium leading-relaxed">{data.api_error}</p>
+              </div>
+              <div className="text-[10px] bg-red-500/20 px-3 py-1 rounded-full text-red-200 font-bold uppercase tracking-tight">
+                CHECK CONFIG
+              </div>
+            </motion.div>
+          </div>
+        )}
+
         {/* Left Column: Stats & Main Chart */}
         <div className="lg:col-span-8 space-y-6">
           {/* Quick Stats Grid */}
@@ -257,7 +279,7 @@ export default function App() {
                 <h3 className="text-xl font-black uppercase tracking-tight text-white mb-1">Tăng Trưởng Tài Sản</h3>
                 <p className="text-xs text-slate-400 uppercase tracking-widest font-bold">Biểu đồ đường cong vốn</p>
               </div>
-              <div className="flex gap-2">
+          <div className="flex gap-2">
                 <button className="px-5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-[10px] font-black uppercase tracking-widest transition-all">1H</button>
                 <button className="px-5 py-2 rounded-xl bg-blue-600 text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-blue-600/20 glow-blue">TẤT CẢ</button>
               </div>
@@ -482,11 +504,11 @@ export default function App() {
 
       {/* Footer / Connection Status */}
       <footer className="max-w-[1400px] mx-auto px-6 py-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-4">
-        <p className="text-xs text-gray-500">© 2024 WhaleTrade. Chỉ dành cho mục đích giao dịch thuật toán.</p>
+        <p className="text-xs text-gray-500">© 2026 WhaleBot. Hệ thống hỗ trợ quyết định giao dịch.</p>
         <div className="flex items-center gap-6">
-          <FooterItem label="IP" value="152.42.***.***" />
-          <FooterItem label="Latency" value="42ms" />
-          <FooterItem label="Uptime" value="99.9%" />
+          <FooterItem label="GIAO THỨC" value="WebSocket/CCXT" />
+          <FooterItem label="ĐỘ TRỄ" value="42ms" />
+          <FooterItem label="MÃ NGUỒN" value="v2.1" />
         </div>
       </footer>
     </div>
