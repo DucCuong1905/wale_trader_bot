@@ -897,15 +897,24 @@ async function startServer() {
         await ex.setLeverage(10, PAIR);
         const ticker = await ex.fetchTicker(PAIR);
         const price = ticker.last || botState.lastPrice;
-        const qty = 20 / price;
-        const precisionQty = ex.amountToPrecision(PAIR, qty);
         
-        await ex.createMarketOrder(PAIR, 'buy', parseFloat(precisionQty));
-        sendTelegram(`🚀 *API TEST SUCCESS*\nĐã khớp lệnh Long 2$ (x10) thành công.\n⏱️ Lệnh này sẽ tự đóng sau 5 phút.`);
+        // Tính volume: 20$ hoặc tối thiểu 0.001 BTC (Binance Limit)
+        let qty = 20 / price;
+        if (qty < 0.001) {
+          console.log(`⚠️ Volume $20 (~${qty.toFixed(5)} BTC) quá nhỏ. Tăng lên 0.001 BTC để khớp lệnh.`);
+          qty = 0.001;
+        }
+        
+        const precisionQty = ex.amountToPrecision(PAIR, qty);
+        const finalQty = parseFloat(precisionQty);
+        const marginUsed = (finalQty * price) / 10;
+        
+        await ex.createMarketOrder(PAIR, 'buy', finalQty);
+        sendTelegram(`🚀 *API TEST SUCCESS*\nĐã khớp lệnh Long ${finalQty} BTC (~$${(finalQty * price).toFixed(1)})\n💰 Ký quỹ ước tính: ~${marginUsed.toFixed(2)} USDT (x10)\n⏱️ Lệnh này sẽ tự đóng sau 5 phút.`);
         
         setTimeout(async () => {
           try {
-            await ex.createMarketOrder(PAIR, 'sell', parseFloat(precisionQty));
+            await ex.createMarketOrder(PAIR, 'sell', finalQty);
             sendTelegram(`✅ *TEST COMPLETE*: Đã tự động đóng lệnh test.`);
           } catch (err: any) {
             sendTelegram(`❌ *LỖI ĐÓNG LỆNH TEST*: ${err.message}`);
