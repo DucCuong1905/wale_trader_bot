@@ -358,7 +358,7 @@ function getOrderbookSignal() {
 function startWS() {
   // Binance Combined Streams: https://binance-docs.github.io/apidocs/futures/en/#combined-streams
   // @depth20: Whale Ratio, @miniTicker: Giá liên tục, @aggTrade: Khớp lệnh thực tế
-  const streams = `${SYMBOL_ID}@depth20@100ms/${SYMBOL_ID}@miniticker/${SYMBOL_ID}@aggtrade`;
+  const streams = `${SYMBOL_ID}@depth20@100ms/${SYMBOL_ID}@miniTicker/${SYMBOL_ID}@aggTrade`;
   const wsUrl = `wss://fstream.binance.com/stream?streams=${streams}`;
   const ws = new WebSocket(wsUrl);
 
@@ -386,9 +386,6 @@ function startWS() {
       else if (d.b && d.b[0]) incomingPrice = parseFloat(d.b[0][0]); // Best bid từ Depth
 
       if (incomingPrice > 0) {
-        if (Math.abs(botState.lastPrice - incomingPrice) > 0.01) {
-           // console.log(`[PRICE] ${botState.lastPrice} -> ${incomingPrice}`);
-        }
         botState.lastPrice = incomingPrice;
       }
 
@@ -414,7 +411,7 @@ function startWS() {
         // Hạ ngưỡng Whale xuống $1000 để bắt được nhiều dòng tiền hơn, giúp Whale Net nhạy hơn
         if (amount > 1000) {
           botState.recentWhaleTrades.push({ time: Date.now(), side, amount, price });
-          // console.log(`[WHALE] Detect ${side} order: $${amount.toFixed(0)}`);
+          console.log(`[WHALE] Detect ${side.toUpperCase()} order: $${amount.toFixed(0)}`);
           // Tăng thời gian lưu trữ lên 15 phút (900,000 ms) để khớp với khung nến 15M
           const cutoff = Date.now() - 900000;
           botState.recentWhaleTrades = botState.recentWhaleTrades.filter(t => t.time > cutoff);
