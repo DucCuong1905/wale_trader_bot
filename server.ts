@@ -338,43 +338,53 @@ function getOrderbookSignal() {
 }
 
 function startWS() {
-  // Binance Depth Stream: https://binance-docs.github.io/apidocs/futures/en/#diff-depth-stream
-  const wsUrl = `wss://fstream.binance.com/ws/${SYMBOL_ID}@depth20@100ms`;
+  // Binance Combined Streams: https://binance-docs.github.io/apidocs/futures/en/#combined-streams
+  // Lấy cả Orderbook (@depth20) để tính Whale Ratio và Ticker (@ticker) để lấy giá đóng cửa liên tục
+  const streams = `${SYMBOL_ID}@depth20@100ms/${SYMBOL_ID}@ticker`;
+  const wsUrl = `wss://fstream.binance.com/stream?streams=${streams}`;
   const ws = new WebSocket(wsUrl);
 
   ws.on('open', () => {
-    console.log("🔌 Connected to Binance WS");
+    console.log("🔌 Connected to Binance WS (Combined Streams)");
     botState.isWsConnected = true;
   });
 
   ws.on('message', (data) => {
     try {
       const msg = data.toString();
-      const parsed = JSON.parse(msg);
+      const payload = JSON.parse(msg);
       
-      // Binance format: { bids: [[price, qty], ...], asks: [[price, qty], ...] }
-      if (parsed.bids && parsed.asks) {
-        botState.bid = parsed.bids.reduce((sum: number, x: any) => sum + parseFloat(x[1]), 0);
-        botState.ask = parsed.asks.reduce((sum: number, x: any) => sum + parseFloat(x[1]), 0);
-        
-        const currentRatio = botState.ask !== 0 ? botState.bid / botState.ask : 1.0;
-        botState.obRatioEMA = (currentRatio * 0.1) + (botState.obRatioEMA * 0.9);
+      // Combined streams trả về object { stream: "...", data: { ... } }
+      const streamName = payload.stream;
+      const d = payload.data;
 
-        // Update lastPrice from top of book
-        if (parsed.bids.length > 0) {
-          botState.lastPrice = parseFloat(parsed.bids[0][0]);
+      if (!d) return;
+
+      if (streamName.includes('@depth')) {
+        if (d.bids && d.asks) {
+          botState.bid = d.bids.reduce((sum: number, x: any) => sum + parseFloat(x[1]), 0);
+          botState.ask = d.asks.reduce((sum: number, x: any) => sum + parseFloat(x[1]), 0);
+          
+          const currentRatio = botState.ask !== 0 ? botState.bid / botState.ask : 1.0;
+          botState.obRatioEMA = (currentRatio * 0.1) + (botState.obRatioEMA * 0.9);
+        }
+      } else if (streamName.includes('@ticker')) {
+        // d.c là Last Price
+        if (d.c) {
+          botState.lastPrice = parseFloat(d.c);
         }
       }
     } catch (e) { }
   });
 
-  ws.on('error', (e) => {
-    console.error("WS Error:", e);
+  ws.on('error', (err) => {
+    console.error("❌ Binance WS Error:", err.message);
     botState.isWsConnected = false;
   });
+
   ws.on('close', () => {
+    console.log("🔌 Binance WS Closed. Reconnecting in 5s...");
     botState.isWsConnected = false;
-    if (pingInterval) clearInterval(pingInterval);
     setTimeout(startWS, 5000);
   });
 }
