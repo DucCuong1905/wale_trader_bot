@@ -171,10 +171,9 @@ Trả về duy nhất JSON:
 
     console.log(`[AI] Đang phân tích chuyên sâu bằng ${modelName}...`);
     
-    const model = genAI.getGenerativeModel(
-      { model: modelName },
-      { apiVersion: 'v1beta' }
-    );
+    // Sử dụng model preview với apiVersion v1beta nếu cần, 
+    // nhưng thư viện @google/generative-ai thường tự xử lý model name.
+    const model = genAI.getGenerativeModel({ model: modelName });
     
     const result = await model.generateContent(prompt);
     const response = await result.response;
@@ -210,6 +209,7 @@ async function sendTelegram(msg: string) {
 
   try {
     const url = `https://api.telegram.org/bot${token}/sendMessage`;
+    console.log(`[TELEGRAM] Sending message to ${chatId}...`);
     const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -219,8 +219,11 @@ async function sendTelegram(msg: string) {
         parse_mode: "Markdown"
       })
     });
+    const result = await response.json();
     if (!response.ok) {
-        console.error(`❌ Telegram API error: ${response.status}`);
+        console.error(`❌ Telegram API error: ${response.status}`, result);
+    } else {
+        console.log(`✅ Telegram message sent successfully.`);
     }
   } catch (e) {
     console.error("Telegram Error:", e);
@@ -586,7 +589,7 @@ async function traderLoop() {
     const timeToClose = nextClose - now;
     const secondsToClose = Math.floor(timeToClose / 1000);
 
-    if (secondsToClose > 10) {
+    if (secondsToClose > 15) {
       if (now % 60000 < 5000) { 
         console.log(`⏳ Đang chờ nến đóng... (Còn ${secondsToClose}s nữa)`);
       }
@@ -594,9 +597,9 @@ async function traderLoop() {
       return;
     }
 
-    // --- GỬI BẢN TIN INTEL (CHỈ GỬI 1 LẦN KHI SẮP ĐÓNG NẾN) ---
-    const reportKey = `${new Date(nextClose).getHours()}-${new Date(nextClose).getMinutes()}`; // Key theo thời điểm đóng nến
-    if (botState.lastReportKey !== reportKey) {
+    // --- GỬI BẢN TIN INTEL (CHỈ GỬI 1 LẦN KHI CÒN 10-15S ĐÓNG NẾN) ---
+    const reportKey = `REPORT-${nextClose}`; // Key duy nhất theo timestamp đóng nến
+    if (botState.lastReportKey !== reportKey && secondsToClose <= 12) {
       botState.lastReportKey = reportKey;
       
       const buyVol = botState.recentWhaleTrades.filter(t => t.side === 'buy').reduce((s, t) => s + t.amount, 0);
@@ -612,7 +615,7 @@ async function traderLoop() {
       
       const intelMsg = `📝 *BẢN TIN INTEL (15M)*\n` +
         `⏰ Đóng nến: ${new Date(nextClose).toLocaleTimeString()}\n` +
-        `${envTag}\n\n` +
+        `${envTag} | PID: ${process.pid}\n\n` +
         `🌐 WS Binance: ${wsStatus}\n` +
         `💰 BTC Price: *$${botState.lastPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}*\n` +
         `🧹 Sweep: *${sweepIcon}*\n` +
@@ -648,6 +651,7 @@ async function traderLoop() {
     if (sweepHigh && obSignal === "BEAR" && adx >= 25) signal = "SHORT";
 
     if (signal) {
+      console.log(`🚀 [SIGNAL FOUND] Phát hiện tín hiệu ${signal}. Đang gửi cho AI phân tích...`);
       const entry = botState.lastPrice;
       const rangeAvg = getAvgRange(bars, 14);
       const sl = signal === "LONG" ? entry - rangeAvg : entry + rangeAvg;
