@@ -63,7 +63,7 @@ const modelName = "gemini-3-flash-preview";
 const PAIR = "BTC/USDT:USDT"; // Cặp giao dịch (BTC Futures trên Binance)
 const SYMBOL_ID = "btcusdt"; // ID Symbol cho WebSocket (lowercase cho Binance)
 const RISK_PER_TRADE = 0.01; // Rủi ro 1% tổng tài sản cho mỗi lệnh
-const RR = 2.5; // Tỷ lệ Lợi nhuận/Rủi ro (Take Profit gấp 2.5 lần Stop Loss)
+const RR = 2.0; // Tỷ lệ Lợi nhuận/Rủi ro mới 1:2
 const COOLDOWN_MS = 30000; // Thời gian nghỉ giữa các lệnh (30 giây) để tránh vào lệnh liên tục
 const MAX_DAILY_LOSS = 0.03; // Giới hạn lỗ tối đa trong ngày (3%). Nếu chạm mốc này, Bot sẽ dừng giao dịch.
 
@@ -101,6 +101,13 @@ function saveTrade(trade: any) {
 }
 
 // Trạng thái hệ thống (System State) để theo dõi dữ liệu thời gian thực
+interface WhaleTrade {
+  time: number;
+  side: 'buy' | 'sell';
+  amount: number; // USDT
+  price: number;
+}
+
 let botState = {
   isRunning: true, // Trạng thái hoạt động của Bot
   lastPrice: 0, // Giá thị trường hiện tại
@@ -117,44 +124,45 @@ let botState = {
   lastNotifiedCandle: -1, // Lưu index nến cuối cùng đã báo telegram
   obRatioEMA: 1.0, // Tỷ lệ Bid/Ask đã được làm mượt (EMA)
   aiReasoning: "Đang chờ phân tích...", // Phân tích gần nhất từ AI
-  isWsConnected: false // Trạng thái kết nối WebSocket
+  isWsConnected: false, // Trạng thái kết nối WebSocket
+  recentWhaleTrades: [] as WhaleTrade[], // Lịch sử Whale Trades khớp thực tế
 };
 
 // --- LOGIC PHÂN TÍCH AI (AI ANALYSIS) ---
 async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number, bars: any[]) {
-  // Chỉ dùng duy nhất model trả phí và không retry để log sạch
   try {
     const context = bars.slice(-20).map((b) => {
       const time = new Date(b[0]).toLocaleTimeString();
       return `[${time}] O:${b[1]} H:${b[2]} L:${b[3]} C:${b[4]} V:${b[5]}`;
     }).join("\n");
 
-    const prompt = `Bạn là một nhà giao dịch cá voi (whale trader) chuyên nghiệp, quyết đoán. Mục tiêu là bắt các cú quét thanh khoản (liquidity sweeps) và động lượng thị trường.
+    // Tính toán xu hướng từ Whale Trades khớp thực tế gần đây
+    const totalWhaleBuy = botState.recentWhaleTrades.filter(t => t.side === 'buy').reduce((sum, t) => sum + t.amount, 0);
+    const totalWhaleSell = botState.recentWhaleTrades.filter(t => t.side === 'sell').reduce((sum, t) => sum + t.amount, 0);
+    const whaleSummary = `Gần đây (5p): Whale Buy khớp thực tế $${(totalWhaleBuy/1000).toFixed(1)}k, Whale Sell khớp thực tế $${(totalWhaleSell/1000).toFixed(1)}k.`;
+
+    const prompt = `Bạn là một nhà giao dịch cá voi chuyên nghiệp tại Binance Futures. Bạn phân tích hợp lưu giữa Tường lệnh (Orderbook) và Khớp lệnh thực tế (Whale Trades).
 TÍN HIỆU CẦN ĐÁNH GIÁ: ${signal}
 GIÁ HIỆN TẠI: ${lastPrice}
-TỶ LỆ ORDERBOOK BID/ASK: ${obRatio}
+TỶ LỆ ORDERBOOK (Bid/Ask): ${obRatio} (Tường mua/Tường bán)
+KHỚP LỆNH THỰC TẾ (Whale Trades): ${whaleSummary}
 
-BỐI CẢNH THỊ TRƯỜNG (20 nến gần nhất):
+BỐI CẢNH THỊ TRƯỜNG (20 nến):
 ${context}
 
-HƯỚNG DẪN PHÂN TÍCH:
-- Quyết đoán. Nếu cấu trúc thị trường khớp hoặc hỗ trợ tín hiệu ${signal}, hãy CONFIRM.
-- Tìm kiếm các dấu hiệu đảo chiều sớm sau khi quét thanh khoản.
-- Chấp nhận rủi ro vừa phải nếu tỷ lệ Bid/Ask ủng hộ xu hướng.
-- Chúng ta đánh RR 2.5, nên có thể chấp nhận một số lệnh stop out nếu bắt được các cú quét lớn thành công.
+HƯỚNG DẪN RA QUYẾT ĐỊNH CHUYÊN SÂU:
+1. Xác định "Hidden Pressure": Nếu Orderbook nghiêng về Bid (.ratio > 1) nhưng Whale Trades đang xả hàng thực tế (Sell > Buy), đây là tín hiệu dụ mua (Bull Trap). Hãy REJECT.
+2. Dòng tiền thật: Ưu tiên dữ liệu Whale Trades khớp thực tế hơn là tường lệnh ảo.
+3. Động lượng: Nếu cú quét thanh khoản đi kèm với Whale Trades cùng chiều cực lớn (> $500k), độ tin cậy cực cao.
 
-QUYẾT ĐỊNH CUỐI CÙNG:
-- "CONFIRM" nếu tín hiệu có ít nhất 60% xác suất thắng theo kinh nghiệm của bạn.
-- "REJECT" chỉ khi có khối lượng ngược xu hướng cực lớn hoặc tín hiệu giả mạo (fakeout) rõ ràng.
-
-Trả về DUY NHẤT một đối tượng JSON (Lý do bằng TIẾNG VIỆT):
+Trả về duy nhất JSON:
 {
-  "decision": "CONFIRM" | "REJECT",
-  "reason": "Giải thích kỹ thuật ngắn gọn bằng tiếng Việt (tối đa 2 câu)",
+  "decision": "CONFIRM" hoặc "REJECT",
+  "reason": "Giải thích ngắn gọn (tối đa 2 câu) tập trung vào sự hợp lưu giữa OB và Whale Trades",
   "confidence": 0-100
 }`;
 
-    console.log(`[AI] Đang phân tích bằng ${modelName}...`);
+    console.log(`[AI] Đang phân tích chuyên sâu bằng ${modelName}...`);
     
     const model = genAI.getGenerativeModel(
       { model: modelName },
@@ -279,10 +287,10 @@ function detectWhaleSweep(bars: any[]) {
     const prevHigh = Math.max(...prevPeriod.map(b => b[2]));
     const prevLow = Math.min(...prevPeriod.map(b => b[3]));
     
-    // Tính toán Volume và Displacement
-    const maxVol = Math.max(...prevPeriod.map(b => b[5]));
-    const volRatio = v / maxVol;
-    const isClimaxVol = volRatio >= 0.8; 
+    // Tính toán Volume và Displacement (Logic mới: >= 1.2 lần trung bình 20 nến)
+    const avgVol = prevPeriod.reduce((sum, b) => sum + b[5], 0) / prevPeriod.length;
+    const volRatio = v / avgVol;
+    const isClimaxVol = volRatio >= 1.2; 
     
     const body = Math.abs(c - o);
     const totalSize = h - l;
@@ -299,9 +307,8 @@ function detectWhaleSweep(bars: any[]) {
     // --- AUDIT LOG CHO MỖI NẾN CÓ VOLUME LỚN ---
     if (isClimaxVol || l < prevLow || h > prevHigh) {
         console.log(`--- [AUDIT NẾN ${i}] ---`);
-        console.log(`📊 Vol/MaxVol: ${(volRatio * 100).toFixed(1)}% | Thân/Nến: ${(bodyRatio * 100).toFixed(1)}%`);
+        console.log(`📊 Vol/AvgVol: ${(volRatio * 100).toFixed(1)}% | Thân/Nến: ${(bodyRatio * 100).toFixed(1)}%`);
         console.log(`🕯️ Đỉnh cũ: ${prevHigh} | Đáy cũ: ${prevLow} | Low nến: ${l} | High nến: ${h}`);
-        console.log(`⚓ Râu dưới: ${(lowerWickRatio * 100).toFixed(1)}% | Râu trên: ${(upperWickRatio * 100).toFixed(1)}%`);
     }
 
     // --- LOGIC SWEEP LOW (Quét Đáy - Bullish) ---
@@ -339,13 +346,13 @@ function getOrderbookSignal() {
 
 function startWS() {
   // Binance Combined Streams: https://binance-docs.github.io/apidocs/futures/en/#combined-streams
-  // @depth20: Whale Ratio, @miniTicker: Giá liên tục (nhẹ hơn @ticker)
-  const streams = `${SYMBOL_ID}@depth20@100ms/${SYMBOL_ID}@miniTicker`;
+  // @depth20: Whale Ratio, @miniTicker: Giá liên tục, @aggTrade: Khớp lệnh thực tế
+  const streams = `${SYMBOL_ID}@depth20@100ms/${SYMBOL_ID}@miniTicker/${SYMBOL_ID}@aggTrade`;
   const wsUrl = `wss://fstream.binance.com/stream?streams=${streams}`;
   const ws = new WebSocket(wsUrl);
 
   ws.on('open', () => {
-    console.log("🔌 Connected to Binance WS (Combined Streams: Depth & Ticker)");
+    console.log("🔌 Connected to Binance WS (Depth, Ticker, AggTrade)");
     botState.isWsConnected = true;
   });
 
@@ -358,11 +365,6 @@ function startWS() {
       const d = payload.data;
 
       if (!d) return;
-
-      // Log để kiểm tra nếu giá vẫn là 0
-      if (botState.lastPrice === 0 && Math.random() < 0.05) {
-        console.log(`[WS SYNC] Đang chờ giá... Nhận stream: ${streamName}`);
-      }
 
       const sName = streamName.toLowerCase();
 
@@ -385,7 +387,6 @@ function startWS() {
           }
         }
       } else if (sName.includes('@ticker') || sName.includes('@miniticker')) {
-        // d.c là Close Price trong miniTicker hoặc Ticker
         const price = d.c || d.p;
         if (price) {
           const oldPrice = botState.lastPrice;
@@ -393,6 +394,26 @@ function startWS() {
           
           if (oldPrice === 0 && botState.lastPrice > 0) {
             console.log(`🚀 WebSocket Price Synced: $${botState.lastPrice}`);
+          }
+        }
+      } else if (sName.includes('@aggtrade')) {
+        // q: quantity, p: price, m: is buyersmaker
+        const qty = parseFloat(d.q);
+        const price = parseFloat(d.p);
+        const amount = qty * price;
+        const side = d.m ? 'sell' : 'buy';
+
+        // Lọc lệnh khớp lớn (Whale trades > $30,000)
+        if (amount > 30000) {
+          botState.recentWhaleTrades.push({ time: Date.now(), side, amount, price });
+          
+          // Giữ lịch sử 5 phút
+          const cutoff = Date.now() - 300000;
+          botState.recentWhaleTrades = botState.recentWhaleTrades.filter(t => t.time > cutoff);
+
+          if (amount > 500000) {
+            console.log(`🐋 CRITICAL WHALE: ${side.toUpperCase()} $${(amount/1000000).toFixed(2)}M @ ${price}`);
+            sendTelegram(`🐋 *KHỚP LỆNH KHỦNG*\n${side === 'buy' ? '🟢 BUY' : '🔴 SELL'} $${(amount/1000000).toFixed(2)}M\nGiá: $${price}`);
           }
         }
       }
@@ -678,6 +699,10 @@ async function startServer() {
   
   app.get("/api/trading/status", (req, res) => {
     try {
+      // Tính Whale Pressure
+      const buyVol = botState.recentWhaleTrades.filter(t => t.side === 'buy').reduce((s, t) => s + t.amount, 0);
+      const sellVol = botState.recentWhaleTrades.filter(t => t.side === 'sell').reduce((s, t) => s + t.amount, 0);
+
       res.json({
         status: botState.isRunning ? "running" : "idle",
         symbol: PAIR,
@@ -686,7 +711,12 @@ async function startServer() {
         in_position: botState.inPosition,
         signals: (botState.signals || []).slice(0, 10),
         balance: botState.balance || 0,
-        ai_reasoning: botState.aiReasoning || "Đang chờ phân tích..."
+        ai_reasoning: botState.aiReasoning || "Đang chờ phân tích...",
+        whale_trades: {
+          buy: buyVol.toFixed(0),
+          sell: sellVol.toFixed(0),
+          count: botState.recentWhaleTrades.length
+        }
       });
     } catch (err) {
       console.error("Error in /api/trading/status:", err);

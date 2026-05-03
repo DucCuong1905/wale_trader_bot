@@ -91,7 +91,7 @@ export default function App() {
     };
 
     fetchData();
-    const interval = setInterval(fetchData, 3000);
+    const interval = setInterval(fetchData, 300); // Poll every 300ms for real-time feel
     return () => clearInterval(interval);
   }, []);
 
@@ -182,6 +182,32 @@ export default function App() {
               subValue={signals[0] ? `Tại ${signals[0].price}` : "Chưa có tín hiệu"}
               icon={<Activity className="w-4 h-4" />} 
             />
+          </div>
+
+          {/* Whale Real-time Trades Section */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-[#12121c] border border-emerald-500/20 p-6 rounded-[2rem] glow-green group hover:bg-emerald-500/5 transition-all">
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-[10px] text-emerald-500 font-black uppercase tracking-[0.2em]">Whale Buy Khớp (5p)</p>
+                <div className="p-2 bg-emerald-500/10 rounded-lg">
+                  <ArrowUpRight className="w-4 h-4 text-emerald-500" />
+                </div>
+              </div>
+              <p className="text-3xl font-mono text-emerald-400 font-black tracking-tighter">
+                ${(parseFloat((data as any)?.whale_trades?.buy || "0") / 1000).toFixed(1)}k
+              </p>
+            </div>
+            <div className="bg-[#12121c] border border-red-500/20 p-6 rounded-[2rem] glow-red group hover:bg-red-500/5 transition-all">
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-[10px] text-red-500 font-black uppercase tracking-[0.2em]">Whale Sell Khớp (5p)</p>
+                <div className="p-2 bg-red-500/10 rounded-lg">
+                  <ArrowDownRight className="w-4 h-4 text-red-500" />
+                </div>
+              </div>
+              <p className="text-3xl font-mono text-red-400 font-black tracking-tighter">
+                ${(parseFloat((data as any)?.whale_trades?.sell || "0") / 1000).toFixed(1)}k
+              </p>
+            </div>
           </div>
 
           {/* AI Analysis Section */}
