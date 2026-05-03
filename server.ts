@@ -146,7 +146,7 @@ async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number,
     // Tính toán xu hướng từ Whale Trades khớp thực tế gần đây
     const totalWhaleBuy = botState.recentWhaleTrades.filter(t => t.side === 'buy').reduce((sum, t) => sum + t.amount, 0);
     const totalWhaleSell = botState.recentWhaleTrades.filter(t => t.side === 'sell').reduce((sum, t) => sum + t.amount, 0);
-    const whaleSummary = `Gần đây (15p): Whale Buy khớp thực tế $${(totalWhaleBuy/1000).toFixed(1)}k, Whale Sell khớp thực tế $${(totalWhaleSell/1000).toFixed(1)}k.`;
+    const whaleSummary = `Gần đây (30p): Whale Buy khớp thực tế $${(totalWhaleBuy/1000).toFixed(1)}k, Whale Sell khớp thực tế $${(totalWhaleSell/1000).toFixed(1)}k.`;
 
     const prompt = `Bạn là một nhà giao dịch cá voi chuyên nghiệp tại Binance Futures. Bạn phân tích hợp lưu giữa Tường lệnh (Orderbook) và Khớp lệnh thực tế (Whale Trades).
 TÍN HIỆU CẦN ĐÁNH GIÁ: ${signal}
@@ -356,9 +356,8 @@ function getOrderbookSignal() {
 }
 
 function startWS() {
-  // Binance Combined Streams: https://binance-docs.github.io/apidocs/futures/en/#combined-streams
-  // @depth20: Whale Ratio, @miniTicker: Giá liên tục, @aggTrade: Khớp lệnh thực tế
-  const streams = `${SYMBOL_ID}@depth20@100ms/${SYMBOL_ID}@miniticker/${SYMBOL_ID}@aggtrade`;
+  // Binance Combined Streams (Sử dụng casing chuẩn từ docs)
+  const streams = `${SYMBOL_ID}@aggTrade/${SYMBOL_ID}@miniTicker/${SYMBOL_ID}@depth20`;
   const wsUrl = `wss://fstream.binance.com/stream?streams=${streams}`;
   const ws = new WebSocket(wsUrl);
 
@@ -378,6 +377,13 @@ function startWS() {
       if (!d) return;
 
       const sName = streamName.toLowerCase();
+      
+      // LOG ĐỂ KIỂM TRA (Chỉ log 5 lần đầu)
+      if ((global as any).wsLogCount === undefined) (global as any).wsLogCount = 0;
+      if ((global as any).wsLogCount < 5) {
+        console.log(`[WS DEBUG] Nhận stream: ${streamName}`);
+        (global as any).wsLogCount++;
+      }
 
       // Cập nhật giá từ TẤT CẢ các luồng có dữ liệu giá
       let incomingPrice = 0;
@@ -402,23 +408,22 @@ function startWS() {
         }
       } 
 
-      if (sName.includes('@aggtrade')) {
+      if (sName.includes('aggtrade')) {
         const qty = parseFloat(d.q);
         const price = parseFloat(d.p);
         const amount = qty * price;
         const side = d.m ? 'sell' : 'buy';
 
-        // Log mọi lệnh để kiểm tra kết nối stream
-        if (amount > 100) { 
-           // console.log(`[STREAM DEBUG] Nhận lệnh ${side}: $${amount.toFixed(0)}`);
-        }
-
-        // Hạ ngưỡng Whale xuống $1000 để bắt được nhiều dòng tiền hơn, giúp Whale Net nhạy hơn
-        if (amount > 1000) {
+        // Whale Detection: Hạ ngưỡng xuống $100 để test xem dữ liệu có vào không
+        if (amount > 100) {
           botState.recentWhaleTrades.push({ time: Date.now(), side, amount, price });
-          console.log(`[WHALE] Detect ${side.toUpperCase()} order: $${amount.toFixed(0)}`);
-          // Tăng thời gian lưu trữ lên 15 phút (900,000 ms) để khớp với khung nến 15M
-          const cutoff = Date.now() - 900000;
+          // Log whale trades to server console for debugging
+          if (amount > 1000) {
+            console.log(`🐋 [WHALE DETECTED] ${side.toUpperCase()} $${amount.toFixed(0)} at ${price}`);
+          }
+          
+          // Tăng thời gian lưu trữ lên 30 phút (1,800,000 ms) để dễ quan sát dòng tiền
+          const cutoff = Date.now() - 1800000;
           botState.recentWhaleTrades = botState.recentWhaleTrades.filter(t => t.time > cutoff);
         }
       }
@@ -629,7 +634,7 @@ async function traderLoop() {
         `🧹 Sweep: *${sweepIcon}*\n` +
         `⚖️ OB Ratio: *${botState.obRatioEMA.toFixed(2)}*\n` +
         `📈 ADX: *${botState.adx.toFixed(1)}* (Trends: ${botState.plusDI.toFixed(1)} / ${botState.minusDI.toFixed(1)})\n` +
-        `🐋 Whale Net: ${net >= 0 ? '🟢 +' : '🔴 '}${net.toFixed(1)}k (${whaleCount} lệnh)\n\n` +
+        `🐋 Whale Net: ${net >= 0 ? '🟢 +' : '🔴 '}${net.toFixed(1)}k (30p - ${whaleCount} lệnh)\n\n` +
         `_Đang phân tích chiến lược vào lệnh..._`;
       
       sendTelegram(intelMsg);
