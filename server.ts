@@ -842,6 +842,7 @@ async function startServer() {
       });
     } catch (e: any) {
       console.error("❌ Test Order Failed:", e);
+      sendTelegram(`❌ *LỖI LỆNH TEST*\nLỗi: ${e.message}\n💡 Kiểm tra số dư Futures và quyền API Key.`);
       res.status(500).json({ 
         success: false, 
         error: e.message,
@@ -882,8 +883,10 @@ async function startServer() {
   });
 
   // Start background processes AFTER server is listening
+  console.log("🔄 Starting Background Processes...");
   startWS();
   traderLoop();
+  console.log("✅ Background Processes Initialized.");
 
   // --- KIỂM TRA KẾT NỐI AI (Background) ---
   (async () => {
@@ -904,7 +907,7 @@ async function startServer() {
     }
   })();
 
-  sendTelegram("🐳 *Whale Bot Đã Sẵn Sàng*");
+  sendTelegram(`🐳 *Whale Bot Đã Sẵn Sàng*\n🚀 Server PID: ${process.pid}\n🛠️ [Click để Test Lệnh Long 2$](https://${process.env.VITE_APP_URL || 'your-app-url'}/api/test-long-order)`);
 
   // Error handling middleware
   app.use((err: any, req: any, res: any, next: any) => {
