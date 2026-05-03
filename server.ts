@@ -574,14 +574,8 @@ async function traderLoop() {
     botState.latestSweepStatus = sweepLow ? "Low" : (sweepHigh ? "High" : "None");
 
     if ((sweepLow || sweepHigh) && candleIndex !== botState.lastNotifiedCandle) {
-        const type = sweepLow ? "🟢 QUÉT ĐÁY (SWEEP LOW)" : "🔴 QUÉT ĐỈNH (SWEEP HIGH)";
-        const currentPrice = bars[bars.length - 1][4];
-        const msg = `🐋 *PHÁT HIỆN WHALE SWEEP*\n\n` +
-                   `🔍 Loại: ${type}\n` +
-                   `💰 Giá hiện tại: ${currentPrice}\n` +
-                   `📊 P/S: Đây là tín hiệu tiềm năng. Bot sẽ tự động đánh giá nến này 10s trước khi đóng để quyết định vào lệnh.`;
-        sendTelegram(msg);
         botState.lastNotifiedCandle = candleIndex;
+        console.log(`[SWEEP] Detected ${sweepLow ? 'Low' : 'High'} sweep at candle index ${candleIndex}. Alert skipped for Intel Report.`);
     }
 
     // --- KIỂM TRA THỜI GIAN ĐÓNG NẾN (CANDLE CLOSE CONSTRAINT) ---
