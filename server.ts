@@ -358,7 +358,7 @@ function getOrderbookSignal() {
 function startWS() {
   // Binance Combined Streams: https://binance-docs.github.io/apidocs/futures/en/#combined-streams
   // @depth20: Whale Ratio, @miniTicker: Giá liên tục, @aggTrade: Khớp lệnh thực tế
-  const streams = `${SYMBOL_ID}@depth20@100ms/${SYMBOL_ID}@miniTicker/${SYMBOL_ID}@aggTrade`;
+  const streams = `${SYMBOL_ID}@depth20@100ms/${SYMBOL_ID}@miniticker/${SYMBOL_ID}@aggtrade`;
   const wsUrl = `wss://fstream.binance.com/stream?streams=${streams}`;
   const ws = new WebSocket(wsUrl);
 
@@ -407,6 +407,11 @@ function startWS() {
         const price = parseFloat(d.p);
         const amount = qty * price;
         const side = d.m ? 'sell' : 'buy';
+
+        // Log mọi lệnh để kiểm tra kết nối stream
+        if (amount > 100) { 
+           // console.log(`[STREAM DEBUG] Nhận lệnh ${side}: $${amount.toFixed(0)}`);
+        }
 
         // Hạ ngưỡng Whale xuống $1000 để bắt được nhiều dòng tiền hơn, giúp Whale Net nhạy hơn
         if (amount > 1000) {
@@ -562,7 +567,7 @@ async function traderLoop() {
     }
 
     console.log(`🎯 [MONITORING] Đang kiểm tra tín hiệu Whale Sweep...`);
-    const bars = await ex.fetchOHLCV(PAIR, '15m', undefined, 100);
+    const bars = await ex.fetchOHLCV(PAIR, '5m', undefined, 100);
     if (!bars || bars.length < 25) {
       console.log(`⚠️ Không đủ dữ liệu nến (${bars?.length || 0}). Đang chờ...`);
       setTimeout(traderLoop, 10000);
@@ -584,7 +589,7 @@ async function traderLoop() {
     }
 
     // --- KIỂM TRA THỜI GIAN ĐÓNG NẾN (CANDLE CLOSE CONSTRAINT) ---
-    const timeframeMs = 15 * 60 * 1000; // 15 phút
+    const timeframeMs = 5 * 60 * 1000; // Đổi thành 5 phút để test nhanh (Gốc là 15 phút)
     const now = Date.now();
     const nextClose = Math.ceil(now / timeframeMs) * timeframeMs;
     const timeToClose = nextClose - now;
@@ -616,7 +621,7 @@ async function traderLoop() {
       
       const whaleCount = botState.recentWhaleTrades.length;
       
-      const intelMsg = `📝 *BẢN TIN INTEL (15M)*\n` +
+      const intelMsg = `📝 *BẢN TIN INTEL (5M)*\n` +
         `⏰ Đóng nến: ${new Date(nextClose).toLocaleTimeString()}\n` +
         `${envTag} | PID: ${process.pid}\n\n` +
         `🌐 WS Binance: ${wsStatus}\n` +
