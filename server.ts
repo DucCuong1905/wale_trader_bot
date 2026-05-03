@@ -60,9 +60,9 @@ const genAI = new GoogleGenerativeAI(aiKey);
 const modelName = "gemini-3-flash-preview"; 
 
 // --- CẤU HÌNH GIAO DỊCH (TRADING CONSTANTS) ---
-const PAIR = "BTC/USDT:USDT"; // Cặp giao dịch (BTC Futures trên Bitget)
-const SYMBOL_ID = "BTCUSDT"; // ID Symbol cho WebSocket
-const RISK_PER_TRADE = 0.01; // Rủi ro 1% tổng tài sản cho mỗi lệnh (Stop Loss sẽ mất 1%)
+const PAIR = "BTC/USDT:USDT"; // Cặp giao dịch (BTC Futures trên Binance)
+const SYMBOL_ID = "btcusdt"; // ID Symbol cho WebSocket (lowercase cho Binance)
+const RISK_PER_TRADE = 0.01; // Rủi ro 1% tổng tài sản cho mỗi lệnh
 const RR = 2.5; // Tỷ lệ Lợi nhuận/Rủi ro (Take Profit gấp 2.5 lần Stop Loss)
 const COOLDOWN_MS = 30000; // Thời gian nghỉ giữa các lệnh (30 giây) để tránh vào lệnh liên tục
 const MAX_DAILY_LOSS = 0.03; // Giới hạn lỗ tối đa trong ngày (3%). Nếu chạm mốc này, Bot sẽ dừng giao dịch.
@@ -213,49 +213,49 @@ async function sendTelegram(msg: string) {
 }
 
 // Exchange Init (Lazy)
-let exchange: ccxt.bitget | null = null;
+let exchange: ccxt.binance | null = null;
 function getExchange() {
   if (!exchange) {
-    const apiKey = getEnv("BG_API_KEY");
-    const secret = getEnv("BG_SECRET_KEY");
-    const password = getEnv("BG_PASSPHRASE");
+    const apiKey = getEnv("BINANCE_API_KEY");
+    const secret = getEnv("BINANCE_API_SECRET");
 
     if (!apiKey || !secret) {
-      console.warn("⚠️ Thiếu API Key. Bot sẽ chạy ở chế độ chỉ giám sát.");
+      console.warn("⚠️ Thiếu API Key Binance. Bot sẽ chạy ở chế độ chỉ giám sát.");
       return null;
     }
 
-    exchange = new ccxt.bitget({
+    exchange = new ccxt.binance({
       apiKey,
       secret,
-      password,
       enableRateLimit: true,
       options: { 
         defaultType: 'future',
-        // Force one-way mode for Bitget if needed via options if possible
       }
     });
     
-    // Ép chế độ One-way (Unilateral) để tránh lỗi 40774
+    // Cấu hình tài khoản cho Binance
     (async () => {
       try {
-        console.log(`[INIT] Cấu hình tài khoản cho ${PAIR}...`);
+        console.log(`[INIT] Cấu hình tài khoản Binance cho ${PAIR}...`);
         
-        // 1. Thiết lập Đòn bẩy (Ví dụ: 10x - bạn có thể điều chỉnh)
+        // 1. Thiết lập Đòn bẩy
         try {
-          await (exchange as ccxt.bitget).setLeverage(10, PAIR);
+          await (exchange as ccxt.binance).setLeverage(10, PAIR);
           console.log(`✅ Đòn bẩy thiết lập: 10x`);
         } catch (e) {}
 
-        // 2. Thiết lập Margin Mode là Isolated để quản lý rủi ro tốt hơn
+        // 2. Thiết lập Margin Mode là Isolated
         try {
-          await (exchange as ccxt.bitget).setMarginMode('isolated', PAIR);
+          await (exchange as ccxt.binance).setMarginMode('isolated', PAIR);
           console.log(`✅ Chế độ ký quỹ: Isolated`);
         } catch (e) {}
 
-        // 3. Thiết lập chế độ One-way
-        await (exchange as any).setPositionMode(false, PAIR); 
-        console.log(`✅ Chế độ vị thế: One-way (Unilateral)`);
+        // 3. Binance cũng cần thiết lập Hedge Mode hay One-way
+        // Mặc định thường là One-way, nhưng ta thử cấu hình
+        try {
+          await (exchange as any).setPositionMode(false, PAIR); // false = One-way
+          console.log(`✅ Chế độ vị thế: One-way`);
+        } catch (e) {}
       } catch (e: any) {
         console.log(`ℹ️ Cấu hình tài khoản: ${e.message || 'Done'}`);
       }
@@ -338,51 +338,31 @@ function getOrderbookSignal() {
 }
 
 function startWS() {
-  const ws = new WebSocket("wss://ws.bitget.com/v2/ws/public");
-  let pingInterval: any;
+  // Binance Depth Stream: https://binance-docs.github.io/apidocs/futures/en/#diff-depth-stream
+  const wsUrl = `wss://fstream.binance.com/ws/${SYMBOL_ID}@depth20@100ms`;
+  const ws = new WebSocket(wsUrl);
 
   ws.on('open', () => {
-    console.log("🔌 Connected to Bitget WS");
+    console.log("🔌 Connected to Binance WS");
     botState.isWsConnected = true;
-    ws.send(JSON.stringify({
-      op: "subscribe",
-      args: [
-        { instType: "USDT-FUTURES", channel: "books5", instId: SYMBOL_ID },
-        { instType: "USDT-FUTURES", channel: "ticker", instId: SYMBOL_ID }
-      ]
-    }));
-
-    // Heartbeat
-    pingInterval = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send("ping");
-      }
-    }, 20000);
   });
 
   ws.on('message', (data) => {
     try {
       const msg = data.toString();
-      if (msg === "pong") return;
-      
       const parsed = JSON.parse(msg);
-      if (parsed.action === 'snapshot' || parsed.action === 'update') {
-        const d = parsed.data[0];
-        if (d.bids) {
-          botState.bid = d.bids.reduce((sum: number, x: any) => sum + parseFloat(x[1]), 0);
-          botState.ask = d.asks.reduce((sum: number, x: any) => sum + parseFloat(x[1]), 0);
-          
-          // Cập nhật EMA cho OB Ratio (Alpha = 0.1 ~ trung bình khoảng 10-20 lần cập nhật gần nhất)
-          const currentRatio = botState.ask !== 0 ? botState.bid / botState.ask : 1.0;
-          botState.obRatioEMA = (currentRatio * 0.1) + (botState.obRatioEMA * 0.9);
+      
+      // Binance format: { bids: [[price, qty], ...], asks: [[price, qty], ...] }
+      if (parsed.bids && parsed.asks) {
+        botState.bid = parsed.bids.reduce((sum: number, x: any) => sum + parseFloat(x[1]), 0);
+        botState.ask = parsed.asks.reduce((sum: number, x: any) => sum + parseFloat(x[1]), 0);
+        
+        const currentRatio = botState.ask !== 0 ? botState.bid / botState.ask : 1.0;
+        botState.obRatioEMA = (currentRatio * 0.1) + (botState.obRatioEMA * 0.9);
 
-          // Fallback: If lastPrice is 0, use top of book
-          if (botState.lastPrice === 0 && d.bids.length > 0) {
-            botState.lastPrice = parseFloat(d.bids[0][0]);
-          }
-        }
-        if (d.lastPr) {
-          botState.lastPrice = parseFloat(d.lastPr);
+        // Update lastPrice from top of book
+        if (parsed.bids.length > 0) {
+          botState.lastPrice = parseFloat(parsed.bids[0][0]);
         }
       }
     } catch (e) { }
@@ -634,10 +614,10 @@ async function traderLoop() {
 
             botState.lastTradeTime = Date.now();
             botState.inPosition = true;
-            sendTelegram(`✅ *ĐẶT LỆNH THÀNH CÔNG*\nBot đã thực thi lệnh ${signal} trên Bitget.`);
+            sendTelegram(`✅ *ĐẶT LỆNH THÀNH CÔNG*\nBot đã thực thi lệnh ${signal} trên Binance.`);
           } catch (e: any) {
             console.error("❌ Order Execution Error:", e);
-            sendTelegram(`❌ *LỖI ĐẶT LỆNH SÀN*\nKhông thể thực thi lệnh trên Bitget.\nLỗi: ${e.message}`);
+            sendTelegram(`❌ *LỖI ĐẶT LỆNH SÀN*\nKhông thể thực thi lệnh trên Binance.\nLỗi: ${e.message}`);
           }
         }
       }
