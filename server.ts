@@ -356,8 +356,8 @@ function getOrderbookSignal() {
 }
 
 function startWS() {
-  // Binance Combined Streams (Sử dụng casing chuẩn từ docs)
-  const streams = `${SYMBOL_ID}@aggTrade/${SYMBOL_ID}@miniTicker/${SYMBOL_ID}@depth20`;
+  // Binance Combined Streams: Tên stream TRONG URL phải viết thường hoàn toàn
+  const streams = `${SYMBOL_ID}@aggtrade/${SYMBOL_ID}@trade/${SYMBOL_ID}@miniticker/${SYMBOL_ID}@depth20`;
   const wsUrl = `wss://fstream.binance.com/stream?streams=${streams}`;
   const ws = new WebSocket(wsUrl);
 
@@ -408,23 +408,27 @@ function startWS() {
         }
       } 
 
-      if (sName.includes('aggtrade')) {
+      if (sName.includes('trade')) {
+        // aggTrade hoặc trade đều có p (price) và q (quantity)
         const qty = parseFloat(d.q);
         const price = parseFloat(d.p);
-        const amount = qty * price;
-        const side = d.m ? 'sell' : 'buy';
+        
+        if (!isNaN(qty) && !isNaN(price)) {
+          const amount = qty * price;
+          const side = d.m ? 'sell' : 'buy';
 
-        // Whale Detection: Hạ ngưỡng xuống $100 để test xem dữ liệu có vào không
-        if (amount > 100) {
-          botState.recentWhaleTrades.push({ time: Date.now(), side, amount, price });
-          // Log whale trades to server console for debugging
-          if (amount > 1000) {
-            console.log(`🐋 [WHALE DETECTED] ${side.toUpperCase()} $${amount.toFixed(0)} at ${price}`);
+          // Whale Detection: Hạ ngưỡng xuống $100 để chắc chắn có dữ liệu để test
+          if (amount > 100) {
+            botState.recentWhaleTrades.push({ time: Date.now(), side, amount, price });
+            
+            // Log whale trades to server console for debugging if > $1000
+            if (amount > 1000) {
+              console.log(`🐋 [WHALE DETECTED] ${side.toUpperCase()} $${amount.toFixed(0)} at ${price}`);
+            }
+            
+            const cutoff = Date.now() - 1800000; // 30 phút
+            botState.recentWhaleTrades = botState.recentWhaleTrades.filter(t => t.time > cutoff);
           }
-          
-          // Tăng thời gian lưu trữ lên 30 phút (1,800,000 ms) để dễ quan sát dòng tiền
-          const cutoff = Date.now() - 1800000;
-          botState.recentWhaleTrades = botState.recentWhaleTrades.filter(t => t.time > cutoff);
         }
       }
     } catch (e) { }
