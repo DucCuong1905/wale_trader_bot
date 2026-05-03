@@ -146,7 +146,7 @@ async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number,
     // Tính toán xu hướng từ Whale Trades khớp thực tế gần đây
     const totalWhaleBuy = botState.recentWhaleTrades.filter(t => t.side === 'buy').reduce((sum, t) => sum + t.amount, 0);
     const totalWhaleSell = botState.recentWhaleTrades.filter(t => t.side === 'sell').reduce((sum, t) => sum + t.amount, 0);
-    const whaleSummary = `Gần đây (5p): Whale Buy khớp thực tế $${(totalWhaleBuy/1000).toFixed(1)}k, Whale Sell khớp thực tế $${(totalWhaleSell/1000).toFixed(1)}k.`;
+    const whaleSummary = `Gần đây (15p): Whale Buy khớp thực tế $${(totalWhaleBuy/1000).toFixed(1)}k, Whale Sell khớp thực tế $${(totalWhaleSell/1000).toFixed(1)}k.`;
 
     const prompt = `Bạn là một nhà giao dịch cá voi chuyên nghiệp tại Binance Futures. Bạn phân tích hợp lưu giữa Tường lệnh (Orderbook) và Khớp lệnh thực tế (Whale Trades).
 TÍN HIỆU CẦN ĐÁNH GIÁ: ${signal}
@@ -159,8 +159,9 @@ ${context}
 
 HƯỚNG DẪN RA QUYẾT ĐỊNH CHUYÊN SÂU:
 1. Xác định "Hidden Pressure": Nếu Orderbook nghiêng về Bid (.ratio > 1) nhưng Whale Trades đang xả hàng thực tế (Sell > Buy), đây là tín hiệu dụ mua (Bull Trap). Hãy REJECT.
-2. Dòng tiền thật: Ưu tiên dữ liệu Whale Trades khớp thực tế hơn là tường lệnh ảo.
-3. Động lượng: Nếu cú quét thanh khoản đi kèm với Whale Trades cùng chiều cực lớn (> $500k), độ tin cậy cực cao.
+2. Dòng tiền thật: Ưu tiên dữ liệu Whale Trades khớp thực tế. Nếu tỷ lệ Orderbook (OB Ratio) yếu nhưng Whale Trades khớp cực mạnh cùng chiều tín hiệu, hãy CONFIRM.
+3. Động lượng: Nếu cú quét thanh khoản đi kèm với Whale Trades cùng chiều lớn (> $100k net), đây là thiết lập High-Probability.
+4. Quản trị rủi ro: Bot đang sử dụng SL tại đáy/đỉnh nến Sweep. Nếu nến Sweep quá dài (vượt quá 2% biến động), hãy REJECT vì rủi ro quá lớn.
 
 Trả về duy nhất JSON:
 {
@@ -410,9 +411,11 @@ function startWS() {
         const amount = qty * price;
         const side = d.m ? 'sell' : 'buy';
 
-        if (amount > 30000) {
+        // Hạ ngưỡng Whale xuống $5000 để bắt được nhiều dòng tiền hơn
+        if (amount > 5000) {
           botState.recentWhaleTrades.push({ time: Date.now(), side, amount, price });
-          const cutoff = Date.now() - 300000;
+          // Tăng thời gian lưu trữ lên 15 phút (900,000 ms) để khớp với khung nến 15M
+          const cutoff = Date.now() - 900000;
           botState.recentWhaleTrades = botState.recentWhaleTrades.filter(t => t.time > cutoff);
         }
       }
@@ -635,26 +638,37 @@ async function traderLoop() {
     botState.minusDI = adxData.mDI;
     
     const adx = adxData.adx;
-    // sweepResult, sweepLow, sweepHigh đã được tính ở trên, không khai báo lại
-    const obSignal = getOrderbookSignal();
-    const obRatio = botState.obRatioEMA.toFixed(2);
+    const obRatio = botState.obRatioEMA;
+    
+    // Tín hiệu OB linh hoạt: 
+    // Nếu Whale Net mạnh (> 50k), chỉ cần OB Ratio > 1.1 (cho Long) hoặc < 0.9 (cho Short)
+    const buyVol = botState.recentWhaleTrades.filter(t => t.side === 'buy').reduce((s, t) => s + t.amount, 0);
+    const sellVol = botState.recentWhaleTrades.filter(t => t.side === 'sell').reduce((s, t) => s + t.amount, 0);
+    const whaleNet = buyVol - sellVol;
 
-    // Log chi tiết để theo dõi cú quét mới
-    if (sweepLow || sweepHigh) {
-      console.log(`[!] PHÁT HIỆN WHALE SWEEP: ${sweepLow ? "LONG/BUY" : "SHORT/SELL"} | Volume & Rejection đạt chuẩn.`);
-    }
+    let obSignal: "BULL" | "BEAR" | null = null;
+    if (obRatio > 1.25 || (obRatio > 1.1 && whaleNet > 50000)) obSignal = "BULL";
+    if (obRatio < 0.8 || (obRatio < 0.9 && whaleNet < -50000)) obSignal = "BEAR";
 
-    console.log(`[PHÂN TÍCH] Giá: ${botState.lastPrice} | ADX: ${adx.toFixed(1)} (Min 25) | Quét Whale: ${sweepLow ? "LOW" : sweepHigh ? "HIGH" : "KHÔNG"} | Tỷ lệ OB: ${obRatio}`);
+    console.log(`[PHÂN TÍCH] Giá: ${botState.lastPrice} | ADX: ${adx.toFixed(1)} (Min 20) | Quét Whale: ${sweepLow ? "LOW" : sweepHigh ? "HIGH" : "KHÔNG"} | Tỷ lệ OB: ${obRatio.toFixed(2)} | Whale Net: ${(whaleNet/1000).toFixed(1)}k`);
 
     let signal: 'LONG' | 'SHORT' | null = null;
-    if (sweepLow && obSignal === "BULL" && adx >= 25) signal = "LONG";
-    if (sweepHigh && obSignal === "BEAR" && adx >= 25) signal = "SHORT";
+    if (sweepLow && obSignal === "BULL" && adx >= 20) signal = "LONG";
+    if (sweepHigh && obSignal === "BEAR" && adx >= 20) signal = "SHORT";
 
     if (signal) {
       console.log(`🚀 [SIGNAL FOUND] Phát hiện tín hiệu ${signal}. Đang gửi cho AI phân tích...`);
       const entry = botState.lastPrice;
-      const rangeAvg = getAvgRange(bars, 14);
-      const sl = signal === "LONG" ? entry - rangeAvg : entry + rangeAvg;
+      
+      // Stop Loss động: Sử dụng đáy/đỉnh nến quét thanh khoản (Sweep Candle)
+      const sweepCandle = bars[sweepResult.candleIndex];
+      let sl = 0;
+      if (signal === "LONG") {
+        sl = sweepCandle[3] * 0.9995; // Thêm 0.05% margin an toàn dưới đáy nến
+      } else {
+        sl = sweepCandle[2] * 1.0005; // Thêm 0.05% margin an toàn trên đỉnh nến
+      }
+      
       const tp = signal === "LONG" ? entry + (entry - sl) * RR : entry - (sl - entry) * RR;
 
       const riskAmt = botState.balance * RISK_PER_TRADE;
