@@ -886,6 +886,37 @@ async function startServer() {
   console.log("🔄 Starting Background Processes...");
   startWS();
   traderLoop();
+  
+  // Chạy lệnh test 2$ ngay khi khởi động để check API (Chỉ chạy 1 lần)
+  (async () => {
+    await new Promise(r => setTimeout(r, 5000)); // Đợi 5s cho hệ thống ổn định
+    const ex = getExchange();
+    if (ex) {
+      try {
+        console.log("🛠️ Thực hiện lệnh TEST MARKET LONG 2$ (Startup)...");
+        await ex.setLeverage(10, PAIR);
+        const ticker = await ex.fetchTicker(PAIR);
+        const price = ticker.last || botState.lastPrice;
+        const qty = 20 / price;
+        const precisionQty = ex.amountToPrecision(PAIR, qty);
+        
+        await ex.createMarketOrder(PAIR, 'buy', parseFloat(precisionQty));
+        sendTelegram(`🚀 *API TEST SUCCESS*\nĐã khớp lệnh Long 2$ (x10) thành công.\n⏱️ Lệnh này sẽ tự đóng sau 5 phút.`);
+        
+        setTimeout(async () => {
+          try {
+            await ex.createMarketOrder(PAIR, 'sell', parseFloat(precisionQty));
+            sendTelegram(`✅ *TEST COMPLETE*: Đã tự động đóng lệnh test.`);
+          } catch (err: any) {
+            sendTelegram(`❌ *LỖI ĐÓNG LỆNH TEST*: ${err.message}`);
+          }
+        }, 300000);
+      } catch (e: any) {
+        sendTelegram(`❌ *API TEST FAILED*: ${e.message}`);
+      }
+    }
+  })();
+
   console.log("✅ Background Processes Initialized.");
 
   // --- KIỂM TRA KẾT NỐI AI (Background) ---
