@@ -790,6 +790,50 @@ async function startServer() {
     }
   });
 
+  // API TEST ORDER: Only for manual triggering to test API keys
+  app.get("/api/test-long-order", async (req, res) => {
+    const ex = getExchange();
+    if (!ex) {
+      return res.status(400).json({ error: "Binance API Key not configured" });
+    }
+
+    try {
+      console.log("🛠️ EXECUTING TEST LONG ORDER (2$ Margin, 10x Leverage)...");
+      
+      // 1. Set leverage
+      await ex.setLeverage(10, PAIR);
+      
+      // 2. Fetch price
+      const ticker = await ex.fetchTicker(PAIR);
+      const price = ticker.last || botState.lastPrice;
+      
+      // 3. Calculate quantity (2$ Margin * 10x Leverage = 20$ Position Size)
+      const qty = 20 / price;
+      const precisionQty = ex.amountToPrecision(PAIR, qty);
+      
+      // 4. Place Market Order
+      const order = await ex.createMarketOrder(PAIR, 'buy', parseFloat(precisionQty));
+      
+      sendTelegram(`🛠️ *LỆNH TEST KHỞI CHẠY*\n💰 Volume: ~20$ (Ký quỹ 2$)\n📊 Giá khớp: ${price}\n✅ Trạng thái: ${order.status}`);
+      
+      res.json({
+        success: true,
+        message: "Lệnh Test Long đã được gửi đi!",
+        order_id: order.id,
+        price: price,
+        quantity: precisionQty,
+        estimated_margin: "2 USDT"
+      });
+    } catch (e: any) {
+      console.error("❌ Test Order Failed:", e);
+      res.status(500).json({ 
+        success: false, 
+        error: e.message,
+        hint: "Hãy chắc chắn ví Futures có tối thiểu 2.5 USDT và API Key có đủ quyền (Futures Enable)."
+      });
+    }
+  });
+
   // API Catch-all: Ensure any unknown /api route returns JSON, not HTML
   app.all("/api/*", (req, res) => {
     res.status(404).json({ error: `API Route ${req.method} ${req.url} not found` });
