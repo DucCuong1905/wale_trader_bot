@@ -130,9 +130,9 @@ let botState = {
   isWsConnected: false, // Trạng thái kết nối WebSocket
   apiError: "" as string, // Lưu lỗi API nếu có
   recentWhaleTrades: [] as WhaleTrade[], // Lịch sử Whale Trades khớp thực tế
-  lastReportMinute: -1, 
   lastReportKey: "", // Khóa duy nhất để chặn trùng lặp báo cáo
-  latestSweepStatus: "None" as "None" | "High" | "Low", // Trạng thái quét thanh khoản gần nhất
+  latestSweepStatus: "None" as "None" | "Low" | "High", // Trạng thái quét thanh khoản
+  latestSweepCandle: -1, // Index của nến cuối cùng phát hiện sweep
 };
 
 // --- LOGIC PHÂN TÍCH AI (AI ANALYSIS) ---
@@ -565,17 +565,18 @@ async function traderLoop() {
       return;
     }
 
-    // --- TELEGRAM ALERTS FOR SWEEPS ---
+    // --- QUÉT TÍN HIỆU SWEEP (CHỈ DÙNG ĐỂ THEO DÕI TRONG LOG) ---
     const sweepResult = detectWhaleSweep(bars);
     const sweepLow = sweepResult.sweepLow;
     const sweepHigh = sweepResult.sweepHigh;
-    const candleIndex = (sweepResult as any).candleIndex;
+    const currentCandleIndex = bars.length - 1;
 
+    // Cập nhật trạng thái hiển thị trên UI (vẫn giữ để người dùng xem Realtime)
     botState.latestSweepStatus = sweepLow ? "Low" : (sweepHigh ? "High" : "None");
-
-    if ((sweepLow || sweepHigh) && candleIndex !== botState.lastNotifiedCandle) {
-        botState.lastNotifiedCandle = candleIndex;
-        console.log(`[SWEEP] Detected ${sweepLow ? 'Low' : 'High'} sweep at candle index ${candleIndex}. Alert skipped for Intel Report.`);
+    if (sweepLow || sweepHigh) {
+        botState.latestSweepCandle = currentCandleIndex;
+    } else if (currentCandleIndex > botState.latestSweepCandle + 2) {
+        botState.latestSweepStatus = "None";
     }
 
     // --- KIỂM TRA THỜI GIAN ĐÓNG NẾN (CANDLE CLOSE CONSTRAINT) ---
@@ -586,11 +587,41 @@ async function traderLoop() {
     const secondsToClose = Math.floor(timeToClose / 1000);
 
     if (secondsToClose > 10) {
-      if (now % 60000 < 10000) { // Log mỗi phút một lần
+      if (now % 60000 < 5000) { 
         console.log(`⏳ Đang chờ nến đóng... (Còn ${secondsToClose}s nữa)`);
       }
       setTimeout(traderLoop, 5000);
       return;
+    }
+
+    // --- GỬI BẢN TIN INTEL (CHỈ GỬI 1 LẦN KHI SẮP ĐÓNG NẾN) ---
+    const reportKey = `${new Date(nextClose).getHours()}-${new Date(nextClose).getMinutes()}`; // Key theo thời điểm đóng nến
+    if (botState.lastReportKey !== reportKey) {
+      botState.lastReportKey = reportKey;
+      
+      const buyVol = botState.recentWhaleTrades.filter(t => t.side === 'buy').reduce((s, t) => s + t.amount, 0);
+      const sellVol = botState.recentWhaleTrades.filter(t => t.side === 'sell').reduce((s, t) => s + t.amount, 0);
+      const net = (buyVol - sellVol) / 1000;
+      
+      // Sweep check ngay tại thời điểm này
+      const finalSweep = detectWhaleSweep(bars);
+      const sweepIcon = finalSweep.sweepLow ? "🟢 QUÉT ĐÁY (LOW)" : (finalSweep.sweepHigh ? "🔴 QUÉT ĐỈNH (HIGH)" : "❌ KHÔNG (NONE)");
+      
+      const wsStatus = botState.isWsConnected ? "✅ STREAMING" : "❌ OFFLINE";
+      const envTag = process.env.NODE_ENV === "production" ? "🏷️ *PROD*" : "🏷️ *DEV*";
+      
+      const intelMsg = `📝 *BẢN TIN INTEL (15M)*\n` +
+        `⏰ Đóng nến: ${new Date(nextClose).toLocaleTimeString()}\n` +
+        `${envTag}\n\n` +
+        `🌐 WS Binance: ${wsStatus}\n` +
+        `💰 BTC Price: *$${botState.lastPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}*\n` +
+        `🧹 Sweep: *${sweepIcon}*\n` +
+        `⚖️ OB Ratio: *${botState.obRatioEMA.toFixed(2)}*\n` +
+        `📈 ADX: *${botState.adx.toFixed(1)}* (Trends: ${botState.plusDI.toFixed(1)} / ${botState.minusDI.toFixed(1)})\n` +
+        `🐋 Whale Net: ${net >= 0 ? '🟢 +' : '🔴 '}${net.toFixed(1)}k\n\n` +
+        `_Đang phân tích chiến lược vào lệnh..._`;
+      
+      sendTelegram(intelMsg);
     }
 
     console.log(`🎯 [ENTRY WINDOW] Chỉ còn ${secondsToClose}s trước khi đóng nến. Tiến hành kiểm tra tín hiệu cuối cùng...`);
@@ -812,44 +843,6 @@ async function startServer() {
       console.error("❌ Lỗi nghiêm trọng khi khởi tạo AI:", err.message);
     }
   })();
-
-  // --- BÁO CÁO INTEL ĐỊNH KỲ (MỖI 15 PHÚT) ---
-  // Báo cáo lúc 10 giây trước khi kết thúc nến 15p (Phút 14/29/44/59, giây 50-55)
-  setInterval(() => {
-    const now = new Date();
-    const minute = now.getMinutes();
-    const seconds = now.getSeconds();
-    
-    // Kiểm tra xem có phải phút cuối của khung 15p (14, 29, 44, 59)
-    const isTargetMinute = (minute + 1) % 15 === 0;
-    
-    if (isTargetMinute && seconds >= 50 && seconds <= 56) {
-      // Tạo khóa duy nhất cho khung 15p này: ví dụ "2024-05-03-06-14"
-      const reportKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}-${now.getHours()}-${minute}`;
-      
-      if (botState.lastReportKey !== reportKey) {
-        botState.lastReportKey = reportKey;
-        
-        const buyVol = botState.recentWhaleTrades.filter(t => t.side === 'buy').reduce((s, t) => s + t.amount, 0);
-        const sellVol = botState.recentWhaleTrades.filter(t => t.side === 'sell').reduce((s, t) => s + t.amount, 0);
-        const net = (buyVol - sellVol) / 1000;
-        
-        const sweepIcon = botState.latestSweepStatus === 'Low' ? "🟢 QUÉT ĐÁY (LOW)" : (botState.latestSweepStatus === 'High' ? "🔴 QUÉT ĐỈNH (HIGH)" : "❌ KHÔNG (NONE)");
-        const wsStatus = botState.isWsConnected ? "✅ STREAMING" : "❌ OFFLINE";
-        
-        const intelMsg = `📝 *BẢN TIN INTEL (15M)*\n\n` +
-          `🌐 WS Binance: ${wsStatus}\n` +
-          `💰 BTC Price: *$${botState.lastPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}*\n` +
-          `🧹 Sweep: *${sweepIcon}*\n` +
-          `⚖️ OB Ratio: *${botState.obRatioEMA.toFixed(2)}*\n` +
-          `📈 ADX: *${botState.adx.toFixed(1)}* (Trends: ${botState.plusDI.toFixed(1)} / ${botState.minusDI.toFixed(1)})\n` +
-          `🐋 Whale Net: ${net >= 0 ? '🟢 +' : '🔴 '}${net.toFixed(1)}k\n\n` +
-          `_Chuẩn bị đóng nến và thực thi chiến lược..._`;
-        
-        sendTelegram(intelMsg);
-      }
-    }
-  }, 2000); // Kiểm tra mỗi 2 giây để giảm tải và tránh lặp trong cùng 1 giây
 
   sendTelegram("🐳 *Whale Bot Đã Sẵn Sàng*");
 
