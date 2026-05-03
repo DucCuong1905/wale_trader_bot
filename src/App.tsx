@@ -46,15 +46,18 @@ export default function App() {
   useEffect(() => {
     let retryCount = 0;
     const maxRetries = 5;
+    let timerId: any;
 
     const fetchData = async () => {
       try {
-        const res = await fetch(`/api/trading/status?t=${Date.now()}`);
+        const res = await fetch(`/api/trading/status?cache_bust=${Date.now()}`);
         if (!res.ok) {
           const text = await res.text();
           throw new Error(`Status API error: ${res.status} - ${text.substring(0, 50)}`);
         }
         const json = await res.json();
+        
+        // Cập nhật dữ liệu từ API
         setData(json);
         setLastPrice(json.last_price);
         setBidRatio(parseFloat(json.bid_ratio));
@@ -73,25 +76,26 @@ export default function App() {
         setError(null);
         retryCount = 0; // Reset on success
       } catch (e: any) {
+        if (e.name === 'AbortError') return;
         console.error("Failed to fetch status:", e);
         
-        // If it's a fetch error and we haven't exceeded retries, try again silently
         if (retryCount < maxRetries) {
           retryCount++;
           console.log(`Retrying fetch in 2s (${retryCount}/${maxRetries})...`);
-          setTimeout(fetchData, 2000); // Retry with delay
-          return;
+        } else {
+          setError(`Lỗi kết nối Engine: ${e.message || "Không xác định"}. Vui lòng kiểm tra Server đang chạy ở port 3000.`);
         }
-
-        setError(`Lỗi kết nối Engine: ${e.message || "Không xác định"}. Vui lòng kiểm tra Server đang chạy ở port 3000.`);
       } finally {
         setLoading(false);
+        // Tần suất cực cao cho cảm giác realtime (300ms)
+        timerId = setTimeout(fetchData, 300);
       }
     };
 
     fetchData();
-    const interval = setInterval(fetchData, 300); // Poll every 300ms for real-time feel
-    return () => clearInterval(interval);
+    return () => {
+      if (timerId) clearTimeout(timerId);
+    };
   }, []);
 
   const addMockSignal = async () => {
@@ -148,9 +152,22 @@ export default function App() {
               <span className="font-mono text-3xl font-black text-white tracking-tighter glow-blue">${(lastPrice || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
             </div>
             <div className="h-12 w-px bg-white/10 hidden sm:block" />
-            <div className="flex items-center gap-3 bg-green-500/10 px-5 py-2.5 rounded-2xl border border-green-500/30 glow-green shadow-inner">
-              <div className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse shadow-[0_0_12px_#22c55e]" />
-              <span className="text-xs font-black text-green-400 uppercase tracking-widest"> ONLINE</span>
+            <div className={cn(
+              "flex items-center gap-3 px-5 py-2.5 rounded-2xl border transition-all duration-500",
+              data?.is_ws_connected 
+                ? "bg-green-500/10 border-green-500/30 glow-green shadow-inner" 
+                : "bg-red-500/10 border-red-500/30 glow-red"
+            )}>
+              <div className={cn(
+                "w-2.5 h-2.5 rounded-full shadow-lg",
+                data?.is_ws_connected ? "bg-green-500 animate-pulse shadow-green-500/50" : "bg-red-500 shadow-red-500/50"
+              )} />
+              <span className={cn(
+                "text-xs font-black uppercase tracking-widest",
+                data?.is_ws_connected ? "text-green-400" : "text-red-400"
+              )}>
+                {data?.is_ws_connected ? "STREAMING" : "OFFLINE"}
+              </span>
             </div>
           </div>
         </div>
@@ -160,28 +177,35 @@ export default function App() {
         {/* Left Column: Stats & Main Chart */}
         <div className="lg:col-span-8 space-y-6">
           {/* Quick Stats Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <StatCard 
-              label="Số Dư Tài Khoản" 
-              value={`$${(data?.balance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`} 
-              change={data?.balance ? "+0.0%" : ""} 
-              positive={true} 
-              icon={<Wallet className="w-4 h-4" />} 
-            />
-            <StatCard 
-              label="Trạng Thái Bot" 
-              value={data?.status === 'running' ? 'Hoạt Động' : 'Nghỉ'} 
-              change={data?.in_position ? "ĐANG GIỮ LỆNH" : "ĐANG ĐỢI"} 
-              positive={data?.status === 'running'} 
-              icon={<TrendingUp className="w-4 h-4" />} 
-            />
-            <StatCard 
-              label="Tín Hiệu Cuối" 
-              value={signals[0]?.type || "Trống"} 
-              subValue={signals[0] ? `Tại ${signals[0].price}` : "Chưa có tín hiệu"}
-              icon={<Activity className="w-4 h-4" />} 
-            />
-          </div>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <StatCard 
+                label="Số Dư Tài Khoản" 
+                value={`$${(data?.balance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`} 
+                change={data?.balance ? "+0.0%" : ""} 
+                positive={true} 
+                icon={<Wallet className="w-4 h-4" />} 
+              />
+              <StatCard 
+                label="Trạng Thái Bot" 
+                value={data?.status === 'running' ? 'Hoạt Động' : 'Nghỉ'} 
+                change={data?.in_position ? "ĐANG GIỮ LỆNH" : "ĐANG ĐỢI"} 
+                positive={data?.status === 'running'} 
+                icon={<TrendingUp className="w-4 h-4" />} 
+              />
+              <StatCard 
+                label="Sức Mạnh Xu Hướng" 
+                value={`ADX: ${data?.adx || '0.0'}`} 
+                subValue={`DI+: ${data?.plus_di || '0'} | DI-: ${data?.minus_di || '0'}`}
+                positive={(parseFloat(data?.adx) || 0) > 25}
+                icon={<BarChart3 className="w-4 h-4" />} 
+              />
+              <StatCard 
+                label="Tín Hiệu Cuối" 
+                value={signals[0]?.type || "Trống"} 
+                subValue={signals[0] ? `Tại ${signals[0].price}` : "Chưa có tín hiệu"}
+                icon={<Activity className="w-4 h-4" />} 
+              />
+            </div>
 
           {/* Whale Real-time Trades Section */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

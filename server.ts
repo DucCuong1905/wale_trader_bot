@@ -123,9 +123,13 @@ let botState = {
   signals: [] as any[], // Các tín hiệu đã phát hiện
   lastNotifiedCandle: -1, // Lưu index nến cuối cùng đã báo telegram
   obRatioEMA: 1.0, // Tỷ lệ Bid/Ask đã được làm mượt (EMA)
+  adx: 0, // Chỉ số ADX hiện tại
+  plusDI: 0, // Chỉ số +DI
+  minusDI: 0, // Chỉ số -DI
   aiReasoning: "Đang chờ phân tích...", // Phân tích gần nhất từ AI
   isWsConnected: false, // Trạng thái kết nối WebSocket
   recentWhaleTrades: [] as WhaleTrade[], // Lịch sử Whale Trades khớp thực tế
+  lastReportMinute: -1, // Lưu phút cuối cùng đã báo intel report
 };
 
 // --- LOGIC PHÂN TÍCH AI (AI ANALYSIS) ---
@@ -368,6 +372,19 @@ function startWS() {
 
       const sName = streamName.toLowerCase();
 
+      // Cập nhật giá từ TẤT CẢ các luồng có dữ liệu giá
+      let incomingPrice = 0;
+      if (d.p) incomingPrice = parseFloat(d.p); // aggTrade
+      else if (d.c) incomingPrice = parseFloat(d.c); // miniTicker
+      else if (d.b && d.b[0]) incomingPrice = parseFloat(d.b[0][0]); // Best bid từ Depth
+
+      if (incomingPrice > 0) {
+        if (Math.abs(botState.lastPrice - incomingPrice) > 0.01) {
+           // console.log(`[PRICE] ${botState.lastPrice} -> ${incomingPrice}`);
+        }
+        botState.lastPrice = incomingPrice;
+      }
+
       if (sName.includes('@depth')) {
         const bids = d.b || d.bids;
         const asks = d.a || d.asks;
@@ -378,20 +395,6 @@ function startWS() {
           
           const currentRatio = botState.ask !== 0 ? botState.bid / botState.ask : 1.0;
           botState.obRatioEMA = (currentRatio * 0.1) + (botState.obRatioEMA * 0.9);
-
-          if (botState.lastPrice === 0 && bids.length > 0) {
-            botState.lastPrice = parseFloat(bids[0][0]);
-            console.log(`🎯 [INIT] Giá khởi tạo từ Depth: $${botState.lastPrice}`);
-          }
-        }
-      } else if (sName.includes('@ticker') || sName.includes('@miniticker') || sName.includes('@aggtrade')) {
-        const price = d.c || d.p; // c cho ticker, p cho trade
-        if (price) {
-          const oldPrice = botState.lastPrice;
-          botState.lastPrice = parseFloat(price);
-          if (oldPrice === 0 && botState.lastPrice > 0) {
-            console.log(`🚀 [SYNC] WebSocket Price Active: $${botState.lastPrice}`);
-          }
         }
       } 
 
@@ -403,15 +406,8 @@ function startWS() {
 
         if (amount > 30000) {
           botState.recentWhaleTrades.push({ time: Date.now(), side, amount, price });
-          
-          // Giữ lịch sử 5 phút
           const cutoff = Date.now() - 300000;
           botState.recentWhaleTrades = botState.recentWhaleTrades.filter(t => t.time > cutoff);
-
-          if (amount > 500000) {
-            console.log(`🐋 CRITICAL WHALE: ${side.toUpperCase()} $${(amount/1000000).toFixed(2)}M @ ${price}`);
-            sendTelegram(`🐋 *KHỚP LỆNH KHỦNG*\n${side === 'buy' ? '🟢 BUY' : '🔴 SELL'} $${(amount/1000000).toFixed(2)}M\nGiá: $${price}`);
-          }
         }
       }
     } catch (e) { }
@@ -436,7 +432,7 @@ function getAvgRange(ohlcv: any[], period: number = 14) {
 }
 
 function calcADX(ohlcv: any[], period: number = 14) {
-  if (ohlcv.length < period * 2) return 0;
+  if (ohlcv.length < period * 2) return { adx: 0, pDI: 0, mDI: 0 };
   let tr: number[] = [];
   let plusDM: number[] = [];
   let minusDM: number[] = [];
@@ -467,13 +463,23 @@ function calcADX(ohlcv: any[], period: number = 14) {
   const sdmM = smooth(minusDM);
 
   const dx: number[] = [];
+  const pDIs: number[] = [];
+  const mDIs: number[] = [];
+
   for (let i = 0; i < str.length; i++) {
     const pDI = 100 * (sdmP[i] / str[i]);
     const mDI = 100 * (sdmM[i] / str[i]);
+    pDIs.push(pDI);
+    mDIs.push(mDI);
     dx.push(100 * Math.abs(pDI - mDI) / (pDI + mDI || 1));
   }
   const adxList = smooth(dx);
-  return adxList[adxList.length - 1];
+  
+  return {
+    adx: adxList[adxList.length - 1],
+    pDI: pDIs[pDIs.length - 1],
+    mDI: mDIs[mDIs.length - 1]
+  };
 }
 
 async function traderLoop() {
@@ -576,7 +582,12 @@ async function traderLoop() {
 
     console.log(`🎯 [ENTRY WINDOW] Chỉ còn ${secondsToClose}s trước khi đóng nến. Tiến hành kiểm tra tín hiệu cuối cùng...`);
 
-    const adx = calcADX(bars, 14);
+    const adxData = calcADX(bars, 14);
+    botState.adx = adxData.adx;
+    botState.plusDI = adxData.pDI;
+    botState.minusDI = adxData.mDI;
+    
+    const adx = adxData.adx;
     // sweepResult, sweepLow, sweepHigh đã được tính ở trên, không khai báo lại
     const obSignal = getOrderbookSignal();
     const obRatio = botState.obRatioEMA.toFixed(2);
@@ -704,11 +715,15 @@ async function startServer() {
         status: botState.isRunning ? "running" : "idle",
         symbol: PAIR,
         last_price: botState.lastPrice || 0,
+        is_ws_connected: botState.isWsConnected,
         bid_ratio: botState.obRatioEMA.toFixed(2),
         in_position: botState.inPosition,
         signals: (botState.signals || []).slice(0, 10),
         balance: botState.balance || 0,
         ai_reasoning: botState.aiReasoning || "Đang chờ phân tích...",
+        adx: botState.adx.toFixed(1),
+        plus_di: botState.plusDI.toFixed(1),
+        minus_di: botState.minusDI.toFixed(1),
         whale_trades: {
           buy: buyVol.toFixed(0),
           sell: sellVol.toFixed(0),
@@ -791,7 +806,35 @@ async function startServer() {
     sendTelegram(statusMsg);
   }, 14400000); // 4 giờ = 14,400,000ms
 
-  sendTelegram("🐳 *Whale Bot Đã Khởi Chạy với Binance*\nBot đã đồng bộ và bắt đầu hoạt động...");
+  // --- BÁO CÁO INTEL 10S TRƯỚC ĐÓNG NẾN (MỖI PHÚT) ---
+  setInterval(() => {
+    const now = new Date();
+    const seconds = now.getSeconds();
+    const minute = now.getMinutes();
+    
+    // Giây thứ 50 của mỗi phút (10s trước khi đóng nến 1m)
+    if (seconds >= 50 && seconds <= 55 && botState.lastReportMinute !== minute) {
+      botState.lastReportMinute = minute;
+      
+      const buyVol = botState.recentWhaleTrades.filter(t => t.side === 'buy').reduce((s, t) => s + t.amount, 0);
+      const sellVol = botState.recentWhaleTrades.filter(t => t.side === 'sell').reduce((s, t) => s + t.amount, 0);
+      const net = (buyVol - sellVol) / 1000;
+      
+      const intelMsg = `📝 *BẢN TIN INTEL (1m)*\n\n` +
+        `🌐 WS Binance: ${botState.isWsConnected ? "✅ Online" : "❌ Offline"}\n` +
+        `💰 BTC Price: *$${botState.lastPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}*\n` +
+        `⚖️ OB Ratio: *${botState.obRatioEMA.toFixed(2)}*\n` +
+        `📈 ADX: *${botState.adx.toFixed(1)}* (Trends: ${botState.plusDI.toFixed(1)} / ${botState.minusDI.toFixed(1)})\n` +
+        `🐋 Whale Buy: $${(buyVol/1000).toFixed(1)}k\n` +
+        `🐋 Whale Sell: $${(sellVol/1000).toFixed(1)}k\n` +
+        `📊 Whale Net: ${net >= 0 ? '🟢 +' : '🔴 '}${net.toFixed(1)}k\n\n` +
+        `_Đang chuẩn bị chốt nến và đánh giá tín hiệu..._`;
+      
+      sendTelegram(intelMsg);
+    }
+  }, 1000);
+
+  sendTelegram("🐳 *Whale Bot Đã Khởi Chạy với Binance*");
 
   // Error handling middleware
   app.use((err: any, req: any, res: any, next: any) => {
