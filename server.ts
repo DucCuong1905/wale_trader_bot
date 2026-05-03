@@ -814,8 +814,20 @@ async function startServer() {
       // 4. Place Market Order
       const order = await ex.createMarketOrder(PAIR, 'buy', parseFloat(precisionQty));
       
-      sendTelegram(`🛠️ *LỆNH TEST KHỞI CHẠY*\n💰 Volume: ~20$ (Ký quỹ 2$)\n📊 Giá khớp: ${price}\n✅ Trạng thái: ${order.status}`);
+      sendTelegram(`🛠️ *LỆNH TEST KHỞI CHẠY*\n💰 Volume: ~20$ (Ký quỹ 2$)\n📊 Giá khớp: ${price}\n✅ Trạng thái: ${order.status}\n⏱️ *Tự động đóng sau 5 phút*`);
       
+      // Tự động đóng lệnh sau 5 phút (300,000 ms)
+      setTimeout(async () => {
+        try {
+          console.log("⏱️ Đang thực hiện tự động đóng lệnh test sau 5 phút...");
+          const closeOrder = await ex.createMarketOrder(PAIR, 'sell', parseFloat(precisionQty));
+          sendTelegram(`⏱️ *TỰ ĐỘNG ĐÓNG LỆNH TEST*\n✅ Đã thoát vị thế sau 5 phút.\n📊 Trạng thái: ${closeOrder.status}`);
+        } catch (err: any) {
+          console.error("❌ Không thể tự động đóng lệnh test:", err);
+          sendTelegram(`❌ *LỖI TỰ ĐỘNG ĐÓNG LỆNH TEST*\nLỗi: ${err.message}`);
+        }
+      }, 300000);
+
       res.json({
         success: true,
         message: "Lệnh Test Long đã được gửi đi!",
