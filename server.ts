@@ -358,7 +358,7 @@ function getOrderbookSignal() {
 function startWS() {
   // Binance Combined Streams: https://binance-docs.github.io/apidocs/futures/en/#combined-streams
   // @depth20: Whale Ratio, @miniTicker: Giá liên tục, @aggTrade: Khớp lệnh thực tế
-  const streams = `${SYMBOL_ID}@depth20@100ms/${SYMBOL_ID}@miniTicker/${SYMBOL_ID}@aggTrade`;
+  const streams = `${SYMBOL_ID}@depth20@100ms/${SYMBOL_ID}@miniticker/${SYMBOL_ID}@aggtrade`;
   const wsUrl = `wss://fstream.binance.com/stream?streams=${streams}`;
   const ws = new WebSocket(wsUrl);
 
@@ -411,9 +411,10 @@ function startWS() {
         const amount = qty * price;
         const side = d.m ? 'sell' : 'buy';
 
-        // Hạ ngưỡng Whale xuống $5000 để bắt được nhiều dòng tiền hơn
-        if (amount > 5000) {
+        // Hạ ngưỡng Whale xuống $1000 để bắt được nhiều dòng tiền hơn, giúp Whale Net nhạy hơn
+        if (amount > 1000) {
           botState.recentWhaleTrades.push({ time: Date.now(), side, amount, price });
+          // console.log(`[WHALE] Detect ${side} order: $${amount.toFixed(0)}`);
           // Tăng thời gian lưu trữ lên 15 phút (900,000 ms) để khớp với khung nến 15M
           const cutoff = Date.now() - 900000;
           botState.recentWhaleTrades = botState.recentWhaleTrades.filter(t => t.time > cutoff);
@@ -616,6 +617,8 @@ async function traderLoop() {
       const wsStatus = botState.isWsConnected ? "✅ STREAMING" : "❌ OFFLINE";
       const envTag = process.env.NODE_ENV === "production" ? "🏷️ *PROD*" : "🏷️ *DEV*";
       
+      const whaleCount = botState.recentWhaleTrades.length;
+      
       const intelMsg = `📝 *BẢN TIN INTEL (15M)*\n` +
         `⏰ Đóng nến: ${new Date(nextClose).toLocaleTimeString()}\n` +
         `${envTag} | PID: ${process.pid}\n\n` +
@@ -624,7 +627,7 @@ async function traderLoop() {
         `🧹 Sweep: *${sweepIcon}*\n` +
         `⚖️ OB Ratio: *${botState.obRatioEMA.toFixed(2)}*\n` +
         `📈 ADX: *${botState.adx.toFixed(1)}* (Trends: ${botState.plusDI.toFixed(1)} / ${botState.minusDI.toFixed(1)})\n` +
-        `🐋 Whale Net: ${net >= 0 ? '🟢 +' : '🔴 '}${net.toFixed(1)}k\n\n` +
+        `🐋 Whale Net: ${net >= 0 ? '🟢 +' : '🔴 '}${net.toFixed(1)}k (${whaleCount} lệnh)\n\n` +
         `_Đang phân tích chiến lược vào lệnh..._`;
       
       sendTelegram(intelMsg);
