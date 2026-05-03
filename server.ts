@@ -146,7 +146,7 @@ async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number,
     // Tính toán xu hướng từ Whale Trades khớp thực tế gần đây
     const totalWhaleBuy = botState.recentWhaleTrades.filter(t => t.side === 'buy').reduce((sum, t) => sum + t.amount, 0);
     const totalWhaleSell = botState.recentWhaleTrades.filter(t => t.side === 'sell').reduce((sum, t) => sum + t.amount, 0);
-    const whaleSummary = `Gần đây (30p): Whale Buy khớp thực tế $${(totalWhaleBuy/1000).toFixed(1)}k, Whale Sell khớp thực tế $${(totalWhaleSell/1000).toFixed(1)}k.`;
+    const whaleSummary = `Gần đây (15p): Whale Buy khớp thực tế $${(totalWhaleBuy/1000).toFixed(1)}k, Whale Sell khớp thực tế $${(totalWhaleSell/1000).toFixed(1)}k.`;
 
     const prompt = `Bạn là một nhà giao dịch cá voi chuyên nghiệp tại Binance Futures. Bạn phân tích hợp lưu giữa Tường lệnh (Orderbook) và Khớp lệnh thực tế (Whale Trades).
 TÍN HIỆU CẦN ĐÁNH GIÁ: ${signal}
@@ -417,16 +417,16 @@ function startWS() {
           const amount = qty * price;
           const side = d.m ? 'sell' : 'buy';
 
-          // Whale Detection: Hạ ngưỡng xuống $100 để chắc chắn có dữ liệu để test
-          if (amount > 100) {
+          // Whale Detection: Quay lại ngưỡng $5000 theo yêu cầu
+          if (amount > 5000) {
             botState.recentWhaleTrades.push({ time: Date.now(), side, amount, price });
             
-            // Log whale trades to server console for debugging if > $1000
-            if (amount > 1000) {
+            // Log whale trades to server console for debugging if > $5000
+            if (amount > 10000) {
               console.log(`🐋 [WHALE DETECTED] ${side.toUpperCase()} $${amount.toFixed(0)} at ${price}`);
             }
             
-            const cutoff = Date.now() - 1800000; // 30 phút
+            const cutoff = Date.now() - 900000; // Quay lại 15 phút
             botState.recentWhaleTrades = botState.recentWhaleTrades.filter(t => t.time > cutoff);
           }
         }
@@ -576,7 +576,7 @@ async function traderLoop() {
     }
 
     console.log(`🎯 [MONITORING] Đang kiểm tra tín hiệu Whale Sweep...`);
-    const bars = await ex.fetchOHLCV(PAIR, '5m', undefined, 100);
+    const bars = await ex.fetchOHLCV(PAIR, '15m', undefined, 100);
     if (!bars || bars.length < 25) {
       console.log(`⚠️ Không đủ dữ liệu nến (${bars?.length || 0}). Đang chờ...`);
       setTimeout(traderLoop, 10000);
@@ -598,7 +598,7 @@ async function traderLoop() {
     }
 
     // --- KIỂM TRA THỜI GIAN ĐÓNG NẾN (CANDLE CLOSE CONSTRAINT) ---
-    const timeframeMs = 5 * 60 * 1000; // Đổi thành 5 phút để test nhanh (Gốc là 15 phút)
+    const timeframeMs = 15 * 60 * 1000; // Quay lại 15 phút gốc
     const now = Date.now();
     const nextClose = Math.ceil(now / timeframeMs) * timeframeMs;
     const timeToClose = nextClose - now;
@@ -630,7 +630,7 @@ async function traderLoop() {
       
       const whaleCount = botState.recentWhaleTrades.length;
       
-      const intelMsg = `📝 *BẢN TIN INTEL (5M)*\n` +
+      const intelMsg = `📝 *BẢN TIN INTEL (15M)*\n` +
         `⏰ Đóng nến: ${new Date(nextClose).toLocaleTimeString()}\n` +
         `${envTag} | PID: ${process.pid}\n\n` +
         `🌐 WS Binance: ${wsStatus}\n` +
@@ -638,7 +638,7 @@ async function traderLoop() {
         `🧹 Sweep: *${sweepIcon}*\n` +
         `⚖️ OB Ratio: *${botState.obRatioEMA.toFixed(2)}*\n` +
         `📈 ADX: *${botState.adx.toFixed(1)}* (Trends: ${botState.plusDI.toFixed(1)} / ${botState.minusDI.toFixed(1)})\n` +
-        `🐋 Whale Net: ${net >= 0 ? '🟢 +' : '🔴 '}${net.toFixed(1)}k (30p - ${whaleCount} lệnh)\n\n` +
+        `🐋 Whale Net: ${net >= 0 ? '🟢 +' : '🔴 '}${net.toFixed(1)}k (15p - ${whaleCount} lệnh)\n\n` +
         `_Đang phân tích chiến lược vào lệnh..._`;
       
       sendTelegram(intelMsg);
