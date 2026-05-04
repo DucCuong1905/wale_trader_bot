@@ -136,8 +136,8 @@ export default function TradeStats({ trades }: TradeStatsProps) {
           </BarChart>
         </ResponsiveContainer>
         {stats.length === 0 && (
-          <div className="absolute inset-0 flex items-center justify-center bg-[#0f0f13]/50 pointer-events-none">
-            <p className="text-sm text-gray-500">No trading data for this period.</p>
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 opacity-50">Đang cập nhật hiệu suất...</p>
           </div>
         )}
       </div>

@@ -136,32 +136,41 @@ let botState = {
 };
 
 // --- LOGIC PHÂN TÍCH AI (AI ANALYSIS) ---
-async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number, bars: any[]) {
+async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number, bars: any[], touches?: number) {
   try {
     const context = bars.slice(-20).map((b) => {
       const time = new Date(b[0]).toLocaleTimeString();
       return `[${time}] O:${b[1]} H:${b[2]} L:${b[3]} C:${b[4]} V:${b[5]}`;
     }).join("\n");
 
-    // Tính toán xu hướng từ Whale Trades khớp thực tế gần đây
+    // Tính toán xu hướng từ Whale Trades khớp thực tế gần đây (Phiên bản chuyên sâu cho AI)
+    const fiveMinsAgo = Date.now() - 300000; // 5 phút gần nhất
+    const whales30k = botState.recentWhaleTrades.filter(t => t.amount >= 30000 && t.time >= fiveMinsAgo);
+    
+    const aggressiveBuy = whales30k.filter(t => t.side === 'buy').reduce((sum, t) => sum + t.amount, 0);
+    const aggressiveSell = whales30k.filter(t => t.side === 'sell').reduce((sum, t) => sum + t.amount, 0);
+    
     const totalWhaleBuy = botState.recentWhaleTrades.filter(t => t.side === 'buy').reduce((sum, t) => sum + t.amount, 0);
     const totalWhaleSell = botState.recentWhaleTrades.filter(t => t.side === 'sell').reduce((sum, t) => sum + t.amount, 0);
-    const whaleSummary = `Gần đây (15p): Whale Buy khớp thực tế $${(totalWhaleBuy/1000).toFixed(1)}k, Whale Sell khớp thực tế $${(totalWhaleSell/1000).toFixed(1)}k.`;
+    
+    const whaleSummary = `\n- TỔNG QUAN (15p): Buy $${(totalWhaleBuy/1000000).toFixed(2)}M / Sell $${(totalWhaleSell/1000000).toFixed(2)}M.
+- ÁP LỰC CUỐI NẾN (5p - Lệnh >30k): Buy $${(aggressiveBuy/1000000).toFixed(2)}M / Sell $${(aggressiveSell/1000000).toFixed(2)}M.`;
 
     const prompt = `Bạn là một nhà giao dịch cá voi chuyên nghiệp tại Binance Futures. Bạn phân tích hợp lưu giữa Tường lệnh (Orderbook) và Khớp lệnh thực tế (Whale Trades).
 TÍN HIỆU CẦN ĐÁNH GIÁ: ${signal}
 GIÁ HIỆN TẠI: ${lastPrice}
+ĐỘ MẠNH VÙNG THANH KHOẢN: ${touches || 1} lần chạm (Touches). Càng cao thì tín hiệu đảo chiều càng mạnh.
 TỶ LỆ ORDERBOOK (Bid/Ask): ${obRatio} (Tường mua/Tường bán)
-KHỚP LỆNH THỰC TẾ (Whale Trades): ${whaleSummary}
+DÒNG TIỀN THỰC TẾ (Whale Trades): ${whaleSummary}
 
 BỐI CẢNH THỊ TRƯỜNG (20 nến):
 ${context}
 
 HƯỚNG DẪN RA QUYẾT ĐỊNH CHUYÊN SÂU:
-1. Xác định "Hidden Pressure": Nếu Orderbook nghiêng về Bid (.ratio > 1) nhưng Whale Trades đang xả hàng thực tế (Sell > Buy), đây là tín hiệu dụ mua (Bull Trap). Hãy REJECT.
-2. Dòng tiền thật: Ưu tiên dữ liệu Whale Trades khớp thực tế. Nếu tỷ lệ Orderbook (OB Ratio) yếu nhưng Whale Trades khớp cực mạnh cùng chiều tín hiệu, hãy CONFIRM.
-3. Động lượng: Nếu cú quét thanh khoản đi kèm với Whale Trades cùng chiều lớn (> $100k net), đây là thiết lập High-Probability.
-4. Quản trị rủi ro: Đánh giá độ dài của nến (Volatility). Nếu thị trường đang biến động quá hỗn loạn hoặc nến quét thanh khoản có râu quá dài so với thân nến (dấu hiệu rút chân không dứt khoát), hãy cân nhắc REJECT.
+1. Xác nhận "Aggressive Money": Nếu tín hiệu là LONG, nhưng "ÁP LỰC CUỐI NẾN" (5p qua) chủ yếu là Sell hoặc bằng 0, hãy cực kỳ cẩn trọng. Whale thật thường đẩy giá vào những phút cuối để "print" nến đẹp.
+2. Dòng tiền thật: Ưu tiên dữ liệu Whale Trades khớp thực tế 5 phút cuối. Nếu "ÁP LỰC CUỐI NẾN" đồng thuận với tín hiệu và volume > $60k, hãy CONFIRM mạnh tay.
+3. Orderbook vs Trade: Nếu Orderbook (Bid/Ask) ảo nhưng Whale thực tế đang quét lệnh >30k khớp liên tục, đây là tín hiệu "Smart Money" đang gom/xả hàng quyết liệt.
+4. Quản trị rủi ro: Nếu Áp lực 5p cuối ngược hoàn toàn với tổng quan 15p, thị trường đang có sự đảo chiều đột ngột, hãy REJECT.
 
 Trả về duy nhất JSON:
 {
@@ -283,63 +292,103 @@ function getExchange() {
   return exchange;
 }
 
+/**
+ * Tìm các vùng thanh khoản (Liquidity Zones) dựa trên các cụm đỉnh/đáy hội tụ.
+ * @param bars Dữ liệu nến
+ * @param type 'high' để tìm vùng kháng cự, 'low' để tìm vùng hỗ trợ
+ */
+function getLiquidityZones(bars: any[], type: 'high' | 'low') {
+  const points = bars.slice(-60).map(b => type === 'high' ? b[2] : b[3]);
+  const zones: { price: number, touches: number }[] = [];
+  
+  // Ngưỡng gom nhóm (Threshold): 0.05% giá hiện tại cho BTC
+  const avgPrice = points.reduce((a, b) => a + b, 0) / points.length;
+  const threshold = avgPrice * 0.0005; 
+
+  for (const p of points) {
+    let found = false;
+    for (const zone of zones) {
+      if (Math.abs(zone.price - p) <= threshold) {
+        // Cập nhật giá trung bình của vùng để vùng trở nên chính xác hơn
+        zone.price = (zone.price * zone.touches + p) / (zone.touches + 1);
+        zone.touches++;
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      zones.push({ price: p, touches: 1 });
+    }
+  }
+
+  // Chỉ lấy các vùng có ít nhất 2 lần chạm (2 touches)
+  return zones.filter(z => z.touches >= 2).sort((a, b) => b.touches - a.touches);
+}
+
 function detectWhaleSweep(bars: any[]) {
   if (bars.length < 25) return { sweepHigh: false, sweepLow: false };
   
-  // Chúng ta chỉ quan tâm đến 3 nến gần nhất (đặc biệt là nến vừa đóng/đang đóng)
-  for (let i = bars.length - 1; i >= bars.length - 3; i--) {
-    const currentBar = bars[i];
-    const prevPeriod = bars.slice(i - 20, i); // Nhìn lại 20 nến trước đó
-    if (prevPeriod.length < 20) continue;
-    
-    const [, o, h, l, c, v] = currentBar;
-    
-    // Tìm mốc Liquidity (Đỉnh/Đáy rõ ràng nhất trong vùng)
-    const prevHigh = Math.max(...prevPeriod.map(b => b[2]));
-    const prevLow = Math.min(...prevPeriod.map(b => b[3]));
-    
-    // Tính toán Volume và Displacement (Logic mới: >= 1.2 lần trung bình 20 nến)
-    const avgVol = prevPeriod.reduce((sum, b) => sum + b[5], 0) / prevPeriod.length;
-    const volRatio = v / avgVol;
-    const isClimaxVol = volRatio >= 1.2; 
-    
-    const body = Math.abs(c - o);
-    const totalSize = h - l;
-    if (totalSize === 0) continue;
+  const highZones = getLiquidityZones(bars.slice(0, -1), 'high');
+  const lowZones = getLiquidityZones(bars.slice(0, -1), 'low');
 
-    const bodyRatio = body / totalSize;
-    const hasDisplacement = bodyRatio > 0.25; 
+  const currentBar = bars[bars.length - 1];
+  const [, o, h, l, c, v] = currentBar;
+  
+  // Tính toán Volume trung bình 20 nến
+  const prevPeriod = bars.slice(-21, -1);
+  const avgVol = prevPeriod.reduce((sum, b) => sum + b[5], 0) / prevPeriod.length;
+  const volRatio = v / avgVol;
+  const isClimaxVol = volRatio >= 1.2; 
+  
+  const totalSize = h - l;
+  if (totalSize === 0) return { sweepHigh: false, sweepLow: false };
 
-    const upperWick = h - Math.max(o, c);
-    const lowerWick = Math.min(o, c) - l;
-    const lowerWickRatio = lowerWick / totalSize;
-    const upperWickRatio = upperWick / totalSize;
+  const upperWick = h - Math.max(o, c);
+  const lowerWick = Math.min(o, c) - l;
+  const lowerWickRatio = lowerWick / totalSize;
+  const upperWickRatio = upperWick / totalSize;
 
-    // --- AUDIT LOG CHO MỖI NẾN CÓ VOLUME LỚN ---
-    if (isClimaxVol || l < prevLow || h > prevHigh) {
-        console.log(`--- [AUDIT NẾN ${i}] ---`);
-        console.log(`📊 Vol/AvgVol: ${(volRatio * 100).toFixed(1)}% | Thân/Nến: ${(bodyRatio * 100).toFixed(1)}%`);
-        console.log(`🕯️ Đỉnh cũ: ${prevHigh} | Đáy cũ: ${prevLow} | Low nến: ${l} | High nến: ${h}`);
-    }
-
-    // --- LOGIC SWEEP LOW (Quét Đáy - Bullish) ---
-    if (isClimaxVol && l < prevLow && c > prevLow) {
-      if (lowerWickRatio >= 0.5 && lowerWick > upperWick && hasDisplacement) {
-        console.log(`✅ [SWEEP LOW MATCHED] Nến ${i} thỏa mãn tất cả điều kiện Bullish.`);
-        return { sweepLow: true, sweepHigh: false, candleIndex: i };
-      } else {
-        console.log(`❌ [SWEEP LOW FAILED] Không thỏa mãn: Wick (${(lowerWickRatio*100).toFixed(1)}% >= 50%) hoặc Displacement.`);
+  // --- LOGIC QUÉT VÙNG THANH KHOẢN DƯỚI (SUPPORT SWEEP) ---
+  // Ưu tiên các vùng Multi-touch (>= 2)
+  for (const zone of lowZones) {
+    // Giá thấp nhất nến hiện tại phải đâm thủng vùng zone (Liquidity Grab)
+    // Nhưng giá đóng nến phải kéo ngược lên trên vùng đó (Rejection)
+    if (isClimaxVol && l < zone.price && c > zone.price) {
+      if (lowerWickRatio >= 0.4) {
+        console.log(`🔥 [LIQUIDITY SWEEP LOW] Quét vùng hỗ trợ $${zone.price.toFixed(1)} (${zone.touches} touches) | Wick: ${(lowerWickRatio*100).toFixed(1)}%`);
+        return { sweepLow: true, sweepHigh: false, candleIndex: bars.length - 1, touches: zone.touches };
       }
     }
-    
-    // --- LOGIC SWEEP HIGH (Quét Đỉnh - Bearish) ---
-    if (isClimaxVol && h > prevHigh && c < prevHigh) {
-      if (upperWickRatio >= 0.5 && upperWick > lowerWick && hasDisplacement) {
-        console.log(`✅ [SWEEP HIGH MATCHED] Nến ${i} thỏa mãn tất cả điều kiện Bearish.`);
-        return { sweepLow: false, sweepHigh: true, candleIndex: i };
-      } else {
-        console.log(`❌ [SWEEP HIGH FAILED] Không thỏa mãn: Wick (${(upperWickRatio*100).toFixed(1)}% >= 50%) hoặc Displacement.`);
+  }
+
+  // Fallback: Quét đáy Swing Low của 24 nến gần nhất (1-touch)
+  const swingLowLookback = 24;
+  const swingLow = Math.min(...bars.slice(-swingLowLookback - 1, -1).map(b => b[3]));
+  if (isClimaxVol && l < swingLow && c > swingLow) {
+    if (lowerWickRatio >= 0.4) {
+      console.log(`🧹 [SWING LOW SWEEP] Quét đáy Swing Low $${swingLow.toFixed(1)} (1 touch) | Wick: ${(lowerWickRatio*100).toFixed(1)}%`);
+      return { sweepLow: true, sweepHigh: false, candleIndex: bars.length - 1, touches: 1 };
+    }
+  }
+
+  // --- LOGIC QUÉT VÙNG THANH KHOẢN TRÊN (RESISTANCE SWEEP) ---
+  // Ưu tiên các vùng Multi-touch (>= 2)
+  for (const zone of highZones) {
+    if (isClimaxVol && h > zone.price && c < zone.price) {
+      if (upperWickRatio >= 0.4) {
+        console.log(`🔥 [LIQUIDITY SWEEP HIGH] Quét vùng kháng cự $${zone.price.toFixed(1)} (${zone.touches} touches) | Wick: ${(upperWickRatio*100).toFixed(1)}%`);
+        return { sweepLow: false, sweepHigh: true, candleIndex: bars.length - 1, touches: zone.touches };
       }
+    }
+  }
+
+  // Fallback: Quét đỉnh Swing High của 24 nến gần nhất (1-touch)
+  const swingHighLookback = 24;
+  const swingHigh = Math.max(...bars.slice(-swingHighLookback - 1, -1).map(b => b[2]));
+  if (isClimaxVol && h > swingHigh && c < swingHigh) {
+    if (upperWickRatio >= 0.4) {
+      console.log(`🧹 [SWING HIGH SWEEP] Quét đỉnh Swing High $${swingHigh.toFixed(1)} (1 touch) | Wick: ${(upperWickRatio*100).toFixed(1)}%`);
+      return { sweepLow: false, sweepHigh: true, candleIndex: bars.length - 1, touches: 1 };
     }
   }
   
@@ -619,11 +668,12 @@ async function traderLoop() {
       
       const buyVol = botState.recentWhaleTrades.filter(t => t.side === 'buy').reduce((s, t) => s + t.amount, 0);
       const sellVol = botState.recentWhaleTrades.filter(t => t.side === 'sell').reduce((s, t) => s + t.amount, 0);
-      const net = (buyVol - sellVol) / 1000;
+      const net = (buyVol - sellVol) / 1000000;
       
       // Sweep check ngay tại thời điểm này
-      const finalSweep = detectWhaleSweep(bars);
-      const sweepIcon = finalSweep.sweepLow ? "🟢 QUÉT ĐÁY (LOW)" : (finalSweep.sweepHigh ? "🔴 QUÉT ĐỈNH (HIGH)" : "❌ KHÔNG (NONE)");
+      const finalSweep = detectWhaleSweep(bars) as any;
+      const touchesStr = finalSweep.touches ? ` (${finalSweep.touches} touches)` : "";
+      const sweepIcon = finalSweep.sweepLow ? `🟢 QUÉT ĐÁY${touchesStr}` : (finalSweep.sweepHigh ? `🔴 QUÉT ĐỈNH${touchesStr}` : "❌ KHÔNG (NONE)");
       
       const wsStatus = botState.isWsConnected ? "✅ STREAMING" : "❌ OFFLINE";
       const envTag = process.env.NODE_ENV === "production" ? "🏷️ *PROD*" : "🏷️ *DEV*";
@@ -638,7 +688,7 @@ async function traderLoop() {
         `🧹 Sweep: *${sweepIcon}*\n` +
         `⚖️ OB Ratio: *${botState.obRatioEMA.toFixed(2)}*\n` +
         `📈 ADX: *${botState.adx.toFixed(1)}* (Trends: ${botState.plusDI.toFixed(1)} / ${botState.minusDI.toFixed(1)})\n` +
-        `🐋 Whale Net: ${net >= 0 ? '🟢 +' : '🔴 '}${net.toFixed(1)}k (15p - ${whaleCount} lệnh)\n\n` +
+        `🐋 Whale Net: ${net >= 0 ? '🟢 +' : '🔴 '}${net.toFixed(2)}M (15p - ${whaleCount} lệnh)\n\n` +
         `_Đang phân tích chiến lược vào lệnh..._`;
       
       sendTelegram(intelMsg);
@@ -711,52 +761,52 @@ async function traderLoop() {
           botState.signals.unshift(signalInfo);
           if (botState.signals.length > 50) botState.signals.pop();
 
-          sendTelegram(`🚀 *VÀO LỆNH ${signal}*\n💰 Giá: ${entry}\n🛑 SL: ${sl.toFixed(1)}\n🎯 TP: ${tp.toFixed(1)}`);
-          const aiEval = await getAIAnalysis(signal, entry, currentRatio, bars);
+          sendTelegram(`🚀 *VÀO LỆNH ${signal}*\n💰 Giá: ${entry}\n✋ Touches: ${sweepResult.touches || 1}\n🛑 SL: ${sl.toFixed(1)}\n🎯 TP: ${tp.toFixed(1)}`);
+          const aiEval = await getAIAnalysis(signal, entry, currentRatio, bars, sweepResult.touches);
           botState.aiReasoning = aiEval.reason;
           signalInfo.status = aiEval.decision;
 
           if (aiEval.decision === "REJECT") {
             sendTelegram(`🤖 *AI TỪ CHỐI LỆNH*\nLý do: ${aiEval.reason}`);
-            return;
-          }
-
-          sendTelegram(`🤖 *AI XÁC NHẬN LỆNH* (${aiEval.confidence}%)\nLý do: ${aiEval.reason}`);
-          try {
-            const amount = ex.amountToPrecision(PAIR, size);
-            console.log(`[ORDER] Placing ${signal} order. Size: ${amount}`);
-            
-            // Mở vị thế (Market Order)
-            await ex.createMarketOrder(PAIR, signal === 'LONG' ? 'buy' : 'sell', parseFloat(amount));
-            
-            // Đợi một chút để lệnh Market khớp hoàn toàn trước khi đặt TP/SL
-            await new Promise(r => setTimeout(r, 1000));
-
-            // Set TP và SL sử dụng reduceOnly: true cho chế độ One-way
+            // Không return nữa để code chạy xuống cuối hàm gọi setTimeout
+          } else {
+            sendTelegram(`🤖 *AI XÁC NHẬN LỆNH* (${aiEval.confidence}%)\nLý do: ${aiEval.reason}`);
             try {
-              // Chốt lời (Limit Order)
-              const tpPrice = ex.priceToPrecision(PAIR, tp);
-              await ex.createOrder(PAIR, 'limit', signal === 'LONG' ? 'sell' : 'buy', parseFloat(amount), parseFloat(tpPrice), { 'reduceOnly': true });
+              const amount = ex.amountToPrecision(PAIR, size);
+              console.log(`[ORDER] Placing ${signal} order. Size: ${amount}`);
               
-              // Cắt lỗ (Stop Market Order)
-              const slPrice = ex.priceToPrecision(PAIR, sl);
-              await ex.createOrder(PAIR, 'stop_market', signal === 'LONG' ? 'sell' : 'buy', parseFloat(amount), undefined, { 
-                'stopPrice': parseFloat(slPrice), 
-                'reduceOnly': true 
-              });
+              // Mở vị thế (Market Order)
+              await ex.createMarketOrder(PAIR, signal === 'LONG' ? 'buy' : 'sell', parseFloat(amount));
               
-              console.log(`[ORDER] TP/SL set successfully.`);
-            } catch (tpslErr: any) {
-              console.error("⚠️ TP/SL Order Error:", tpslErr.message);
-              sendTelegram(`⚠️ *CẢNH BÁO*: Lệnh đã khớp nhưng không đặt được TP/SL tự động. Vui lòng kiểm tra sàn!\nLỗi: ${tpslErr.message}`);
+              // Đợi một chút để lệnh Market khớp hoàn toàn trước khi đặt TP/SL
+              await new Promise(r => setTimeout(r, 1000));
+  
+              // Set TP và SL sử dụng reduceOnly: true cho chế độ One-way
+              try {
+                // Chốt lời (Limit Order)
+                const tpPrice = ex.priceToPrecision(PAIR, tp);
+                await ex.createOrder(PAIR, 'limit', signal === 'LONG' ? 'sell' : 'buy', parseFloat(amount), parseFloat(tpPrice), { 'reduceOnly': true });
+                
+                // Cắt lỗ (Stop Market Order)
+                const slPrice = ex.priceToPrecision(PAIR, sl);
+                await ex.createOrder(PAIR, 'stop_market', signal === 'LONG' ? 'sell' : 'buy', parseFloat(amount), undefined, { 
+                  'stopPrice': parseFloat(slPrice), 
+                  'reduceOnly': true 
+                });
+                
+                console.log(`[ORDER] TP/SL set successfully.`);
+              } catch (tpslErr: any) {
+                console.error("⚠️ TP/SL Order Error:", tpslErr.message);
+                sendTelegram(`⚠️ *CẢNH BÁO*: Lệnh đã khớp nhưng không đặt được TP/SL tự động. Vui lòng kiểm tra sàn!\nLỗi: ${tpslErr.message}`);
+              }
+  
+              botState.lastTradeTime = Date.now();
+              botState.inPosition = true;
+              sendTelegram(`✅ *ĐẶT LỆNH THÀNH CÔNG*\nBot đã thực thi lệnh ${signal} trên Binance.`);
+            } catch (e: any) {
+              console.error("❌ Order Execution Error:", e);
+              sendTelegram(`❌ *LỖI ĐẶT LỆNH SÀN*\nKhông thể thực thi lệnh trên Binance.\nLỗi: ${e.message}`);
             }
-
-            botState.lastTradeTime = Date.now();
-            botState.inPosition = true;
-            sendTelegram(`✅ *ĐẶT LỆNH THÀNH CÔNG*\nBot đã thực thi lệnh ${signal} trên Binance.`);
-          } catch (e: any) {
-            console.error("❌ Order Execution Error:", e);
-            sendTelegram(`❌ *LỖI ĐẶT LỆNH SÀN*\nKhông thể thực thi lệnh trên Binance.\nLỗi: ${e.message}`);
           }
         }
       }

@@ -315,11 +315,6 @@ export default function App() {
                   />
                 </AreaChart>
               </ResponsiveContainer>
-              {history.filter(h => h.balance).length === 0 && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Chưa có dữ liệu biến động</p>
-                </div>
-              )}
             </div>
           </section>
 
@@ -517,23 +512,28 @@ export default function App() {
 
 function StatCard({ label, value, change, positive, subValue, icon }: { label: string, value: string, change?: string, positive?: boolean, subValue?: string, icon: React.ReactNode }) {
   return (
-    <div className="glass-card p-8 rounded-[2rem] hover:border-blue-500/30 transition-all group relative overflow-hidden glow-blue">
-      <div className="absolute top-0 right-0 p-6 opacity-10 group-hover:opacity-30 group-hover:scale-125 transition-all duration-500 text-blue-400">
+    <div className="glass-card p-6 md:p-7 rounded-[2rem] hover:border-blue-500/30 transition-all group relative overflow-hidden glow-blue">
+      <div className="absolute top-0 right-0 p-5 opacity-10 group-hover:opacity-20 group-hover:scale-125 transition-all duration-500 text-blue-400">
         {icon}
       </div>
-      <p className="text-[10px] text-slate-400 font-black uppercase tracking-[0.2em] mb-4">{label}</p>
-      <div className="flex items-baseline gap-3">
-        <h4 className="text-3xl font-black tracking-tight text-white">{value}</h4>
+      <p className="text-[9px] text-slate-400 font-black uppercase tracking-[0.2em] mb-4 opacity-70">{label}</p>
+      <div className="flex flex-col gap-2">
+        <h4 className="text-2xl font-black tracking-tight text-white leading-tight break-words">{value}</h4>
         {change && (
-          <span className={cn("text-[11px] font-black px-2 py-0.5 rounded-lg border", positive ? "bg-green-500/10 border-green-500/20 text-green-400" : "bg-red-500/10 border-red-500/20 text-red-400")}>
-            {change}
-          </span>
+          <div className="flex">
+            <span className={cn(
+              "text-[9px] font-black px-2 py-0.5 rounded-lg border uppercase tracking-widest shadow-lg", 
+              positive ? "bg-green-500/20 border-green-500/30 text-green-400" : "bg-red-500/20 border-red-500/30 text-red-400"
+            )}>
+              {change}
+            </span>
+          </div>
         )}
       </div>
       {subValue && (
-        <div className="mt-4 flex items-center gap-2">
-           <div className={cn("w-1.5 h-1.5 rounded-full animate-pulse", positive ? "bg-green-400 shadow-[0_0_8px_#4ade80]" : "bg-red-400")}></div>
-           <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest">{subValue}</p>
+        <div className="mt-4 flex items-center gap-2 pt-3 border-t border-white/5">
+           <div className={cn("w-1 h-1 rounded-full animate-pulse", positive ? "bg-green-400 shadow-[0_0_8px_#4ade80]" : "bg-red-400")}></div>
+           <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-tight">{subValue}</p>
         </div>
       )}
     </div>
