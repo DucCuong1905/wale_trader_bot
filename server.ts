@@ -137,26 +137,31 @@ let botState = {
 
 // --- LOGIC PHÂN TÍCH AI (AI ANALYSIS) ---
 async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number, bars: any[], touches?: number) {
-  try {
-    const context = bars.slice(-20).map((b) => {
-      const time = new Date(b[0]).toLocaleTimeString();
-      return `[${time}] O:${b[1]} H:${b[2]} L:${b[3]} C:${b[4]} V:${b[5]}`;
-    }).join("\n");
+  const maxRetries = 3;
+  const modelsToTry = [modelName, "gemini-1.5-flash"]; // Fallback to stable model if preview is busy
 
-    // Tính toán xu hướng từ Whale Trades khớp thực tế gần đây (Phiên bản chuyên sâu cho AI)
-    const fiveMinsAgo = Date.now() - 300000; // 5 phút gần nhất
-    const whales30k = botState.recentWhaleTrades.filter(t => t.amount >= 30000 && t.time >= fiveMinsAgo);
-    
-    const aggressiveBuy = whales30k.filter(t => t.side === 'buy').reduce((sum, t) => sum + t.amount, 0);
-    const aggressiveSell = whales30k.filter(t => t.side === 'sell').reduce((sum, t) => sum + t.amount, 0);
-    
-    const totalWhaleBuy = botState.recentWhaleTrades.filter(t => t.side === 'buy').reduce((sum, t) => sum + t.amount, 0);
-    const totalWhaleSell = botState.recentWhaleTrades.filter(t => t.side === 'sell').reduce((sum, t) => sum + t.amount, 0);
-    
-    const whaleSummary = `\n- TỔNG QUAN (15p): Buy $${(totalWhaleBuy/1000000).toFixed(2)}M / Sell $${(totalWhaleSell/1000000).toFixed(2)}M.
+  for (let modelToUse of modelsToTry) {
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        const context = bars.slice(-20).map((b) => {
+          const time = new Date(b[0]).toLocaleTimeString();
+          return `[${time}] O:${b[1]} H:${b[2]} L:${b[3]} C:${b[4]} V:${b[5]}`;
+        }).join("\n");
+
+        // Tính toán xu hướng từ Whale Trades khớp thực tế gần đây (Phiên bản chuyên sâu cho AI)
+        const fiveMinsAgo = Date.now() - 300000; // 5 phút gần nhất
+        const whales30k = botState.recentWhaleTrades.filter(t => t.amount >= 30000 && t.time >= fiveMinsAgo);
+        
+        const aggressiveBuy = whales30k.filter(t => t.side === 'buy').reduce((sum, t) => sum + t.amount, 0);
+        const aggressiveSell = whales30k.filter(t => t.side === 'sell').reduce((sum, t) => sum + t.amount, 0);
+        
+        const totalWhaleBuy = botState.recentWhaleTrades.filter(t => t.side === 'buy').reduce((sum, t) => sum + t.amount, 0);
+        const totalWhaleSell = botState.recentWhaleTrades.filter(t => t.side === 'sell').reduce((sum, t) => sum + t.amount, 0);
+        
+        const whaleSummary = `\n- TỔNG QUAN (15p): Buy $${(totalWhaleBuy/1000000).toFixed(2)}M / Sell $${(totalWhaleSell/1000000).toFixed(2)}M.
 - ÁP LỰC CUỐI NẾN (5p - Lệnh >30k): Buy $${(aggressiveBuy/1000000).toFixed(2)}M / Sell $${(aggressiveSell/1000000).toFixed(2)}M.`;
 
-    const prompt = `Bạn là một nhà giao dịch cá voi chuyên nghiệp tại Binance Futures. Bạn phân tích hợp lưu giữa Tường lệnh (Orderbook) và Khớp lệnh thực tế (Whale Trades).
+        const prompt = `Bạn là một nhà giao dịch cá voi chuyên nghiệp tại Binance Futures. Bạn phân tích hợp lưu giữa Tường lệnh (Orderbook) và Khớp lệnh thực tế (Whale Trades).
 TÍN HIỆU CẦN ĐÁNH GIÁ: ${signal}
 GIÁ HIỆN TẠI: ${lastPrice}
 ĐỘ MẠNH VÙNG THANH KHOẢN: ${touches || 1} lần chạm (Touches). Càng cao thì tín hiệu đảo chiều càng mạnh.
@@ -179,33 +184,44 @@ Trả về duy nhất JSON:
   "confidence": 0-100
 }`;
 
-    console.log(`[AI] Đang phân tích chuyên sâu bằng ${modelName}...`);
-    
-    // Sử dụng model preview với apiVersion v1beta nếu cần, 
-    // nhưng thư viện @google/generative-ai thường tự xử lý model name.
-    const model = genAI.getGenerativeModel({ model: modelName });
-    
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
-    
-    if (!text) throw new Error("AI không trả về nội dung.");
-    
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    const cleanText = jsonMatch ? jsonMatch[0] : text;
-    const parsed = JSON.parse(cleanText);
-    
-    console.log(`[AI SUCCESS] ${parsed.decision} (${parsed.confidence}%)`);
-    return parsed;
-    
-  } catch (e: any) {
-    console.error(`❌ [AI ERROR] ${modelName}:`, e.message);
-    return { 
-      decision: "REJECT", 
-      reason: `AI Error: ${e.message}`, 
-      confidence: 0 
-    };
+        console.log(`[AI] Đang phân tích (${modelToUse}) - Lần thử ${i + 1}/${maxRetries}...`);
+        
+        const model = genAI.getGenerativeModel({ model: modelToUse });
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        const text = response.text();
+        
+        if (!text) throw new Error("AI không trả về nội dung.");
+        
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        const cleanText = jsonMatch ? jsonMatch[0] : text;
+        const parsed = JSON.parse(cleanText);
+        
+        console.log(`[AI SUCCESS] ${parsed.decision} (${parsed.confidence}%) dùng ${modelToUse}`);
+        return parsed;
+        
+      } catch (e: any) {
+        const isRateLimit = e.message?.includes("503") || e.message?.includes("429");
+        console.warn(`⚠️ [AI RETRY] ${modelToUse} failed (Attempt ${i + 1}): ${e.message}`);
+        
+        if (i < maxRetries - 1 && isRateLimit) {
+          // Đợi 2s rồi thử lại
+          await new Promise(r => setTimeout(r, 2000));
+          continue;
+        }
+        
+        // Nếu đã thử hết số lần của model này, chuyển sang model tiếp theo
+        break;
+      }
+    }
   }
+
+  // Nếu tất cả model và lần thử đều thất bại
+  return { 
+    decision: "REJECT", 
+    reason: `AI Error: Không thể kết nối với cả preview và stable model sau nhiều lần thử.`, 
+    confidence: 0 
+  };
 }
 
 // --- TELEGRAM HELPER ---
