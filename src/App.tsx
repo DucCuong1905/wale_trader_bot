@@ -230,27 +230,63 @@ export default function App() {
             </div>
 
           {/* Whale Real-time Trades Section */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-[#12121c] border border-emerald-500/20 p-6 rounded-[2rem] glow-green group hover:bg-emerald-500/5 transition-all">
               <div className="flex items-center justify-between mb-4">
-                <p className="text-[10px] text-emerald-500 font-black uppercase tracking-[0.2em]">Whale Buy Khớp (5p)</p>
+                <p className="text-[10px] text-emerald-500 font-black uppercase tracking-[0.2em]">Whale Buy (15p)</p>
                 <div className="p-2 bg-emerald-500/10 rounded-lg">
                   <ArrowUpRight className="w-4 h-4 text-emerald-500" />
                 </div>
               </div>
-              <p className="text-3xl font-mono text-emerald-400 font-black tracking-tighter">
-                ${(parseFloat((data as any)?.whale_trades?.buy || "0") / 1000).toFixed(1)}k
+              <p className="text-2xl font-mono text-emerald-400 font-black tracking-tighter">
+                ${(parseFloat((data as any)?.whale_trades?.buy || "0") / 1000000).toFixed(2)}M
               </p>
             </div>
             <div className="bg-[#12121c] border border-red-500/20 p-6 rounded-[2rem] glow-red group hover:bg-red-500/5 transition-all">
               <div className="flex items-center justify-between mb-4">
-                <p className="text-[10px] text-red-500 font-black uppercase tracking-[0.2em]">Whale Sell Khớp (5p)</p>
+                <p className="text-[10px] text-red-500 font-black uppercase tracking-[0.2em]">Whale Sell (15p)</p>
                 <div className="p-2 bg-red-500/10 rounded-lg">
                   <ArrowDownRight className="w-4 h-4 text-red-500" />
                 </div>
               </div>
-              <p className="text-3xl font-mono text-red-400 font-black tracking-tighter">
-                ${(parseFloat((data as any)?.whale_trades?.sell || "0") / 1000).toFixed(1)}k
+              <p className="text-2xl font-mono text-red-400 font-black tracking-tighter">
+                ${(parseFloat((data as any)?.whale_trades?.sell || "0") / 1000000).toFixed(2)}M
+              </p>
+            </div>
+            <div className={cn(
+              "p-6 rounded-[2rem] group transition-all border",
+              (parseFloat((data as any)?.whale_trades?.buy || "0") - parseFloat((data as any)?.whale_trades?.sell || "0")) >= 0
+                ? "bg-[#12121c] border-blue-500/20 glow-blue hover:bg-blue-500/5"
+                : "bg-[#12121c] border-orange-500/20 glow-orange hover:bg-orange-500/5"
+            )}>
+              <div className="flex items-center justify-between mb-4">
+                <p className={cn(
+                  "text-[10px] font-black uppercase tracking-[0.2em]",
+                  (parseFloat((data as any)?.whale_trades?.buy || "0") - parseFloat((data as any)?.whale_trades?.sell || "0")) >= 0
+                    ? "text-blue-400"
+                    : "text-orange-400"
+                )}>Whale Net (15p)</p>
+                <div className={cn(
+                  "p-2 rounded-lg",
+                  (parseFloat((data as any)?.whale_trades?.buy || "0") - parseFloat((data as any)?.whale_trades?.sell || "0")) >= 0
+                    ? "bg-blue-500/10"
+                    : "bg-orange-500/10"
+                )}>
+                  <Activity className={cn(
+                    "w-4 h-4",
+                    (parseFloat((data as any)?.whale_trades?.buy || "0") - parseFloat((data as any)?.whale_trades?.sell || "0")) >= 0
+                      ? "text-blue-400"
+                      : "text-orange-400"
+                  )} />
+                </div>
+              </div>
+              <p className={cn(
+                "text-2xl font-mono font-black tracking-tighter",
+                (parseFloat((data as any)?.whale_trades?.buy || "0") - parseFloat((data as any)?.whale_trades?.sell || "0")) >= 0
+                  ? "text-blue-400"
+                  : "text-orange-400"
+              )}>
+                {((parseFloat((data as any)?.whale_trades?.buy || "0") - parseFloat((data as any)?.whale_trades?.sell || "0")) / 1000000).toFixed(2)}M
               </p>
             </div>
           </div>

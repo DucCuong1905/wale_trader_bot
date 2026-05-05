@@ -79,7 +79,27 @@ function loadTrades() {
   if (fs.existsSync(TRADES_FILE)) {
     try {
       const data = fs.readFileSync(TRADES_FILE, "utf-8");
-      return JSON.parse(data);
+      let trades = JSON.parse(data);
+      
+      // Xóa giao dịch test ngày 3/5/2026 16:09:19 (Thử cả UTC và Local)
+      const filtered = trades.filter((t: any) => {
+        if (!t.time) return true;
+        const isTest = t.time.includes('2026-05-03T16:09:19') || t.time.includes('2026-05-03T09:09:19');
+        return !isTest;
+      });
+
+      if (filtered.length !== trades.length) {
+        console.log(`🧹 Đã dọn dẹp ${trades.length - filtered.length} giao dịch test khỏi bộ nhớ.`);
+        // Lưu lại file đã lọc sạch
+        try {
+          fs.writeFileSync(TRADES_FILE, JSON.stringify(filtered, null, 2));
+          console.log(`✅ Đã cập nhật file ${TRADES_FILE} (đã xóa bản ghi test).`);
+        } catch (err) {
+          console.error("Lỗi khi cập nhật file trades sau khi lọc:", err);
+        }
+      }
+      
+      return filtered;
     } catch (e) {
       console.error("Error loading trades:", e);
       return [];
@@ -158,8 +178,13 @@ async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number,
         const totalWhaleBuy = botState.recentWhaleTrades.filter(t => t.side === 'buy').reduce((sum, t) => sum + t.amount, 0);
         const totalWhaleSell = botState.recentWhaleTrades.filter(t => t.side === 'sell').reduce((sum, t) => sum + t.amount, 0);
         
-        const whaleSummary = `\n- TỔNG QUAN (15p): Buy $${(totalWhaleBuy/1000000).toFixed(2)}M / Sell $${(totalWhaleSell/1000000).toFixed(2)}M.
-- ÁP LỰC CUỐI NẾN (5p - Lệnh >30k): Buy $${(aggressiveBuy/1000000).toFixed(2)}M / Sell $${(aggressiveSell/1000000).toFixed(2)}M.`;
+        // Tính toán Cường độ (Intensity): 5 phút cuối chiếm bao nhiêu % tổng nến 15 phút
+        const buyIntensity = totalWhaleBuy > 0 ? (aggressiveBuy / totalWhaleBuy) * 100 : 0;
+        const sellIntensity = totalWhaleSell > 0 ? (aggressiveSell / totalWhaleSell) * 100 : 0;
+
+        const whaleSummary = `
+- TỔNG QUAN (15p): Buy $${(totalWhaleBuy/1000000).toFixed(2)}M / Sell $${(totalWhaleSell/1000000).toFixed(2)}M.
+- ÁP LỰC CUỐI NẾN (5p): Buy $${(aggressiveBuy/1000000).toFixed(2)}M (${buyIntensity.toFixed(1)}%) / Sell $${(aggressiveSell/1000000).toFixed(2)}M (${sellIntensity.toFixed(1)}%).`;
 
         const prompt = `Bạn là một nhà giao dịch cá voi chuyên nghiệp tại Binance Futures. Bạn phân tích hợp lưu giữa Tường lệnh (Orderbook) và Khớp lệnh thực tế (Whale Trades).
 TÍN HIỆU CẦN ĐÁNH GIÁ: ${signal}
@@ -172,9 +197,9 @@ BỐI CẢNH THỊ TRƯỜNG (20 nến):
 ${context}
 
 HƯỚNG DẪN RA QUYẾT ĐỊNH CHUYÊN SÂU:
-1. Xác nhận "Aggressive Money": Nếu tín hiệu là LONG, nhưng "ÁP LỰC CUỐI NẾN" (5p qua) chủ yếu là Sell hoặc bằng 0, hãy cực kỳ cẩn trọng. Whale thật thường đẩy giá vào những phút cuối để "print" nến đẹp.
-2. Dòng tiền thật: Ưu tiên dữ liệu Whale Trades khớp thực tế 5 phút cuối. Nếu "ÁP LỰC CUỐI NẾN" đồng thuận với tín hiệu và volume > $60k, hãy CONFIRM mạnh tay.
-3. Orderbook vs Trade: Nếu Orderbook (Bid/Ask) ảo nhưng Whale thực tế đang quét lệnh >30k khớp liên tục, đây là tín hiệu "Smart Money" đang gom/xả hàng quyết liệt.
+1. Xác nhận "Aggressive Money": Nếu tín hiệu là LONG, nhưng "ÁP LỰC CUỐI NẾN" (5p qua) chủ yếu là Sell hoặc chiếm tỷ trọng % thấp hơn so với 15p qua, hãy cực kỳ cẩn trọng. Whale thật thường đẩy giá dồn dập vào cuối nến.
+2. Dòng tiền thật: Ưu tiên dữ liệu Whale Trades khớp thực tế 5 phút cuối. Nếu cường độ % ở 5 phút cuối cao (>20-30%) và đồng thuận với chiều tín hiệu, hãy CONFIRM mạnh tay.
+3. Bỏ qua nhiễu: Nếu khối lượng 15p rất lớn nhưng khối lượng 5p cuối rất nhỏ, nghĩa là động lực đã suy yếu. Hãy REJECT.
 4. Quản trị rủi ro: Nếu Áp lực 5p cuối ngược hoàn toàn với tổng quan 15p, thị trường đang có sự đảo chiều đột ngột, hãy REJECT.
 
 Trả về duy nhất JSON:
