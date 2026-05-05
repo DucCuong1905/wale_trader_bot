@@ -197,10 +197,10 @@ BỐI CẢNH THỊ TRƯỜNG (20 nến):
 ${context}
 
 HƯỚNG DẪN RA QUYẾT ĐỊNH CHUYÊN SÂU:
-1. Xác nhận "Aggressive Money": Nếu tín hiệu là LONG, nhưng "ÁP LỰC CUỐI NẾN" (5p qua) chủ yếu là Sell hoặc chiếm tỷ trọng % thấp hơn so với 15p qua, hãy cực kỳ cẩn trọng. Whale thật thường đẩy giá dồn dập vào cuối nến.
-2. Dòng tiền thật: Ưu tiên dữ liệu Whale Trades khớp thực tế 5 phút cuối. Nếu cường độ % ở 5 phút cuối cao (>20-30%) và đồng thuận với chiều tín hiệu, hãy CONFIRM mạnh tay.
-3. Bỏ qua nhiễu: Nếu khối lượng 15p rất lớn nhưng khối lượng 5p cuối rất nhỏ, nghĩa là động lực đã suy yếu. Hãy REJECT.
-4. Quản trị rủi ro: Nếu Áp lực 5p cuối ngược hoàn toàn với tổng quan 15p, thị trường đang có sự đảo chiều đột ngột, hãy REJECT.
+1. Xác định "Bẫy Orderbook" (Hidden Pressure): Đây là ưu tiên hàng đầu. Nếu Orderbook nghiêng hẳn về một bên (ví dụ Bid/Ask > 1.5) nhưng "ÁP LỰC CUỐI NẾN" (Whale Trades) lại đang ép ngược lại, đó là dấu hiệu của tường ảo để dụ gà. Hãy REJECT.
+2. Xác nhận "Aggressive Money": Whale thật thường đẩy giá dồn dập vào 5 phút cuối nến để tạo nến đẹp (print candle). Nếu "ÁP LỰC CUỐI NẾN" chiếm tỷ trọng cao (>30% của cả nến 15p) và đồng thuận với tín hiệu, hãy CONFIRM mạnh tay.
+3. Độ mạnh vùng thanh khoản: Tín hiệu xảy ra tại vùng có >= 2 lần chạm (Touches) có xác suất đảo chiều cao hơn rất nhiều so với vùng 1-touch. Hãy ưu tiên các vùng Multi-touch.
+4. Quản trị rủi ro: Nếu Áp lực 5p cuối và Tổng quan 15p trái ngược nhau hoàn toàn, hoặc Whale Net tổng là âm nhưng lại báo LONG, thị trường đang cực kỳ hỗn loạn. Hãy REJECT.
 
 Trả về duy nhất JSON:
 {
