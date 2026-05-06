@@ -500,12 +500,12 @@ function startWS() {
           const amount = qty * price;
           const side = d.m ? 'sell' : 'buy';
 
-          // Whale Detection: Quay lại ngưỡng $5000 theo yêu cầu
-          if (amount > 5000) {
+          // Whale Detection: Ngưỡng $30,000 theo yêu cầu mới
+          if (amount > 30000) {
             botState.recentWhaleTrades.push({ time: Date.now(), side, amount, price });
             
-            // Log whale trades to server console for debugging if > $5000
-            if (amount > 10000) {
+            // Log whale trades to server console for debugging if > $1M
+            if (amount > 1000000) {
               console.log(`🐋 [WHALE DETECTED] ${side.toUpperCase()} $${amount.toFixed(0)} at ${price}`);
             }
             
