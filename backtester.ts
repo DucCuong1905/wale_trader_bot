@@ -26,7 +26,7 @@ const PAIR = "BTC/USDT";
 const TIMEFRAME = "15m";
 const START_DATE = "2025-03-31T00:00:00Z";
 const END_DATE = "2026-03-31T23:59:59Z";
-const RR = 1.5; // Tỷ lệ Lợi nhuận/Rủi ro 1:1.5
+const RR = 2.0; // Tỷ lệ Lợi nhuận/Rủi ro 1:2
 const INITIAL_BALANCE = 2000;
 const RISK_PER_TRADE = 0.01; // 1% rủi ro mỗi lệnh
 
@@ -134,6 +134,32 @@ function calcADX(ohlcv: any[]) {
   return adxList[adxList.length - 1];
 }
 
+function calculateEMA(prices: number[], period: number) {
+  if (prices.length < period) return prices[prices.length - 1];
+  let ema = prices.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  const multiplier = 2 / (period + 1);
+  for (let i = period; i < prices.length; i++) {
+    ema = (prices[i] - ema) * multiplier + ema;
+  }
+  return ema;
+}
+
+function calculateRSI(prices: number[], period: number) {
+  if (prices.length < period + 1) return 50;
+  let gains = 0;
+  let losses = 0;
+
+  for (let i = 1; i <= period; i++) {
+    const diff = prices[prices.length - i] - prices[prices.length - i - 1];
+    if (diff >= 0) gains += diff;
+    else losses -= diff;
+  }
+
+  if (losses === 0) return 100;
+  const rs = (gains / period) / (losses / period);
+  return 100 - (100 / (1 + rs));
+}
+
 async function getAIBacktestDecision(signal: string, lastPrice: number, bars: any[]) {
   // AI is disabled for backtest performance and stability
   return { decision: "CONFIRM", reason: "AI Check Disabled for Backtest" };
@@ -169,9 +195,16 @@ export async function runBacktest(onProgress?: (p: number) => void) {
     const window = allKlines.slice(0, i + 1);
     const sweep = detectSweep(window);
     const adx = calcADX(window);
+    const prices = window.map(b => b[4]);
+    const ema200 = calculateEMA(prices, 200);
+    const rsi = calculateRSI(prices, 14);
+    const lastPrice = prices[prices.length - 1];
 
-    if ((sweep.sweepLow || sweep.sweepHigh) && adx > 25 && (sweep.touches || 0) >= 3) {
-      const type = sweep.sweepLow ? "LONG" : "SHORT";
+    const isLong = sweep.sweepLow && adx > 25 && (sweep.touches || 0) >= 3 && lastPrice > ema200 && rsi < 65;
+    const isShort = sweep.sweepHigh && adx > 25 && (sweep.touches || 0) >= 3 && lastPrice < ema200 && rsi > 35;
+
+    if (isLong || isShort) {
+      const type = isLong ? "LONG" : "SHORT";
       const entryPrice = allKlines[i][4];
       const time = new Date(allKlines[i][0]).toISOString();
       

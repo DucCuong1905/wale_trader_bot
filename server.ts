@@ -589,6 +589,32 @@ function calcADX(ohlcv: any[], period: number = 14) {
   };
 }
 
+function calculateEMA(prices: number[], period: number) {
+  if (prices.length < period) return prices[prices.length - 1];
+  let ema = prices.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  const multiplier = 2 / (period + 1);
+  for (let i = period; i < prices.length; i++) {
+    ema = (prices[i] - ema) * multiplier + ema;
+  }
+  return ema;
+}
+
+function calculateRSI(prices: number[], period: number) {
+  if (prices.length < period + 1) return 50;
+  let gains = 0;
+  let losses = 0;
+
+  for (let i = 1; i <= period; i++) {
+    const diff = prices[prices.length - i] - prices[prices.length - i - 1];
+    if (diff >= 0) gains += diff;
+    else losses -= diff;
+  }
+
+  if (losses === 0) return 100;
+  const rs = (gains / period) / (losses / period);
+  return 100 - (100 / (1 + rs));
+}
+
 async function traderLoop() {
   const ex = getExchange();
   if (!ex) {
@@ -676,7 +702,14 @@ async function traderLoop() {
     botState.plusDI = adxData.pDI;
     botState.minusDI = adxData.mDI;
 
-    // --- QUÉT TÍN HIỆU SWEEP (CHỈ DÙNG ĐỂ THEO DÕI TRONG LOG) ---
+    // --- TÍNH TOÁN EMA 200 & RSI (MỚI) ---
+    const prices = bars.map(b => b[4]);
+    const ema200 = calculateEMA(prices, 200);
+    const rsi = calculateRSI(prices, 14);
+    const lastPrice = prices[prices.length - 1];
+    const trend = lastPrice > ema200 ? "UP" : "DOWN";
+
+    // --- QUÉT TÍN HIỆU SWEEP ---
     const sweepResult = detectWhaleSweep(bars);
     const sweepLow = sweepResult.sweepLow;
     const sweepHigh = sweepResult.sweepHigh;
@@ -761,11 +794,11 @@ async function traderLoop() {
     if (obRatio > 1.25 || (obRatio > 1.1 && whaleNet > 50000)) obSignal = "BULL";
     if (obRatio < 0.8 || (obRatio < 0.9 && whaleNet < -50000)) obSignal = "BEAR";
 
-    console.log(`[PHÂN TÍCH] Giá: ${botState.lastPrice} | ADX: ${adx.toFixed(1)} (Min 25) | Quét Whale: ${sweepLow ? "LOW" : sweepHigh ? "HIGH" : "KHÔNG"} | Tỷ lệ OB: ${obRatio.toFixed(2)} | Whale Net: ${(whaleNet/1000).toFixed(1)}k | Touches: ${sweepResult.touches || 0}`);
+    console.log(`[PHÂN TÍCH] Giá: ${botState.lastPrice} | Xu hướng: ${trend} | ADX: ${adx.toFixed(1)} | Touches: ${sweepResult.touches || 0} | RSI: ${rsi.toFixed(1)}`);
 
     let signal: 'LONG' | 'SHORT' | null = null;
-    if (sweepLow && obSignal === "BULL" && adx > 25 && (sweepResult.touches || 0) >= 3) signal = "LONG";
-    if (sweepHigh && obSignal === "BEAR" && adx > 25 && (sweepResult.touches || 0) >= 3) signal = "SHORT";
+    if (sweepLow && obSignal === "BULL" && adx > 25 && (sweepResult.touches || 0) >= 3 && trend === "UP" && rsi < 65) signal = "LONG";
+    if (sweepHigh && obSignal === "BEAR" && adx > 25 && (sweepResult.touches || 0) >= 3 && trend === "DOWN" && rsi > 35) signal = "SHORT";
 
     if (signal) {
       console.log(`🚀 [SIGNAL FOUND] Phát hiện tín hiệu ${signal}. Đang gửi cho AI phân tích...`);
