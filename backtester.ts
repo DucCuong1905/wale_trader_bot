@@ -24,15 +24,18 @@ const modelName = "gemini-2.5-flash";
 
 const PAIR = "BTC/USDT";
 const TIMEFRAME = "15m";
-const START_DATE = "2026-01-01T00:00:00Z";
+const START_DATE = "2025-03-31T00:00:00Z";
 const END_DATE = "2026-03-31T23:59:59Z";
 const RR = 1.5; // Tỷ lệ Lợi nhuận/Rủi ro 1:1.5
+const INITIAL_BALANCE = 2000;
+const RISK_PER_TRADE = 0.01; // 1% rủi ro mỗi lệnh
 
 interface BacktestResult {
   totalTrades: number;
   wins: number;
   losses: number;
   totalPnL: number;
+  finalBalance: number;
   trades: any[];
   startTime: string;
   endTime: string;
@@ -43,6 +46,7 @@ let results: BacktestResult = {
   wins: 0,
   losses: 0,
   totalPnL: 0,
+  finalBalance: INITIAL_BALANCE,
   trades: [],
   startTime: START_DATE,
   endTime: END_DATE
@@ -157,7 +161,7 @@ export async function runBacktest(onProgress?: (p: number) => void) {
   allKlines = allKlines.filter(k => k[0] <= endTs);
   console.log(`✅ Đã tải ${allKlines.length} nến.`);
 
-  results = { ...results, totalTrades: 0, wins: 0, losses: 0, totalPnL: 0, trades: [] };
+  results = { ...results, totalTrades: 0, wins: 0, losses: 0, totalPnL: 0, finalBalance: INITIAL_BALANCE, trades: [] };
 
   for (let i = 25; i < allKlines.length; i++) {
     if (onProgress) onProgress(50 + ((i / allKlines.length) * 50));
@@ -180,7 +184,7 @@ export async function runBacktest(onProgress?: (p: number) => void) {
         
         // Tìm kết quả trong các nến tiếp theo
         let exitPrice = 0;
-        let pnl = 0;
+        let pnlR = 0;
         let status = "LOSS";
         
         for (let j = i + 1; j < Math.min(i + 50, allKlines.length); j++) {
@@ -195,14 +199,27 @@ export async function runBacktest(onProgress?: (p: number) => void) {
         }
 
         if (exitPrice === 0) exitPrice = allKlines[Math.min(i + 49, allKlines.length - 1)][4];
-        pnl = status === "WIN" ? RR : -1.0; // Sử dụng tỷ lệ RR động
+        pnlR = status === "WIN" ? RR : -1.0; 
+        
+        const dollarPnL = results.finalBalance * RISK_PER_TRADE * pnlR;
+        results.finalBalance += dollarPnL;
 
         results.totalTrades++;
         if (status === "WIN") results.wins++; else results.losses++;
-        results.totalPnL += pnl;
-        results.trades.push({ time, type, entryPrice, exitPrice, status, pnl, reason: "TA Signal Only" });
+        results.totalPnL += pnlR;
+        results.trades.push({ 
+          time, 
+          type, 
+          entryPrice, 
+          exitPrice, 
+          status, 
+          pnlR, 
+          dollarPnL, 
+          currentBalance: results.finalBalance,
+          reason: "TA Signal Only" 
+        });
         
-        console.log(`💰 Trade: ${status} | PnL: ${pnl}R`);
+        console.log(`💰 Trade: ${status} | PnL: ${pnlR}R ($${dollarPnL.toFixed(2)}) | Balance: $${results.finalBalance.toFixed(2)}`);
     }
   }
 
