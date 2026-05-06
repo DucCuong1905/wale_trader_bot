@@ -63,6 +63,8 @@ const modelName = "gemini-2.5-flash";
 // --- CẤU HÌNH GIAO DỊCH (TRADING CONSTANTS) ---
 const PAIR = "BTC/USDT:USDT"; // Cặp giao dịch (BTC Futures trên Binance)
 const SYMBOL_ID = "btcusdt"; // ID Symbol cho WebSocket (lowercase cho Binance)
+const TIMEFRAME = "5m"; // Chuyển sang khung 5m cho bot nhanh hơn
+const IS_LIVE_TRADING_ENABLED = false; // TẠM THỜI TẮT GIAO DỊCH THỰC (LIVE TRADING)
 const RISK_PER_TRADE = 0.01; // Rủi ro 1% tổng tài sản cho mỗi lệnh
 const RR = 1.5; // Tỷ lệ Lợi nhuận/Rủi ro 1:1.5
 const COOLDOWN_MS = 30000; // Thời gian nghỉ giữa các lệnh (30 giây) để tránh vào lệnh liên tục
@@ -190,10 +192,10 @@ async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number,
         const sellIntensity = totalWhaleSell > 0 ? (aggressiveSell / totalWhaleSell) * 100 : 0;
 
         const whaleSummary = `
-- TỔNG DÒNG TIỀN (15p): Buy $${(totalWhaleBuy/1000000).toFixed(2)}M / Sell $${(totalWhaleSell/1000000).toFixed(2)}M.
+- TỔNG DÒNG TIỀN (5m): Buy $${(totalWhaleBuy/1000000).toFixed(2)}M / Sell $${(totalWhaleSell/1000000).toFixed(2)}M.
 - ÁP LỰC CUỐI NẾN (5p): Buy $${(aggressiveBuy/1000000).toFixed(2)}M / Sell $${(aggressiveSell/1000000).toFixed(2)}M.`;
 
-        const prompt = `Bạn là một nhà giao dịch cá voi chuyên nghiệp tại Binance Futures. Bạn phân tích hợp lưu giữa Tường lệnh (Orderbook) và dòng tiền thực tế của cá voi (Whale Trades) trong nến 15 phút.
+        const prompt = `Bạn là một nhà giao dịch cá voi chuyên nghiệp tại Binance Futures. Bạn phân tích hợp lưu giữa Tường lệnh (Orderbook) và dòng tiền thực tế của cá voi (Whale Trades) trong nến 5 phút.
 TÍN HIỆU CẦN ĐÁNH GIÁ: ${signal}
 GIÁ HIỆN TẠI: $${lastPrice.toLocaleString()}
 ORDERBOOK RATIO (EMA): ${obRatio.toFixed(2)} (Bid/Ask)
@@ -512,7 +514,7 @@ function startWS() {
               console.log(`🐋 [WHALE DETECTED] ${side.toUpperCase()} $${amount.toFixed(0)} at ${price}`);
             }
             
-            const cutoff = Date.now() - 900000; // Quay lại 15 phút
+            const cutoff = Date.now() - 300000; // Quay lại 5 phút
             botState.recentWhaleTrades = botState.recentWhaleTrades.filter(t => t.time > cutoff);
           }
         }
@@ -693,7 +695,7 @@ async function traderLoop() {
     }
 
     console.log(`🎯 [MONITORING] Đang kiểm tra tín hiệu Whale Sweep...`);
-    const bars = await ex.fetchOHLCV(PAIR, '15m', undefined, 100);
+    const bars = await ex.fetchOHLCV(PAIR, TIMEFRAME, undefined, 100);
     if (!bars || bars.length < 30) {
       console.log(`⚠️ Không đủ dữ liệu nến (${bars?.length || 0}). Đang cần tối thiểu 30 nến cho ADX...`);
       setTimeout(traderLoop, 10000);
@@ -729,7 +731,7 @@ async function traderLoop() {
     }
 
     // --- KIỂM TRA THỜI GIAN ĐÓNG NẾN (CANDLE CLOSE CONSTRAINT) ---
-    const timeframeMs = 15 * 60 * 1000; // Quay lại 15 phút gốc
+    const timeframeMs = 5 * 60 * 1000; // Quay lại 5 phút gốc
     const now = Date.now();
     const nextClose = Math.ceil(now / timeframeMs) * timeframeMs;
     const timeToClose = nextClose - now;
@@ -769,7 +771,7 @@ async function traderLoop() {
       
       const whaleCount = botState.recentWhaleTrades.length;
       
-      const intelMsg = `📝 *BẢN TIN INTEL (15M)*\n` +
+      const intelMsg = `📝 *BẢN TIN INTEL (5M)*\n` +
         `⏰ Đóng nến: ${new Date(nextClose).toLocaleTimeString()}\n` +
         `${envTag} | PID: ${process.pid}\n\n` +
         `🌐 WS Binance: ${wsStatus}\n` +
@@ -777,7 +779,7 @@ async function traderLoop() {
         `🧹 Sweep: *${sweepIcon}*\n` +
         `⚖️ OB Ratio: *${botState.obRatioEMA.toFixed(2)}*\n` +
         `📈 ADX: *${botState.adx.toFixed(1)}* (Trends: ${botState.plusDI.toFixed(1)} / ${botState.minusDI.toFixed(1)})\n` +
-        `🐋 Whale Net (15p): ${net >= 0 ? '🟢 +' : '🔴 '}${net.toFixed(2)}M (${whaleCount} lệnh)\n` +
+        `🐋 Whale Net (5m): ${net >= 0 ? '🟢 +' : '🔴 '}${net.toFixed(2)}M (${whaleCount} lệnh)\n` +
         `🔥 Áp lực 5p cuối: ${net5m >= 0 ? '🟢 +' : '🔴 '}${net5m.toFixed(2)}M\n\n` +
         `_Đang phân tích chiến lược vào lệnh..._`;
       
@@ -800,10 +802,16 @@ async function traderLoop() {
     if (obRatio < 0.8 || (obRatio < 0.9 && whaleNet < -50000)) obSignal = "BEAR";
 
     console.log(`[PHÂN TÍCH] Giá: ${botState.lastPrice} | Xu hướng (VWMA): ${trend} | ADX: ${adx.toFixed(1)} | Touches: ${sweepResult.touches || 0} | RSI: ${rsi.toFixed(1)}`);
-
+    
+    // CHIẾN LƯỢC 5M:
+    // 1. Quét vùng Whale (Sweep)
+    // 2. Chạm ít nhất 2 lần (Touches >= 2)
+    // 3. Phù hợp xu hướng VWMA (Trend UP cho Long, Trend DOWN cho Short)
+    // 4. ADX > 25 (Có lực thị trường)
+    // 5. RSI không quá mua/bán (RSI < 60 cho Long, RSI > 40 cho Short)
     let signal: 'LONG' | 'SHORT' | null = null;
-    if (sweepLow && obSignal === "BULL" && adx > 25 && (sweepResult.touches || 0) >= 2 && trend === "UP") signal = "LONG";
-    if (sweepHigh && obSignal === "BEAR" && adx > 25 && (sweepResult.touches || 0) >= 2 && trend === "DOWN") signal = "SHORT";
+    if (sweepLow && obSignal === "BULL" && adx > 25 && (sweepResult.touches || 0) >= 2 && trend === "UP" && rsi < 60) signal = "LONG";
+    if (sweepHigh && obSignal === "BEAR" && adx > 25 && (sweepResult.touches || 0) >= 2 && trend === "DOWN" && rsi > 40) signal = "SHORT";
 
     if (signal) {
       console.log(`🚀 [SIGNAL FOUND] Phát hiện tín hiệu ${signal}. Đang gửi cho AI phân tích...`);
@@ -856,6 +864,14 @@ async function traderLoop() {
             // Không return nữa để code chạy xuống cuối hàm gọi setTimeout
           } else {
             sendTelegram(`🤖 *AI XÁC NHẬN LỆNH* (${aiEval.confidence}%)\nLý do: ${aiEval.reason}`);
+            
+            if (!IS_LIVE_TRADING_ENABLED) {
+              console.log(`[PAPER TRADE] Tín hiệu hợp lệ nhưng đang ở chế độ CHỈ THEO DÕI. Không đặt lệnh thật.`);
+              sendTelegram(`ℹ️ *CHẾ ĐỘ THEO DÕI*: Bot giả lập vào lệnh ${signal} tại ${entry}.`);
+              botState.lastTradeTime = Date.now();
+              return;
+            }
+
             try {
               const amount = ex.amountToPrecision(PAIR, size);
               console.log(`[ORDER] Placing ${signal} order. Size: ${amount}`);

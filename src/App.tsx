@@ -166,8 +166,8 @@ export default function App() {
               <Zap className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="font-black text-2xl tracking-tighter leading-none uppercase italic text-white">WhaleBot <span className="text-blue-500 not-italic">v2.1</span></h1>
-              <span className="text-[10px] text-blue-400 font-mono tracking-[0.3em] uppercase opacity-90 font-black">Hệ Thống Phân Tích Cá Voi</span>
+              <h1 className="font-black text-2xl tracking-tighter leading-none uppercase italic text-white">WhaleBot <span className="text-blue-500 not-italic">5M Edition</span></h1>
+              <span className="text-[10px] text-blue-400 font-mono tracking-[0.3em] uppercase opacity-90 font-black">Hệ Thống Phân Tích Cá Voi - KHUNG 5P</span>
             </div>
           </div>
 
@@ -180,7 +180,7 @@ export default function App() {
                     activeTab === 'live' ? "bg-blue-600 text-white glow-blue" : "text-slate-500 hover:text-slate-300"
                   )}
                 >
-                  LIVE
+                  LIVE (ANALYSIS)
                 </button>
                 <button 
                   onClick={() => setActiveTab('backtest')}
@@ -281,7 +281,7 @@ export default function App() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-[#12121c] border border-emerald-500/20 p-6 rounded-[2rem] glow-green group hover:bg-emerald-500/5 transition-all">
                   <div className="flex items-center justify-between mb-4">
-                    <p className="text-[10px] text-emerald-500 font-black uppercase tracking-[0.2em]">Whale Buy (15p)</p>
+                    <p className="text-[10px] text-emerald-500 font-black uppercase tracking-[0.2em]">Whale Buy (5m)</p>
                     <div className="p-2 bg-emerald-500/10 rounded-lg">
                       <ArrowUpRight className="w-4 h-4 text-emerald-500" />
                     </div>
@@ -292,7 +292,7 @@ export default function App() {
                 </div>
                 <div className="bg-[#12121c] border border-red-500/20 p-6 rounded-[2rem] glow-red group hover:bg-red-500/5 transition-all">
                   <div className="flex items-center justify-between mb-4">
-                    <p className="text-[10px] text-red-500 font-black uppercase tracking-[0.2em]">Whale Sell (15p)</p>
+                    <p className="text-[10px] text-red-500 font-black uppercase tracking-[0.2em]">Whale Sell (5m)</p>
                     <div className="p-2 bg-red-500/10 rounded-lg">
                       <ArrowDownRight className="w-4 h-4 text-red-500" />
                     </div>
@@ -313,7 +313,7 @@ export default function App() {
                       (parseFloat((data as any)?.whale_trades?.buy || "0") - parseFloat((data as any)?.whale_trades?.sell || "0")) >= 0
                         ? "text-blue-400"
                         : "text-orange-400"
-                    )}>Whale Net (15p)</p>
+                    )}>Whale Net (5m)</p>
                     <div className={cn(
                       "p-2 rounded-lg",
                       (parseFloat((data as any)?.whale_trades?.buy || "0") - parseFloat((data as any)?.whale_trades?.sell || "0")) >= 0
@@ -584,9 +584,9 @@ export default function App() {
           <div className="space-y-6">
              <div className="flex items-center justify-between bg-[#12121c] p-10 rounded-[2.5rem] border border-white/5 glow-purple relative overflow-hidden">
                 <div className="relative z-10">
-                   <h2 className="text-3xl font-black uppercase italic tracking-tighter mb-2">Hệ Thống Backtest Toàn Diện</h2>
+                   <h2 className="text-3xl font-black uppercase italic tracking-tighter mb-2">Hệ Thống Backtest Toàn Diện - 5M</h2>
                    <p className="text-slate-400 text-sm max-w-xl leading-relaxed">
-                      Phân tích lại toàn bộ thị trường từ 31/03/2025 đến 31/03/2026. Bot đã được nâng cấp các chỉ báo kỹ thuật VWMA và RSI để nâng cao tỷ lệ win.
+                      Phân tích thị trường khung 5 PHÚT. Bot sử dụng VWMA, ADX và RSI để xác định Whale Sweep chính xác hơn trong ngắn hạn.
                    </p>
                 </div>
                 

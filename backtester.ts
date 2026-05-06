@@ -23,12 +23,12 @@ const ai = new GoogleGenAI({ apiKey: aiKey });
 const modelName = "gemini-2.5-flash";
 
 const PAIR = "BTC/USDT";
-const TIMEFRAME = "15m";
-const START_DATE = "2025-03-31T00:00:00Z";
+const TIMEFRAME = "5m";
+const START_DATE = "2026-03-01T00:00:00Z"; // Rút ngắn lại cho khung 5m (nhiều nến hơn)
 const END_DATE = "2026-03-31T23:59:59Z";
-const RR = 2.0; // Tỷ lệ Lợi nhuận/Rủi ro 1:2
+const RR = 1.5; 
 const INITIAL_BALANCE = 2000;
-const RISK_PER_TRADE = 0.01; // 1% rủi ro mỗi lệnh
+const RISK_PER_TRADE = 0.01; 
 
 interface BacktestResult {
   totalTrades: number;
@@ -216,12 +216,12 @@ export async function runBacktest(onProgress?: (p: number) => void) {
     const adx = calcADX(window);
     const prices = window.map(b => b[4]);
     const rsi = calculateRSI(prices, 14);
-    const vwma20 = calculateVWMA(window, 20);
+    const vwa20 = calculateVWMA(window, 20);
     const lastPrice = prices[prices.length - 1];
-    const trend = lastPrice > vwma20 ? "UP" : "DOWN";
+    const trend = lastPrice > vwa20 ? "UP" : "DOWN";
 
-    const isLong = sweep.sweepLow && adx > 25 && (sweep.touches || 0) >= 2 && trend === "UP";
-    const isShort = sweep.sweepHigh && adx > 25 && (sweep.touches || 0) >= 2 && trend === "DOWN";
+    const isLong = sweep.sweepLow && adx > 25 && (sweep.touches || 0) >= 2 && trend === "UP" && rsi < 60;
+    const isShort = sweep.sweepHigh && adx > 25 && (sweep.touches || 0) >= 2 && trend === "DOWN" && rsi > 40;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
