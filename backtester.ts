@@ -18,8 +18,8 @@ const modelName = "gemini-2.5-flash";
 
 const PAIR = "BTC/USDT";
 const TIMEFRAME = "15m";
-const START_DATE = "2026-04-01T00:00:00Z";
-const END_DATE = "2026-04-30T23:59:59Z";
+const START_DATE = "2026-01-01T00:00:00Z";
+const END_DATE = "2026-03-31T23:59:59Z";
 
 interface BacktestResult {
   totalTrades: number;
@@ -150,6 +150,9 @@ Hãy dựa thuần túy vào hành động giá (Price Action):
         });
         const text = response.text;
         if (!text) throw new Error("No response text");
+
+        // Thêm delay 10 giây sau mỗi lần gọi thành công để đảm bảo độ ổn định tuyệt đối
+        await new Promise(r => setTimeout(r, 10000));
 
         const jsonMatch = text.match(/\{[\s\S]*\}/);
         return JSON.parse(jsonMatch ? jsonMatch[0] : "{\"decision\": \"REJECT\"}");

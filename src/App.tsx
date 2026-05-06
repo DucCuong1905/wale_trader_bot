@@ -189,7 +189,7 @@ export default function App() {
                     activeTab === 'backtest' ? "bg-purple-600 text-white glow-purple" : "text-slate-500 hover:text-slate-300"
                   )}
                 >
-                  BACKTEST (T4)
+                  BACKTEST (Q1 2026)
                 </button>
               </div>
 
@@ -586,7 +586,7 @@ export default function App() {
                 <div className="relative z-10">
                    <h2 className="text-3xl font-black uppercase italic tracking-tighter mb-2">Hệ Thống Backtest Chiến Lược</h2>
                    <p className="text-slate-400 text-sm max-w-xl leading-relaxed">
-                      Phân tích lại toàn bộ thị trường từ 01/04 đến 30/04. Bot sẽ tự động gọi AI Gemini để đánh giá từng tín hiệu phát hiện được.
+                      Phân tích lại toàn bộ thị trường từ 01/01 đến 31/03/2026. Bot sẽ tự động gọi AI Gemini để đánh giá từng tín hiệu phát hiện được với cơ chế Delay ổn định.
                    </p>
                 </div>
                 
@@ -610,7 +610,7 @@ export default function App() {
                         onClick={startBacktest}
                         className="px-10 py-5 bg-purple-600 hover:bg-purple-500 text-white rounded-2xl text-xs font-black uppercase tracking-[0.2em] shadow-2xl shadow-purple-600/30 transition-all active:scale-95"
                       >
-                        CHẠY KIỂM THỬ THÁNG 4
+                        CHẠY KIỂM THỬ QUÝ 1
                       </button>
                    )}
                 </div>
