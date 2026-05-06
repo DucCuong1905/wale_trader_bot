@@ -58,7 +58,7 @@ if (!aiKey) {
 console.log("-----------------------------------------");
 
 const ai = new GoogleGenAI({ apiKey: aiKey });
-const modelName = "gemini-3-flash-preview"; 
+const modelName = "gemini-2.5-flash"; 
 
 // --- CẤU HÌNH GIAO DỊCH (TRADING CONSTANTS) ---
 const PAIR = "BTC/USDT:USDT"; // Cặp giao dịch (BTC Futures trên Binance)
@@ -165,8 +165,8 @@ let botState = {
 
 // --- LOGIC PHÂN TÍCH AI (AI ANALYSIS) ---
 async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number, bars: any[], touches?: number) {
-  const maxRetries = 2;
-  const modelsToTry = [modelName, "gemini-2.5-flash", "gemini-3.1-flash-lite-preview"]; 
+  const maxRetries = 3;
+  const modelsToTry = [modelName, "gemini-2.0-flash", "gemini-3-flash-preview", "gemini-3.1-flash-lite-preview"]; 
 
   for (let modelToUse of modelsToTry) {
     for (let i = 0; i < maxRetries; i++) {
@@ -231,8 +231,13 @@ Trả về duy nhất JSON với format: {"decision": "CONFIRM" hoặc "REJECT",
         
       } catch (e: any) {
         console.warn(`⚠️ [AI RETRY] ${modelToUse} failed (Attempt ${i + 1}): ${e.message}`);
+        
+        // Nếu lỗi 503 hoặc 429, chờ lâu hơn một chút
+        const isTransient = e.message?.includes("503") || e.message?.includes("429") || e.message?.includes("overloaded");
+        const waitTime = isTransient ? 3000 : 1000;
+
         if (i < maxRetries - 1) {
-          await new Promise(r => setTimeout(r, 1000));
+          await new Promise(r => setTimeout(r, waitTime));
           continue;
         }
       }

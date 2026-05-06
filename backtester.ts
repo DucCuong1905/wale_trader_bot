@@ -14,7 +14,7 @@ if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
 
 const aiKey = process.env.GEMINI_API_KEY || "";
 const ai = new GoogleGenAI({ apiKey: aiKey });
-const modelName = "gemini-3-flash-preview";
+const modelName = "gemini-2.5-flash";
 
 const PAIR = "BTC/USDT";
 const TIMEFRAME = "15m";
@@ -126,8 +126,8 @@ function calcADX(ohlcv: any[]) {
 async function getAIBacktestDecision(signal: string, lastPrice: number, bars: any[]) {
   if (!aiKey) return { decision: "REJECT", reason: "No AI Key" };
   
-  const modelsToTry = [modelName, "gemini-2.5-flash", "gemini-3.1-flash-lite-preview"];
-  const maxRetriesPerModel = 2;
+  const modelsToTry = [modelName, "gemini-2.0-flash", "gemini-3-flash-preview", "gemini-3.1-flash-lite-preview"];
+  const maxRetriesPerModel = 3;
 
   for (const modelToUse of modelsToTry) {
     for (let attempt = 0; attempt < maxRetriesPerModel; attempt++) {
@@ -154,9 +154,11 @@ Hãy dựa thuần túy vào hành động giá (Price Action):
         const jsonMatch = text.match(/\{[\s\S]*\}/);
         return JSON.parse(jsonMatch ? jsonMatch[0] : "{\"decision\": \"REJECT\"}");
       } catch (e: any) {
+        const isTransient = e.message?.includes("503") || e.message?.includes("429") || e.message?.includes("overloaded");
         console.warn(`[BACKTEST AI] Model ${modelToUse} failed (Attempt ${attempt+1}): ${e.message}`);
+        
         if (attempt < maxRetriesPerModel - 1) {
-          await new Promise(r => setTimeout(r, 1000));
+          await new Promise(r => setTimeout(r, isTransient ? 3000 : 1000));
           continue;
         }
       }
