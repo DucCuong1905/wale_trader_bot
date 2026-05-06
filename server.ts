@@ -663,11 +663,18 @@ async function traderLoop() {
 
     console.log(`🎯 [MONITORING] Đang kiểm tra tín hiệu Whale Sweep...`);
     const bars = await ex.fetchOHLCV(PAIR, '15m', undefined, 100);
-    if (!bars || bars.length < 25) {
-      console.log(`⚠️ Không đủ dữ liệu nến (${bars?.length || 0}). Đang chờ...`);
+    if (!bars || bars.length < 30) {
+      console.log(`⚠️ Không đủ dữ liệu nến (${bars?.length || 0}). Đang cần tối thiểu 30 nến cho ADX...`);
       setTimeout(traderLoop, 10000);
       return;
     }
+
+    // --- TÍNH TOÁN CÁC CHỈ BÁO KỸ THUẬT (TECHNICAL INDICATORS) ---
+    // Tính toán ADX liên tục để cập nhật lên giao diện Realtime
+    const adxData = calcADX(bars, 14);
+    botState.adx = adxData.adx;
+    botState.plusDI = adxData.pDI;
+    botState.minusDI = adxData.mDI;
 
     // --- QUÉT TÍN HIỆU SWEEP (CHỈ DÙNG ĐỂ THEO DÕI TRONG LOG) ---
     const sweepResult = detectWhaleSweep(bars);
@@ -733,12 +740,7 @@ async function traderLoop() {
 
     console.log(`🎯 [ENTRY WINDOW] Chỉ còn ${secondsToClose}s trước khi đóng nến. Tiến hành kiểm tra tín hiệu cuối cùng...`);
 
-    const adxData = calcADX(bars, 14);
-    botState.adx = adxData.adx;
-    botState.plusDI = adxData.pDI;
-    botState.minusDI = adxData.mDI;
-    
-    const adx = adxData.adx;
+    const adx = botState.adx;
     const obRatio = botState.obRatioEMA;
     
     // Tín hiệu OB linh hoạt: 
