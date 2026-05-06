@@ -7,6 +7,7 @@ import dotenv from "dotenv";
 import * as ccxt from "ccxt";
 import WebSocket from "ws";
 import cors from "cors";
+import { runBacktest } from "./backtester.ts";
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
@@ -57,7 +58,7 @@ if (!aiKey) {
 console.log("-----------------------------------------");
 
 const genAI = new GoogleGenerativeAI(aiKey);
-const modelName = "gemini-3-flash-preview"; 
+const modelName = "gemini-2.0-flash"; 
 
 // --- CẤU HÌNH GIAO DỊCH (TRADING CONSTANTS) ---
 const PAIR = "BTC/USDT:USDT"; // Cặp giao dịch (BTC Futures trên Binance)
@@ -70,6 +71,13 @@ const MAX_DAILY_LOSS = 0.03; // Giới hạn lỗ tối đa trong ngày (3%). N�
 // --- PERSISTENCE ---
 const DATA_DIR = path.join(process.cwd(), "data");
 const TRADES_FILE = path.join(DATA_DIR, "trades.json");
+const BACKTEST_RESULTS_FILE = path.join(DATA_DIR, "backtest_results.json");
+
+let backtestStatus = {
+  isRunning: false,
+  progress: 0,
+  lastResult: null as any
+};
 
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR);
@@ -873,6 +881,36 @@ async function startServer() {
 
   // API routes defined BEFORE Vite middleware and other routes
   app.get("/api/health", (req, res) => res.json({ status: "ok" }));
+
+  // API Backtest
+  app.post("/api/backtest/run", async (req, res) => {
+    if (backtestStatus.isRunning) return res.status(400).json({ error: "Backtest is already running" });
+    
+    backtestStatus.isRunning = true;
+    backtestStatus.progress = 0;
+    
+    runBacktest((p) => {
+      backtestStatus.progress = p;
+    }).then(results => {
+      backtestStatus.isRunning = false;
+      backtestStatus.lastResult = results;
+      backtestStatus.progress = 100;
+    }).catch(err => {
+      console.error("Backtest error:", err);
+      backtestStatus.isRunning = false;
+    });
+
+    res.json({ message: "Backtest started" });
+  });
+
+  app.get("/api/backtest/status", (req, res) => {
+    if (!backtestStatus.lastResult && fs.existsSync(BACKTEST_RESULTS_FILE)) {
+      try {
+        backtestStatus.lastResult = JSON.parse(fs.readFileSync(BACKTEST_RESULTS_FILE, "utf-8"));
+      } catch (e) {}
+    }
+    res.json(backtestStatus);
+  });
   
   app.get("/api/trading/status", (req, res) => {
     try {
