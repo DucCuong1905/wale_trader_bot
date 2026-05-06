@@ -160,8 +160,8 @@ Hãy dựa thuần túy vào hành động giá (Price Action):
         const text = response.text;
         if (!text) throw new Error("No response text");
 
-        // Thêm delay 10 giây sau mỗi lần gọi thành công để đảm bảo độ ổn định tuyệt đối
-        await new Promise(r => setTimeout(r, 10000));
+        // Thêm delay 60 giây sau mỗi lần gọi thành công để đảm bảo độ ổn định tuyệt đối
+        await new Promise(r => setTimeout(r, 60000));
 
         const jsonMatch = text.match(/\{[\s\S]*\}/);
         return JSON.parse(jsonMatch ? jsonMatch[0] : "{\"decision\": \"REJECT\"}");
