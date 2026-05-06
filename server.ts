@@ -165,11 +165,11 @@ let botState = {
 
 // --- LOGIC PHÂN TÍCH AI (AI ANALYSIS) ---
 async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number, bars: any[], touches?: number) {
-  const maxRetries = 3;
-  const modelsToTry = [modelName, "gemini-2.0-flash", "gemini-3-flash-preview", "gemini-3.1-flash-lite-preview"]; 
+  const maxRetriesPerModel = 2;
+  const modelsToTry = ["gemini-3-flash-preview", "gemini-2.5-flash", "gemini-3.1-flash-lite-preview"]; 
 
   for (let modelToUse of modelsToTry) {
-    for (let i = 0; i < maxRetries; i++) {
+    for (let i = 0; i < maxRetriesPerModel; i++) {
       try {
         const context = bars.slice(-20).map((b) => {
           const time = new Date(b[0]).toLocaleTimeString();
@@ -211,7 +211,7 @@ HƯỚNG DẪN RA QUYẾT ĐỊNH CHUYÊN SÂU:
 
 Trả về duy nhất JSON với format: {"decision": "CONFIRM" hoặc "REJECT", "reason": "...", "confidence": 0-100}`;
 
-        console.log(`[AI] Đang phân tích (${modelToUse}) - Lần thử ${i + 1}/${maxRetries}...`);
+        console.log(`[AI] Đang phân tích (${modelToUse}) - Lần thử ${i + 1}/${maxRetriesPerModel}...`);
         
         const response = await ai.models.generateContent({
           model: modelToUse,
@@ -230,20 +230,18 @@ Trả về duy nhất JSON với format: {"decision": "CONFIRM" hoặc "REJECT",
         return parsed;
         
       } catch (e: any) {
-        console.warn(`⚠️ [AI RETRY] ${modelToUse} failed (Attempt ${i + 1}): ${e.message}`);
-        
-        // Nếu lỗi 503 hoặc 429, chờ lâu hơn một chút
         const isTransient = e.message?.includes("503") || e.message?.includes("429") || e.message?.includes("overloaded");
-        const waitTime = isTransient ? 3000 : 1000;
-
-        if (i < maxRetries - 1) {
+        console.warn(`⚠️ [AI RETRY] ${modelToUse} failed: ${e.message}`);
+        
+        if (i < maxRetriesPerModel - 1) {
+          const waitTime = isTransient ? 3000 * (i + 1) : 1000;
           await new Promise(r => setTimeout(r, waitTime));
           continue;
         }
       }
     }
   }
-  return { decision: "REJECT", reason: "AI Service Unavailable", confidence: 0 };
+  return { decision: "REJECT", reason: "AI Service Unavailable (All models busy)", confidence: 0 };
 }
 
 

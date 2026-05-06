@@ -126,8 +126,8 @@ function calcADX(ohlcv: any[]) {
 async function getAIBacktestDecision(signal: string, lastPrice: number, bars: any[]) {
   if (!aiKey) return { decision: "REJECT", reason: "No AI Key" };
   
-  const modelsToTry = [modelName, "gemini-2.0-flash", "gemini-3-flash-preview", "gemini-3.1-flash-lite-preview"];
-  const maxRetriesPerModel = 3;
+  const modelsToTry = ["gemini-3-flash-preview", "gemini-2.5-flash", "gemini-3.1-flash-lite-preview"];
+  const maxRetriesPerModel = 2;
 
   for (const modelToUse of modelsToTry) {
     for (let attempt = 0; attempt < maxRetriesPerModel; attempt++) {
@@ -155,17 +155,17 @@ Hãy dựa thuần túy vào hành động giá (Price Action):
         return JSON.parse(jsonMatch ? jsonMatch[0] : "{\"decision\": \"REJECT\"}");
       } catch (e: any) {
         const isTransient = e.message?.includes("503") || e.message?.includes("429") || e.message?.includes("overloaded");
-        console.warn(`[BACKTEST AI] Model ${modelToUse} failed (Attempt ${attempt+1}): ${e.message}`);
+        console.warn(`[BACKTEST AI] Model ${modelToUse} failed: ${e.message}`);
         
         if (attempt < maxRetriesPerModel - 1) {
-          await new Promise(r => setTimeout(r, isTransient ? 3000 : 1000));
+          await new Promise(r => setTimeout(r, isTransient ? 3000 * (attempt + 1) : 1000));
           continue;
         }
       }
     }
   }
   
-  return { decision: "REJECT", reason: "AI Service Unavailable" };
+  return { decision: "REJECT", reason: "AI Service Unavailable (All models busy)" };
 }
 
 // --- MAIN RUNNER ---
