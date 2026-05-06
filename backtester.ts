@@ -24,7 +24,7 @@ const modelName = "gemini-2.5-flash";
 
 const PAIR = "BTC/USDT";
 const TIMEFRAME = "5m";
-const START_DATE = "2026-03-01T00:00:00Z"; // Rút ngắn lại cho khung 5m (nhiều nến hơn)
+const START_DATE = "2025-01-01T00:00:00Z"; 
 const END_DATE = "2026-03-31T23:59:59Z";
 const RR = 1.5; 
 const INITIAL_BALANCE = 2000;
@@ -64,7 +64,7 @@ function getLiquidityZones(bars: any[], type: 'high' | 'low') {
   const points = bars.slice(-60).map(b => type === 'high' ? b[2] : b[3]);
   const zones: { price: number, touches: number }[] = [];
   const avgPrice = points.reduce((a, b) => a + b, 0) / points.length;
-  const threshold = avgPrice * 0.0005; 
+  const threshold = avgPrice * 0.0007; // Nới rộng vùng thanh khoản một chút
 
   for (const p of points) {
     let found = false;
@@ -78,7 +78,8 @@ function getLiquidityZones(bars: any[], type: 'high' | 'low') {
     }
     if (!found) zones.push({ price: p, touches: 1 });
   }
-  return zones.filter(z => z.touches >= 2).sort((a, b) => b.touches - a.touches);
+  // Giảm xuống touches >= 1 để quét được nhiều vùng hơn trên 5m
+  return zones.filter(z => z.touches >= 1).sort((a, b) => b.touches - a.touches);
 }
 
 function detectSweep(bars: any[]) {
@@ -90,7 +91,8 @@ function detectSweep(bars: any[]) {
   
   const prevPeriod = bars.slice(-21, -1);
   const avgVol = prevPeriod.reduce((sum, b) => sum + b[5], 0) / prevPeriod.length;
-  const isClimaxVol = v / avgVol >= 1.2; 
+  // Giảm Climax Vol xuống 1.1 để nhạy hơn
+  const isClimaxVol = v / avgVol >= 1.1; 
   
   const totalSize = h - l;
   if (totalSize === 0) return { sweepHigh: false, sweepLow: false };
@@ -98,15 +100,28 @@ function detectSweep(bars: any[]) {
   const upperWickRatio = (h - Math.max(o, c)) / totalSize;
 
   for (const zone of lowZones) {
-    if (isClimaxVol && l < zone.price && c > zone.price && lowerWickRatio >= 0.4) {
+    // Rút chân 35% cho 5m
+    if (isClimaxVol && l < zone.price && c > zone.price && lowerWickRatio >= 0.35) {
       return { sweepLow: true, sweepHigh: false, touches: zone.touches };
     }
   }
+
+  // Fallback 1-touch
+  const swingLow = Math.min(...bars.slice(-25, -1).map(b => b[3]));
+  if (isClimaxVol && l < swingLow && c > swingLow && lowerWickRatio >= 0.35) {
+    return { sweepLow: true, sweepHigh: false, touches: 1 };
+  }
   
   for (const zone of highZones) {
-    if (isClimaxVol && h > zone.price && c < zone.price && upperWickRatio >= 0.4) {
+    if (isClimaxVol && h > zone.price && c < zone.price && upperWickRatio >= 0.35) {
       return { sweepLow: false, sweepHigh: true, touches: zone.touches };
     }
+  }
+
+  // Fallback 1-touch
+  const swingHigh = Math.max(...bars.slice(-25, -1).map(b => b[2]));
+  if (isClimaxVol && h > swingHigh && c < swingHigh && upperWickRatio >= 0.35) {
+    return { sweepLow: false, sweepHigh: true, touches: 1 };
   }
   return { sweepHigh: false, sweepLow: false };
 }
@@ -216,12 +231,12 @@ export async function runBacktest(onProgress?: (p: number) => void) {
     const adx = calcADX(window);
     const prices = window.map(b => b[4]);
     const rsi = calculateRSI(prices, 14);
-    const vwa20 = calculateVWMA(window, 20);
+    const vwma20 = calculateVWMA(window, 20);
     const lastPrice = prices[prices.length - 1];
-    const trend = lastPrice > vwa20 ? "UP" : "DOWN";
+    const trend = lastPrice > vwma20 ? "UP" : "DOWN";
 
-    const isLong = sweep.sweepLow && adx > 25 && (sweep.touches || 0) >= 2 && trend === "UP" && rsi < 60;
-    const isShort = sweep.sweepHigh && adx > 25 && (sweep.touches || 0) >= 2 && trend === "DOWN" && rsi > 40;
+    const isLong = sweep.sweepLow && adx > 20 && (sweep.touches || 0) >= 1 && trend === "UP" && rsi < 70;
+    const isShort = sweep.sweepHigh && adx > 20 && (sweep.touches || 0) >= 1 && trend === "DOWN" && rsi > 30;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";

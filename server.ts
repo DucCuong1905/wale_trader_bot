@@ -360,8 +360,8 @@ function getLiquidityZones(bars: any[], type: 'high' | 'low') {
     }
   }
 
-  // Chỉ lấy các vùng có ít nhất 2 lần chạm (2 touches)
-  return zones.filter(z => z.touches >= 2).sort((a, b) => b.touches - a.touches);
+  // Giảm xuống touches >= 1 để nhạy hơn trên khung 5m
+  return zones.filter(z => z.touches >= 1).sort((a, b) => b.touches - a.touches);
 }
 
 function detectWhaleSweep(bars: any[]) {
@@ -377,7 +377,8 @@ function detectWhaleSweep(bars: any[]) {
   const prevPeriod = bars.slice(-21, -1);
   const avgVol = prevPeriod.reduce((sum, b) => sum + b[5], 0) / prevPeriod.length;
   const volRatio = v / avgVol;
-  const isClimaxVol = volRatio >= 1.2; 
+  // Giảm Climax Vol xuống 1.1 cho khung 5m
+  const isClimaxVol = volRatio >= 1.1; 
   
   const totalSize = h - l;
   if (totalSize === 0) return { sweepHigh: false, sweepLow: false };
@@ -388,12 +389,9 @@ function detectWhaleSweep(bars: any[]) {
   const upperWickRatio = upperWick / totalSize;
 
   // --- LOGIC QUÉT VÙNG THANH KHOẢN DƯỚI (SUPPORT SWEEP) ---
-  // Ưu tiên các vùng Multi-touch (>= 2)
   for (const zone of lowZones) {
-    // Giá thấp nhất nến hiện tại phải đâm thủng vùng zone (Liquidity Grab)
-    // Nhưng giá đóng nến phải kéo ngược lên trên vùng đó (Rejection)
     if (isClimaxVol && l < zone.price && c > zone.price) {
-      if (lowerWickRatio >= 0.4) {
+      if (lowerWickRatio >= 0.35) { // Giảm wick xuống 35% cho 5m
         console.log(`🔥 [LIQUIDITY SWEEP LOW] Quét vùng hỗ trợ $${zone.price.toFixed(1)} (${zone.touches} touches) | Wick: ${(lowerWickRatio*100).toFixed(1)}%`);
         return { sweepLow: true, sweepHigh: false, candleIndex: bars.length - 1, touches: zone.touches };
       }
@@ -404,17 +402,16 @@ function detectWhaleSweep(bars: any[]) {
   const swingLowLookback = 24;
   const swingLow = Math.min(...bars.slice(-swingLowLookback - 1, -1).map(b => b[3]));
   if (isClimaxVol && l < swingLow && c > swingLow) {
-    if (lowerWickRatio >= 0.4) {
+    if (lowerWickRatio >= 0.35) {
       console.log(`🧹 [SWING LOW SWEEP] Quét đáy Swing Low $${swingLow.toFixed(1)} (1 touch) | Wick: ${(lowerWickRatio*100).toFixed(1)}%`);
       return { sweepLow: true, sweepHigh: false, candleIndex: bars.length - 1, touches: 1 };
     }
   }
 
   // --- LOGIC QUÉT VÙNG THANH KHOẢN TRÊN (RESISTANCE SWEEP) ---
-  // Ưu tiên các vùng Multi-touch (>= 2)
   for (const zone of highZones) {
     if (isClimaxVol && h > zone.price && c < zone.price) {
-      if (upperWickRatio >= 0.4) {
+      if (upperWickRatio >= 0.35) {
         console.log(`🔥 [LIQUIDITY SWEEP HIGH] Quét vùng kháng cự $${zone.price.toFixed(1)} (${zone.touches} touches) | Wick: ${(upperWickRatio*100).toFixed(1)}%`);
         return { sweepLow: false, sweepHigh: true, candleIndex: bars.length - 1, touches: zone.touches };
       }
@@ -425,7 +422,7 @@ function detectWhaleSweep(bars: any[]) {
   const swingHighLookback = 24;
   const swingHigh = Math.max(...bars.slice(-swingHighLookback - 1, -1).map(b => b[2]));
   if (isClimaxVol && h > swingHigh && c < swingHigh) {
-    if (upperWickRatio >= 0.4) {
+    if (upperWickRatio >= 0.35) {
       console.log(`🧹 [SWING HIGH SWEEP] Quét đỉnh Swing High $${swingHigh.toFixed(1)} (1 touch) | Wick: ${(upperWickRatio*100).toFixed(1)}%`);
       return { sweepLow: false, sweepHigh: true, candleIndex: bars.length - 1, touches: 1 };
     }
@@ -805,13 +802,13 @@ async function traderLoop() {
     
     // CHIẾN LƯỢC 5M:
     // 1. Quét vùng Whale (Sweep)
-    // 2. Chạm ít nhất 2 lần (Touches >= 2)
+    // 2. Chạm ít nhất 1 lần (Touches >= 1)
     // 3. Phù hợp xu hướng VWMA (Trend UP cho Long, Trend DOWN cho Short)
-    // 4. ADX > 25 (Có lực thị trường)
-    // 5. RSI không quá mua/bán (RSI < 60 cho Long, RSI > 40 cho Short)
+    // 4. ADX > 20 (Có lực thị trường)
+    // 5. RSI không quá mua/bán (RSI < 70 cho Long, RSI > 30 cho Short)
     let signal: 'LONG' | 'SHORT' | null = null;
-    if (sweepLow && obSignal === "BULL" && adx > 25 && (sweepResult.touches || 0) >= 2 && trend === "UP" && rsi < 60) signal = "LONG";
-    if (sweepHigh && obSignal === "BEAR" && adx > 25 && (sweepResult.touches || 0) >= 2 && trend === "DOWN" && rsi > 40) signal = "SHORT";
+    if (sweepLow && obSignal === "BULL" && adx > 20 && (sweepResult.touches || 0) >= 1 && trend === "UP" && rsi < 70) signal = "LONG";
+    if (sweepHigh && obSignal === "BEAR" && adx > 20 && (sweepResult.touches || 0) >= 1 && trend === "DOWN" && rsi > 30) signal = "SHORT";
 
     if (signal) {
       console.log(`🚀 [SIGNAL FOUND] Phát hiện tín hiệu ${signal}. Đang gửi cho AI phân tích...`);
