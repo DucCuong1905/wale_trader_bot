@@ -205,9 +205,10 @@ ${context}
 
 HƯỚNG DẪN PHÂN TÍCH CHUYÊN SÂU:
 1. Phân tích Dòng tiền (Whale Flow): Xem xét tổng lượng Whale Trades trong 15p. Nếu tổng dòng tiền đồng thuận với tín hiệu (ví dụ LONG mà Buy >> Sell) và có áp lực chốt nến mạnh ở 2p cuối, hãy CONFIRM.
-2. Phát hiện "Hấp thụ" (Absorption): Nếu Orderbook Ratio rất cao (ví dụ Ask > 1.5) nhưng tổng Whale Buy trong 15p vẫn cực lớn, có nghĩa là cá voi đang chủ động "ăn" hết tường bán. Đây là dấu hiệu Bullish mạnh.
-3. Bẫy thanh khoản: Nếu 2 phút cuối có áp lực ép giá ngược lại với xu hướng chính của cả nến 15p, cẩn thận đây có thể là bẫy dụ thanh khoản.
-4. Trả về duy nhất JSON với format: {"decision": "CONFIRM" hoặc "REJECT", "reason": "...", "confidence": 0-100}`;
+2. Sức mạnh vùng thanh khoản (Market Structure): Tín hiệu xảy ra tại vùng có SỐ LẦN CHẠM (Touches) >= 2 có xác suất thành công cực cao. Nếu Touches >= 3, đây là vùng "cứng" mà cá voi đang bảo vệ, hãy ưu tiên CONFIRM nếu dòng tiền thuận.
+3. Phát hiện "Hấp thụ" (Absorption): Nếu Orderbook Ratio rất cao (ví dụ Ask > 1.5) nhưng tổng Whale Buy trong 15p vẫn cực lớn, có nghĩa là cá voi đang chủ động "ăn" hết tường bán. Đây là dấu hiệu Bullish mạnh.
+4. Bẫy thanh khoản: Nếu 2 phút cuối có áp lực ép giá ngược lại với xu hướng chính của cả nến 15p, cẩn thận đây có thể là bẫy dụ thanh khoản.
+5. Trả về duy nhất JSON với format: {"decision": "CONFIRM" hoặc "REJECT", "reason": "...", "confidence": 0-100}`;
 
         console.log(`[AI] Đang phân tích (${modelToUse}) - Lần thử ${i + 1}/${maxRetriesPerModel}...`);
         
