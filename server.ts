@@ -190,26 +190,24 @@ async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number,
         const sellIntensity = totalWhaleSell > 0 ? (aggressiveSell / totalWhaleSell) * 100 : 0;
 
         const whaleSummary = `
-- TỔNG QUAN (15p): Buy $${(totalWhaleBuy/1000000).toFixed(2)}M / Sell $${(totalWhaleSell/1000000).toFixed(2)}M.
-- ÁP LỰC 2 PHÚT CUỐI (120s): Buy $${(aggressiveBuy/1000000).toFixed(2)}M (${buyIntensity.toFixed(1)}%) / Sell $${(aggressiveSell/1000000).toFixed(2)}M (${sellIntensity.toFixed(1)}%).`;
+- TỔNG DÒNG TIỀN (15p): Buy $${(totalWhaleBuy/1000000).toFixed(2)}M / Sell $${(totalWhaleSell/1000000).toFixed(2)}M.
+- ÁP LỰC CUỐI NẾN (2p): Buy $${(aggressiveBuy/1000000).toFixed(2)}M / Sell $${(aggressiveSell/1000000).toFixed(2)}M.`;
 
-        const prompt = `Bạn là một nhà giao dịch cá voi chuyên nghiệp tại Binance Futures. Bạn phân tích hợp lưu giữa Tường lệnh (Orderbook) và Khớp lệnh thực tế (Whale Trades).
+        const prompt = `Bạn là một nhà giao dịch cá voi chuyên nghiệp tại Binance Futures. Bạn phân tích hợp lưu giữa Tường lệnh (Orderbook) và dòng tiền thực tế của cá voi (Whale Trades) trong cả nến 15 phút.
 TÍN HIỆU CẦN ĐÁNH GIÁ: ${signal}
-GIÁ HIỆN TẠI: ${lastPrice}
-ĐỘ MẠNH VÙNG THANH KHOẢN: ${touches || 1} lần chạm (Touches). Càng cao thì tín hiệu đảo chiều càng mạnh.
-TỶ LỆ ORDERBOOK (Bid/Ask): ${obRatio} (Tường mua/Tường bán)
-DÒNG TIỀN THỰC TẾ (Whale Trades): ${whaleSummary}
+GIÁ HIỆN TẠI: $${lastPrice.toLocaleString()}
+ORDERBOOK RATIO (EMA): ${obRatio.toFixed(2)} (Bid/Ask)
+LỰC CÁ VOI (Whale Context): ${whaleSummary}
+SỐ LẦN CHẠM VÙNG THANH KHOẢN: ${touches || 1}
 
 BỐI CẢNH THỊ TRƯỜNG (20 nến):
 ${context}
 
-HƯỚNG DẪN RA QUYẾT ĐỊNH CHUYÊN SÂU:
-1. Xác định "Bẫy Orderbook" (Hidden Pressure): Nếu Orderbook nghiêng hẳn về một bên (ví dụ Bid/Ask > 1.5) nhưng "ÁP LỰC 2 PHÚT CUỐI" (Whale Trades) lại đang ép ngược lại, đó là dấu hiệu của tường ảo để dụ gà. Hãy REJECT.
-2. Xác nhận "Aggressive Money": Whale thật thường đẩy giá dồn dập vào 2 phút cuối nến để tạo nến đẹp (Painted Candle). Nếu "ÁP LỰC 2 PHÚT CUỐI" chiếm tỷ trọng cao và đồng thuận với tín hiệu, hãy CONFIRM mạnh tay.
-3. Độ mạnh vùng thanh khoản: Tín hiệu xảy ra tại vùng có >= 2 lần chạm (Touches) có xác suất đảo chiều cao hơn rất nhiều.
-4. Quản trị rủi ro: Nếu Áp lực 2p cuối và Tổng quan 15p trái ngược nhau hoàn toàn, hãy REJECT.
-
-Trả về duy nhất JSON với format: {"decision": "CONFIRM" hoặc "REJECT", "reason": "...", "confidence": 0-100}`;
+HƯỚNG DẪN PHÂN TÍCH CHUYÊN SÂU:
+1. Phân tích Dòng tiền (Whale Flow): Xem xét tổng lượng Whale Trades trong 15p. Nếu tổng dòng tiền đồng thuận với tín hiệu (ví dụ LONG mà Buy >> Sell) và có áp lực chốt nến mạnh ở 2p cuối, hãy CONFIRM.
+2. Phát hiện "Hấp thụ" (Absorption): Nếu Orderbook Ratio rất cao (ví dụ Ask > 1.5) nhưng tổng Whale Buy trong 15p vẫn cực lớn, có nghĩa là cá voi đang chủ động "ăn" hết tường bán. Đây là dấu hiệu Bullish mạnh.
+3. Bẫy thanh khoản: Nếu 2 phút cuối có áp lực ép giá ngược lại với xu hướng chính của cả nến 15p, cẩn thận đây có thể là bẫy dụ thanh khoản.
+4. Trả về duy nhất JSON với format: {"decision": "CONFIRM" hoặc "REJECT", "reason": "...", "confidence": 0-100}`;
 
         console.log(`[AI] Đang phân tích (${modelToUse}) - Lần thử ${i + 1}/${maxRetriesPerModel}...`);
         
