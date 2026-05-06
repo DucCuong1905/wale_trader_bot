@@ -131,53 +131,8 @@ function calcADX(ohlcv: any[]) {
 }
 
 async function getAIBacktestDecision(signal: string, lastPrice: number, bars: any[]) {
-  const currentAiKey = getCleanEnv("GEMINI_API_KEY");
-  if (!currentAiKey) return { decision: "REJECT", reason: "No AI Key provided" };
-  
-  const dynamicAi = new GoogleGenAI({ apiKey: currentAiKey });
-  const modelsToTry = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3.1-flash-lite-preview"];
-  const maxRetriesPerModel = 2;
-
-  for (const modelToUse of modelsToTry) {
-    for (let attempt = 0; attempt < maxRetriesPerModel; attempt++) {
-      try {
-        const context = bars.slice(-15).map(b => `[${new Date(b[0]).toISOString()}] O:${b[1]} H:${b[2]} L:${b[3]} C:${b[4]}`).join("\n");
-        const prompt = `Bạn đang backtest một chiến lược cá voi. 
-TÍN HIỆU: ${signal} tại giá ${lastPrice}
-BỐI CẢNH (15 nến):
-${context}
-
-Vì là dữ liệu lịch sử, tôi không có Orderbook hay Whale Trades thực tế. 
-Hãy dựa thuần túy vào hành động giá (Price Action):
-1. Phân tích xem râu nến quét (Sweep) có thực sự dứt khoát không?
-2. Cấu trúc thị trường trước đó là Trend hay Sideway? Tín hiệu đảo chiều có hợp lý không?
-3. Trả về JSON: {"decision": "CONFIRM" hoặc "REJECT", "reason": "Tại sao?"}`;
-
-        const response = await dynamicAi.models.generateContent({
-          model: modelToUse,
-          contents: prompt,
-        });
-        const text = response.text;
-        if (!text) throw new Error("No response text");
-
-        // Thêm delay 60 giây sau mỗi lần gọi thành công để đảm bảo độ ổn định tuyệt đối
-        await new Promise(r => setTimeout(r, 60000));
-
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        return JSON.parse(jsonMatch ? jsonMatch[0] : "{\"decision\": \"REJECT\"}");
-      } catch (e: any) {
-        const isTransient = e.message?.includes("503") || e.message?.includes("429") || e.message?.includes("overloaded");
-        console.warn(`[BACKTEST AI] Model ${modelToUse} failed: ${e.message}`);
-        
-        if (attempt < maxRetriesPerModel - 1) {
-          await new Promise(r => setTimeout(r, isTransient ? 3000 * (attempt + 1) : 1000));
-          continue;
-        }
-      }
-    }
-  }
-  
-  return { decision: "REJECT", reason: "AI Service Unavailable (All models busy)" };
+  // AI is disabled for backtest performance and stability
+  return { decision: "CONFIRM", reason: "AI Check Disabled for Backtest" };
 }
 
 // --- MAIN RUNNER ---
@@ -216,12 +171,10 @@ export async function runBacktest(onProgress?: (p: number) => void) {
       const entryPrice = allKlines[i][4];
       const time = new Date(allKlines[i][0]).toISOString();
       
-      console.log(`🔍 Phát hiện tín hiệu ${type} tại ${time} ($${entryPrice}). Đang hỏi AI...`);
-      const ai = await getAIBacktestDecision(type, entryPrice, window);
+      console.log(`🔍 Phát hiện tín hiệu ${type} tại ${time} ($${entryPrice}). (Bỏ qua AI Check)`);
       
-      if (ai.decision === "CONFIRM") {
-        // Giả lập Trade: SL/TP logic
-        const range = window.slice(-14).reduce((acc, b) => acc + (b[2] - b[3]), 0) / 14;
+      // Giả lập Trade: SL/TP logic
+      const range = window.slice(-14).reduce((acc, b) => acc + (b[2] - b[3]), 0) / 14;
         const sl = type === "LONG" ? entryPrice - range : entryPrice + range;
         const tp = type === "LONG" ? entryPrice + range * RR : entryPrice - range * RR;
         
@@ -247,10 +200,9 @@ export async function runBacktest(onProgress?: (p: number) => void) {
         results.totalTrades++;
         if (status === "WIN") results.wins++; else results.losses++;
         results.totalPnL += pnl;
-        results.trades.push({ time, type, entryPrice, exitPrice, status, pnl, reason: ai.reason });
+        results.trades.push({ time, type, entryPrice, exitPrice, status, pnl, reason: "TA Signal Only" });
         
-        console.log(`💰 Trade: ${status} | PnL: ${pnl}R | Reason: ${ai.reason}`);
-      }
+        console.log(`💰 Trade: ${status} | PnL: ${pnl}R`);
     }
   }
 
