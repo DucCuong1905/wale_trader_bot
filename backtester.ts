@@ -58,15 +58,7 @@ let results: BacktestResult = {
 
 // --- LOGIC FUNCTIONS (COPIED & ADAPTED FROM SERVER.TS) ---
 
-function calculateMACD(prices: number[]) {
-  const ema12 = calculateEMA(prices, 12);
-  const ema26 = calculateEMA(prices, 26);
-  const macdLine = ema12 - ema26;
-  
-  // Exponentially smoothed 9-period EMA of MACD Line
-  // For backtest we simplify it to a basic momentum check
-  return { histogram: macdLine }; 
-}
+
 
 function getLiquidityZones(bars: any[], type: 'high' | 'low') {
   const points = bars.slice(-60).map(b => type === 'high' ? b[2] : b[3]);
@@ -148,15 +140,7 @@ function calcADX(ohlcv: any[]) {
   return adxList[adxList.length - 1];
 }
 
-function calculateEMA(prices: number[], period: number) {
-  if (prices.length < period) return prices[prices.length - 1];
-  let ema = prices.slice(0, period).reduce((a, b) => a + b, 0) / period;
-  const multiplier = 2 / (period + 1);
-  for (let i = period; i < prices.length; i++) {
-    ema = (prices[i] - ema) * multiplier + ema;
-  }
-  return ema;
-}
+
 
 function calculateRSI(prices: number[], period: number) {
   if (prices.length < period + 1) return 50;
@@ -172,6 +156,19 @@ function calculateRSI(prices: number[], period: number) {
   if (losses === 0) return 100;
   const rs = (gains / period) / (losses / period);
   return 100 - (100 / (1 + rs));
+}
+
+function calculateVWMA(bars: any[], period: number) {
+  if (bars.length < period) return bars[bars.length - 1][4];
+  let pvSum = 0;
+  let volSum = 0;
+  for (let i = bars.length - period; i < bars.length; i++) {
+    const price = bars[i][4];
+    const volume = bars[i][5];
+    pvSum += price * volume;
+    volSum += volume;
+  }
+  return volSum === 0 ? bars[bars.length - 1][4] : pvSum / volSum;
 }
 
 async function getAIBacktestDecision(signal: string, lastPrice: number, bars: any[]) {
@@ -218,13 +215,13 @@ export async function runBacktest(onProgress?: (p: number) => void) {
     const sweep = detectSweep(window);
     const adx = calcADX(window);
     const prices = window.map(b => b[4]);
-    const ema200 = calculateEMA(prices, 200);
     const rsi = calculateRSI(prices, 14);
-    const macdData = calculateMACD(prices);
+    const vwma20 = calculateVWMA(window, 20);
     const lastPrice = prices[prices.length - 1];
+    const trend = lastPrice > vwma20 ? "UP" : "DOWN";
 
-    const isLong = sweep.sweepLow && adx > 25 && (sweep.touches || 0) >= 2 && lastPrice > ema200 && rsi < 65 && macdData.histogram > 0;
-    const isShort = sweep.sweepHigh && adx > 25 && (sweep.touches || 0) >= 2 && lastPrice < ema200 && rsi > 35 && macdData.histogram < 0;
+    const isLong = sweep.sweepLow && adx > 25 && (sweep.touches || 0) >= 2 && trend === "UP";
+    const isShort = sweep.sweepHigh && adx > 25 && (sweep.touches || 0) >= 2 && trend === "DOWN";
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";

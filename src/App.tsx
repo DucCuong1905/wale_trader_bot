@@ -586,7 +586,7 @@ export default function App() {
                 <div className="relative z-10">
                    <h2 className="text-3xl font-black uppercase italic tracking-tighter mb-2">Hệ Thống Backtest Toàn Diện</h2>
                    <p className="text-slate-400 text-sm max-w-xl leading-relaxed">
-                      Phân tích lại toàn bộ thị trường từ 31/03/2025 đến 31/03/2026. Bot đã được nâng cấp các chỉ báo kỹ thuật EMA 200 và RSI để nâng cao tỷ lệ win.
+                      Phân tích lại toàn bộ thị trường từ 31/03/2025 đến 31/03/2026. Bot đã được nâng cấp các chỉ báo kỹ thuật VWMA và RSI để nâng cao tỷ lệ win.
                    </p>
                 </div>
                 

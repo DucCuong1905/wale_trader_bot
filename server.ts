@@ -589,15 +589,6 @@ function calcADX(ohlcv: any[], period: number = 14) {
   };
 }
 
-function calculateEMA(prices: number[], period: number) {
-  if (prices.length < period) return prices[prices.length - 1];
-  let ema = prices.slice(0, period).reduce((a, b) => a + b, 0) / period;
-  const multiplier = 2 / (period + 1);
-  for (let i = period; i < prices.length; i++) {
-    ema = (prices[i] - ema) * multiplier + ema;
-  }
-  return ema;
-}
 
 function calculateRSI(prices: number[], period: number) {
   if (prices.length < period + 1) return 50;
@@ -615,11 +606,18 @@ function calculateRSI(prices: number[], period: number) {
   return 100 - (100 / (1 + rs));
 }
 
-function calculateMACD(prices: number[]) {
-  const ema12 = calculateEMA(prices, 12);
-  const ema26 = calculateEMA(prices, 26);
-  const macdLine = ema12 - ema26;
-  return { histogram: macdLine }; 
+
+function calculateVWMA(bars: any[], period: number) {
+  if (bars.length < period) return bars[bars.length - 1][4];
+  let pvSum = 0;
+  let volSum = 0;
+  for (let i = bars.length - period; i < bars.length; i++) {
+    const price = bars[i][4];
+    const volume = bars[i][5];
+    pvSum += price * volume;
+    volSum += volume;
+  }
+  return volSum === 0 ? bars[bars.length - 1][4] : pvSum / volSum;
 }
 
 async function traderLoop() {
@@ -711,11 +709,10 @@ async function traderLoop() {
 
     // --- TÍNH TOÁN EMA 200 & RSI (MỚI) ---
     const prices = bars.map(b => b[4]);
-    const ema200 = calculateEMA(prices, 200);
     const rsi = calculateRSI(prices, 14);
-    const macdData = calculateMACD(prices);
+    const vwma20 = calculateVWMA(bars, 20);
     const lastPrice = prices[prices.length - 1];
-    const trend = lastPrice > ema200 ? "UP" : "DOWN";
+    const trend = lastPrice > vwma20 ? "UP" : "DOWN";
 
     // --- QUÉT TÍN HIỆU SWEEP ---
     const sweepResult = detectWhaleSweep(bars);
@@ -802,11 +799,11 @@ async function traderLoop() {
     if (obRatio > 1.25 || (obRatio > 1.1 && whaleNet > 50000)) obSignal = "BULL";
     if (obRatio < 0.8 || (obRatio < 0.9 && whaleNet < -50000)) obSignal = "BEAR";
 
-    console.log(`[PHÂN TÍCH] Giá: ${botState.lastPrice} | Xu hướng: ${trend} | ADX: ${adx.toFixed(1)} | Touches: ${sweepResult.touches || 0} | RSI: ${rsi.toFixed(1)} | MACD: ${macdData.histogram.toFixed(2)}`);
+    console.log(`[PHÂN TÍCH] Giá: ${botState.lastPrice} | Xu hướng (VWMA): ${trend} | ADX: ${adx.toFixed(1)} | Touches: ${sweepResult.touches || 0} | RSI: ${rsi.toFixed(1)}`);
 
     let signal: 'LONG' | 'SHORT' | null = null;
-    if (sweepLow && obSignal === "BULL" && adx > 25 && (sweepResult.touches || 0) >= 2 && trend === "UP" && rsi < 65 && macdData.histogram > 0) signal = "LONG";
-    if (sweepHigh && obSignal === "BEAR" && adx > 25 && (sweepResult.touches || 0) >= 2 && trend === "DOWN" && rsi > 35 && macdData.histogram < 0) signal = "SHORT";
+    if (sweepLow && obSignal === "BULL" && adx > 25 && (sweepResult.touches || 0) >= 2 && trend === "UP") signal = "LONG";
+    if (sweepHigh && obSignal === "BEAR" && adx > 25 && (sweepResult.touches || 0) >= 2 && trend === "DOWN") signal = "SHORT";
 
     if (signal) {
       console.log(`🚀 [SIGNAL FOUND] Phát hiện tín hiệu ${signal}. Đang gửi cho AI phân tích...`);
