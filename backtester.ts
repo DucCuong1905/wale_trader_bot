@@ -12,7 +12,13 @@ const DATA_DIR = path.join(process.cwd(), "data");
 const RESULTS_FILE = path.join(DATA_DIR, "backtest_results.json");
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
 
-const aiKey = process.env.GEMINI_API_KEY || "";
+function getCleanEnv(key: string) {
+  const val = process.env[key];
+  if (!val) return "";
+  return val.trim().replace(/^["']|["']$/g, "").trim();
+}
+
+const aiKey = getCleanEnv("GEMINI_API_KEY");
 const ai = new GoogleGenAI({ apiKey: aiKey });
 const modelName = "gemini-2.5-flash";
 
@@ -20,6 +26,7 @@ const PAIR = "BTC/USDT";
 const TIMEFRAME = "15m";
 const START_DATE = "2026-01-01T00:00:00Z";
 const END_DATE = "2026-03-31T23:59:59Z";
+const RR = 1.5; // Tỷ lệ Lợi nhuận/Rủi ro 1:1.5
 
 interface BacktestResult {
   totalTrades: number;
@@ -124,9 +131,11 @@ function calcADX(ohlcv: any[]) {
 }
 
 async function getAIBacktestDecision(signal: string, lastPrice: number, bars: any[]) {
-  if (!aiKey) return { decision: "REJECT", reason: "No AI Key" };
+  const currentAiKey = getCleanEnv("GEMINI_API_KEY");
+  if (!currentAiKey) return { decision: "REJECT", reason: "No AI Key provided" };
   
-  const modelsToTry = ["gemini-3-flash-preview", "gemini-2.5-flash", "gemini-3.1-flash-lite-preview"];
+  const dynamicAi = new GoogleGenAI({ apiKey: currentAiKey });
+  const modelsToTry = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3.1-flash-lite-preview"];
   const maxRetriesPerModel = 2;
 
   for (const modelToUse of modelsToTry) {
@@ -144,7 +153,7 @@ Hãy dựa thuần túy vào hành động giá (Price Action):
 2. Cấu trúc thị trường trước đó là Trend hay Sideway? Tín hiệu đảo chiều có hợp lý không?
 3. Trả về JSON: {"decision": "CONFIRM" hoặc "REJECT", "reason": "Tại sao?"}`;
 
-        const response = await ai.models.generateContent({
+        const response = await dynamicAi.models.generateContent({
           model: modelToUse,
           contents: prompt,
         });
@@ -214,7 +223,7 @@ export async function runBacktest(onProgress?: (p: number) => void) {
         // Giả lập Trade: SL/TP logic
         const range = window.slice(-14).reduce((acc, b) => acc + (b[2] - b[3]), 0) / 14;
         const sl = type === "LONG" ? entryPrice - range : entryPrice + range;
-        const tp = type === "LONG" ? entryPrice + range * 2 : entryPrice - range * 2;
+        const tp = type === "LONG" ? entryPrice + range * RR : entryPrice - range * RR;
         
         // Tìm kết quả trong các nến tiếp theo
         let exitPrice = 0;
@@ -233,7 +242,7 @@ export async function runBacktest(onProgress?: (p: number) => void) {
         }
 
         if (exitPrice === 0) exitPrice = allKlines[Math.min(i + 49, allKlines.length - 1)][4];
-        pnl = status === "WIN" ? 2.0 : -1.0; // Tỷ lệ 1:2 R:R
+        pnl = status === "WIN" ? RR : -1.0; // Sử dụng tỷ lệ RR động
 
         results.totalTrades++;
         if (status === "WIN") results.wins++; else results.losses++;

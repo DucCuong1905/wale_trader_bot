@@ -64,7 +64,7 @@ const modelName = "gemini-2.5-flash";
 const PAIR = "BTC/USDT:USDT"; // Cặp giao dịch (BTC Futures trên Binance)
 const SYMBOL_ID = "btcusdt"; // ID Symbol cho WebSocket (lowercase cho Binance)
 const RISK_PER_TRADE = 0.01; // Rủi ro 1% tổng tài sản cho mỗi lệnh
-const RR = 2.0; // Tỷ lệ Lợi nhuận/Rủi ro mới 1:2
+const RR = 1.5; // Tỷ lệ Lợi nhuận/Rủi ro 1:1.5
 const COOLDOWN_MS = 30000; // Thời gian nghỉ giữa các lệnh (30 giây) để tránh vào lệnh liên tục
 const MAX_DAILY_LOSS = 0.03; // Giới hạn lỗ tối đa trong ngày (3%). Nếu chạm mốc này, Bot sẽ dừng giao dịch.
 
@@ -166,7 +166,7 @@ let botState = {
 // --- LOGIC PHÂN TÍCH AI (AI ANALYSIS) ---
 async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number, bars: any[], touches?: number) {
   const maxRetriesPerModel = 2;
-  const modelsToTry = ["gemini-3-flash-preview", "gemini-2.5-flash", "gemini-3.1-flash-lite-preview"]; 
+  const modelsToTry = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3.1-flash-lite-preview"]; 
 
   for (let modelToUse of modelsToTry) {
     for (let i = 0; i < maxRetriesPerModel; i++) {
@@ -976,6 +976,25 @@ async function startServer() {
   console.log("🔄 Starting Background Processes...");
   startWS();
   traderLoop();
+  
+  // Tự động khởi chạy Backtest khi Start hệ thống (Background)
+  (async () => {
+    console.log("📊 Starting Automatic Initial Backtest (Backtester)...");
+    backtestStatus.isRunning = true;
+    backtestStatus.progress = 0;
+    try {
+      const results = await runBacktest((p) => {
+        backtestStatus.progress = p;
+      });
+      backtestStatus.lastResult = results;
+      backtestStatus.progress = 100;
+      console.log("✅ Automatic Initial Backtest completed.");
+    } catch (err) {
+      console.error("❌ Automatic Initial Backtest failed:", err);
+    } finally {
+      backtestStatus.isRunning = false;
+    }
+  })();
   
   console.log("✅ Background Processes Initialized.");
 
