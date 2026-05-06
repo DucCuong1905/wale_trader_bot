@@ -177,8 +177,8 @@ async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number,
         }).join("\n");
 
         // Tính toán xu hướng từ Whale Trades khớp thực tế gần đây (Phiên bản chuyên sâu cho AI)
-        const fiveMinsAgo = Date.now() - 300000; // 5 phút gần nhất
-        const whales30k = botState.recentWhaleTrades.filter(t => t.amount >= 30000 && t.time >= fiveMinsAgo);
+        const twoMinsAgo = Date.now() - 120000; // 2 phút gần nhất (120s)
+        const whales30k = botState.recentWhaleTrades.filter(t => t.amount >= 30000 && t.time >= twoMinsAgo);
         
         const aggressiveBuy = whales30k.filter(t => t.side === 'buy').reduce((sum, t) => sum + t.amount, 0);
         const aggressiveSell = whales30k.filter(t => t.side === 'sell').reduce((sum, t) => sum + t.amount, 0);
@@ -191,7 +191,7 @@ async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number,
 
         const whaleSummary = `
 - TỔNG QUAN (15p): Buy $${(totalWhaleBuy/1000000).toFixed(2)}M / Sell $${(totalWhaleSell/1000000).toFixed(2)}M.
-- ÁP LỰC CUỐI NẾN (5p): Buy $${(aggressiveBuy/1000000).toFixed(2)}M (${buyIntensity.toFixed(1)}%) / Sell $${(aggressiveSell/1000000).toFixed(2)}M (${sellIntensity.toFixed(1)}%).`;
+- ÁP LỰC 2 PHÚT CUỐI (120s): Buy $${(aggressiveBuy/1000000).toFixed(2)}M (${buyIntensity.toFixed(1)}%) / Sell $${(aggressiveSell/1000000).toFixed(2)}M (${sellIntensity.toFixed(1)}%).`;
 
         const prompt = `Bạn là một nhà giao dịch cá voi chuyên nghiệp tại Binance Futures. Bạn phân tích hợp lưu giữa Tường lệnh (Orderbook) và Khớp lệnh thực tế (Whale Trades).
 TÍN HIỆU CẦN ĐÁNH GIÁ: ${signal}
@@ -204,10 +204,10 @@ BỐI CẢNH THỊ TRƯỜNG (20 nến):
 ${context}
 
 HƯỚNG DẪN RA QUYẾT ĐỊNH CHUYÊN SÂU:
-1. Xác định "Bẫy Orderbook" (Hidden Pressure): Nếu Orderbook nghiêng hẳn về một bên (ví dụ Bid/Ask > 1.5) nhưng "ÁP LỰC CUỐI NẾN" (Whale Trades) lại đang ép ngược lại, đó là dấu hiệu của tường ảo để dụ gà. Hãy REJECT.
-2. Xác nhận "Aggressive Money": Whale thật thường đẩy giá dồn dập vào 5 phút cuối nến để tạo nến đẹp. Nếu "ÁP LỰC CUỐI NẾN" chiếm tỷ trọng cao (>30% của cả nến 15p) và đồng thuận với tín hiệu, hãy CONFIRM mạnh tay.
+1. Xác định "Bẫy Orderbook" (Hidden Pressure): Nếu Orderbook nghiêng hẳn về một bên (ví dụ Bid/Ask > 1.5) nhưng "ÁP LỰC 2 PHÚT CUỐI" (Whale Trades) lại đang ép ngược lại, đó là dấu hiệu của tường ảo để dụ gà. Hãy REJECT.
+2. Xác nhận "Aggressive Money": Whale thật thường đẩy giá dồn dập vào 2 phút cuối nến để tạo nến đẹp (Painted Candle). Nếu "ÁP LỰC 2 PHÚT CUỐI" chiếm tỷ trọng cao và đồng thuận với tín hiệu, hãy CONFIRM mạnh tay.
 3. Độ mạnh vùng thanh khoản: Tín hiệu xảy ra tại vùng có >= 2 lần chạm (Touches) có xác suất đảo chiều cao hơn rất nhiều.
-4. Quản trị rủi ro: Nếu Áp lực 5p cuối và Tổng quan 15p trái ngược nhau hoàn toàn, hãy REJECT.
+4. Quản trị rủi ro: Nếu Áp lực 2p cuối và Tổng quan 15p trái ngược nhau hoàn toàn, hãy REJECT.
 
 Trả về duy nhất JSON với format: {"decision": "CONFIRM" hoặc "REJECT", "reason": "...", "confidence": 0-100}`;
 
@@ -713,6 +713,13 @@ async function traderLoop() {
       const buyVol = botState.recentWhaleTrades.filter(t => t.side === 'buy').reduce((s, t) => s + t.amount, 0);
       const sellVol = botState.recentWhaleTrades.filter(t => t.side === 'sell').reduce((s, t) => s + t.amount, 0);
       const net = (buyVol - sellVol) / 1000000;
+
+      // Áp lực 2 phút cuối (120s)
+      const twoMinsAgo = Date.now() - 120000;
+      const whales2m = botState.recentWhaleTrades.filter(t => t.time >= twoMinsAgo);
+      const buy2m = whales2m.filter(t => t.side === 'buy').reduce((s, t) => s + t.amount, 0);
+      const sell2m = whales2m.filter(t => t.side === 'sell').reduce((s, t) => s + t.amount, 0);
+      const net2m = (buy2m - sell2m) / 1000000;
       
       // Sweep check ngay tại thời điểm này
       const finalSweep = detectWhaleSweep(bars) as any;
@@ -732,7 +739,8 @@ async function traderLoop() {
         `🧹 Sweep: *${sweepIcon}*\n` +
         `⚖️ OB Ratio: *${botState.obRatioEMA.toFixed(2)}*\n` +
         `📈 ADX: *${botState.adx.toFixed(1)}* (Trends: ${botState.plusDI.toFixed(1)} / ${botState.minusDI.toFixed(1)})\n` +
-        `🐋 Whale Net: ${net >= 0 ? '🟢 +' : '🔴 '}${net.toFixed(2)}M (15p - ${whaleCount} lệnh)\n\n` +
+        `🐋 Whale Net (15p): ${net >= 0 ? '🟢 +' : '🔴 '}${net.toFixed(2)}M (${whaleCount} lệnh)\n` +
+        `🔥 Áp lực 2p cuối: ${net2m >= 0 ? '🟢 +' : '🔴 '}${net2m.toFixed(2)}M\n\n` +
         `_Đang phân tích chiến lược vào lệnh..._`;
       
       sendTelegram(intelMsg);
@@ -978,25 +986,6 @@ async function startServer() {
   console.log("🔄 Starting Background Processes...");
   startWS();
   traderLoop();
-  
-  // Tự động khởi chạy Backtest khi Start hệ thống (Background)
-  (async () => {
-    console.log("📊 Starting Automatic Initial Backtest (Backtester)...");
-    backtestStatus.isRunning = true;
-    backtestStatus.progress = 0;
-    try {
-      const results = await runBacktest((p) => {
-        backtestStatus.progress = p;
-      });
-      backtestStatus.lastResult = results;
-      backtestStatus.progress = 100;
-      console.log("✅ Automatic Initial Backtest completed.");
-    } catch (err) {
-      console.error("❌ Automatic Initial Backtest failed:", err);
-    } finally {
-      backtestStatus.isRunning = false;
-    }
-  })();
   
   console.log("✅ Background Processes Initialized.");
 
