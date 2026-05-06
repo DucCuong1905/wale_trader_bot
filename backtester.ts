@@ -36,6 +36,8 @@ interface BacktestResult {
   losses: number;
   totalPnL: number;
   finalBalance: number;
+  isLiquidated: boolean;
+  liquidationDate: string | null;
   trades: any[];
   startTime: string;
   endTime: string;
@@ -47,12 +49,24 @@ let results: BacktestResult = {
   losses: 0,
   totalPnL: 0,
   finalBalance: INITIAL_BALANCE,
+  isLiquidated: false,
+  liquidationDate: null,
   trades: [],
   startTime: START_DATE,
   endTime: END_DATE
 };
 
 // --- LOGIC FUNCTIONS (COPIED & ADAPTED FROM SERVER.TS) ---
+
+function calculateMACD(prices: number[]) {
+  const ema12 = calculateEMA(prices, 12);
+  const ema26 = calculateEMA(prices, 26);
+  const macdLine = ema12 - ema26;
+  
+  // Exponentially smoothed 9-period EMA of MACD Line
+  // For backtest we simplify it to a basic momentum check
+  return { histogram: macdLine }; 
+}
 
 function getLiquidityZones(bars: any[], type: 'high' | 'low') {
   const points = bars.slice(-60).map(b => type === 'high' ? b[2] : b[3]);
@@ -187,21 +201,30 @@ export async function runBacktest(onProgress?: (p: number) => void) {
   allKlines = allKlines.filter(k => k[0] <= endTs);
   console.log(`✅ Đã tải ${allKlines.length} nến.`);
 
-  results = { ...results, totalTrades: 0, wins: 0, losses: 0, totalPnL: 0, finalBalance: INITIAL_BALANCE, trades: [] };
+  results = { ...results, totalTrades: 0, wins: 0, losses: 0, totalPnL: 0, finalBalance: INITIAL_BALANCE, isLiquidated: false, liquidationDate: null, trades: [] };
 
   for (let i = 25; i < allKlines.length; i++) {
     if (onProgress) onProgress(50 + ((i / allKlines.length) * 50));
     
+    // Kiểm tra cháy tài khoản (dưới 10$)
+    if (results.finalBalance <= 10) {
+      results.isLiquidated = true;
+      results.liquidationDate = new Date(allKlines[i][0]).toISOString();
+      console.log(`⚠️ CHÁY TÀI KHOẢN TẠI ${results.liquidationDate}. Dừng Backtest.`);
+      break;
+    }
+
     const window = allKlines.slice(0, i + 1);
     const sweep = detectSweep(window);
     const adx = calcADX(window);
     const prices = window.map(b => b[4]);
     const ema200 = calculateEMA(prices, 200);
     const rsi = calculateRSI(prices, 14);
+    const macdData = calculateMACD(prices);
     const lastPrice = prices[prices.length - 1];
 
-    const isLong = sweep.sweepLow && adx > 25 && (sweep.touches || 0) >= 3 && lastPrice > ema200 && rsi < 65;
-    const isShort = sweep.sweepHigh && adx > 25 && (sweep.touches || 0) >= 3 && lastPrice < ema200 && rsi > 35;
+    const isLong = sweep.sweepLow && adx > 25 && (sweep.touches || 0) >= 2 && lastPrice > ema200 && rsi < 65 && macdData.histogram > 0;
+    const isShort = sweep.sweepHigh && adx > 25 && (sweep.touches || 0) >= 2 && lastPrice < ema200 && rsi > 35 && macdData.histogram < 0;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";

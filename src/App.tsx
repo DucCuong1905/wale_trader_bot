@@ -619,6 +619,26 @@ export default function App() {
 
              {backtestStatus?.lastResult && (
                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                  {backtestStatus.lastResult.isLiquidated && (
+                    <div className="lg:col-span-12">
+                      <motion.div 
+                        initial={{ scale: 0.9, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        className="bg-red-600/20 border-2 border-red-500 p-8 rounded-[2.5rem] flex items-center gap-8 glow-red mb-2"
+                      >
+                        <div className="p-4 bg-red-600 rounded-2xl shadow-[0_0_30px_rgba(239,68,68,0.5)]">
+                          <AlertTriangle className="w-10 h-10 text-white" />
+                        </div>
+                        <div>
+                          <h3 className="text-2xl font-black text-red-500 uppercase tracking-tighter mb-1">CẢNH BÁO: CHÁY TÀI KHOẢN (MARGIN CALL)</h3>
+                          <p className="text-red-200/80 font-medium leading-relaxed">
+                            Tài khoản đã chạm mức thanh lý (<span className="font-mono font-black">$10</span>) vào lúc <span className="font-mono font-black text-white">{new Date(backtestStatus.lastResult.liquidationDate).toLocaleString()}</span>. 
+                            Hệ thống đã tự động dừng kiểm thử để bảo vệ dữ liệu.
+                          </p>
+                        </div>
+                      </motion.div>
+                    </div>
+                  )}
                   <div className="lg:col-span-4 space-y-6">
                     <div className="grid grid-cols-2 gap-4">
                        <div className="bg-[#12121c] p-6 rounded-[2rem] border border-white/5">

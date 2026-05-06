@@ -615,6 +615,13 @@ function calculateRSI(prices: number[], period: number) {
   return 100 - (100 / (1 + rs));
 }
 
+function calculateMACD(prices: number[]) {
+  const ema12 = calculateEMA(prices, 12);
+  const ema26 = calculateEMA(prices, 26);
+  const macdLine = ema12 - ema26;
+  return { histogram: macdLine }; 
+}
+
 async function traderLoop() {
   const ex = getExchange();
   if (!ex) {
@@ -706,6 +713,7 @@ async function traderLoop() {
     const prices = bars.map(b => b[4]);
     const ema200 = calculateEMA(prices, 200);
     const rsi = calculateRSI(prices, 14);
+    const macdData = calculateMACD(prices);
     const lastPrice = prices[prices.length - 1];
     const trend = lastPrice > ema200 ? "UP" : "DOWN";
 
@@ -794,11 +802,11 @@ async function traderLoop() {
     if (obRatio > 1.25 || (obRatio > 1.1 && whaleNet > 50000)) obSignal = "BULL";
     if (obRatio < 0.8 || (obRatio < 0.9 && whaleNet < -50000)) obSignal = "BEAR";
 
-    console.log(`[PHÂN TÍCH] Giá: ${botState.lastPrice} | Xu hướng: ${trend} | ADX: ${adx.toFixed(1)} | Touches: ${sweepResult.touches || 0} | RSI: ${rsi.toFixed(1)}`);
+    console.log(`[PHÂN TÍCH] Giá: ${botState.lastPrice} | Xu hướng: ${trend} | ADX: ${adx.toFixed(1)} | Touches: ${sweepResult.touches || 0} | RSI: ${rsi.toFixed(1)} | MACD: ${macdData.histogram.toFixed(2)}`);
 
     let signal: 'LONG' | 'SHORT' | null = null;
-    if (sweepLow && obSignal === "BULL" && adx > 25 && (sweepResult.touches || 0) >= 3 && trend === "UP" && rsi < 65) signal = "LONG";
-    if (sweepHigh && obSignal === "BEAR" && adx > 25 && (sweepResult.touches || 0) >= 3 && trend === "DOWN" && rsi > 35) signal = "SHORT";
+    if (sweepLow && obSignal === "BULL" && adx > 25 && (sweepResult.touches || 0) >= 2 && trend === "UP" && rsi < 65 && macdData.histogram > 0) signal = "LONG";
+    if (sweepHigh && obSignal === "BEAR" && adx > 25 && (sweepResult.touches || 0) >= 2 && trend === "DOWN" && rsi > 35 && macdData.histogram < 0) signal = "SHORT";
 
     if (signal) {
       console.log(`🚀 [SIGNAL FOUND] Phát hiện tín hiệu ${signal}. Đang gửi cho AI phân tích...`);
