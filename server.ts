@@ -9,7 +9,7 @@ import WebSocket from "ws";
 import cors from "cors";
 import { runBacktest } from "./backtester.ts";
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 
 dotenv.config();
 
@@ -57,8 +57,8 @@ if (!aiKey) {
 }
 console.log("-----------------------------------------");
 
-const genAI = new GoogleGenerativeAI(aiKey);
-const modelName = "gemini-2.0-flash"; 
+const ai = new GoogleGenAI({ apiKey: aiKey });
+const modelName = "gemini-3-flash-preview"; 
 
 // --- CẤU HÌNH GIAO DỊCH (TRADING CONSTANTS) ---
 const PAIR = "BTC/USDT:USDT"; // Cặp giao dịch (BTC Futures trên Binance)
@@ -165,8 +165,8 @@ let botState = {
 
 // --- LOGIC PHÂN TÍCH AI (AI ANALYSIS) ---
 async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number, bars: any[], touches?: number) {
-  const maxRetries = 3;
-  const modelsToTry = [modelName, "gemini-1.5-flash"]; // Fallback to stable model if preview is busy
+  const maxRetries = 2;
+  const modelsToTry = [modelName, "gemini-2.5-flash", "gemini-3.1-flash-lite-preview"]; 
 
   for (let modelToUse of modelsToTry) {
     for (let i = 0; i < maxRetries; i++) {
@@ -186,7 +186,6 @@ async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number,
         const totalWhaleBuy = botState.recentWhaleTrades.filter(t => t.side === 'buy').reduce((sum, t) => sum + t.amount, 0);
         const totalWhaleSell = botState.recentWhaleTrades.filter(t => t.side === 'sell').reduce((sum, t) => sum + t.amount, 0);
         
-        // Tính toán Cường độ (Intensity): 5 phút cuối chiếm bao nhiêu % tổng nến 15 phút
         const buyIntensity = totalWhaleBuy > 0 ? (aggressiveBuy / totalWhaleBuy) * 100 : 0;
         const sellIntensity = totalWhaleSell > 0 ? (aggressiveSell / totalWhaleSell) * 100 : 0;
 
@@ -205,24 +204,21 @@ BỐI CẢNH THỊ TRƯỜNG (20 nến):
 ${context}
 
 HƯỚNG DẪN RA QUYẾT ĐỊNH CHUYÊN SÂU:
-1. Xác định "Bẫy Orderbook" (Hidden Pressure): Đây là ưu tiên hàng đầu. Nếu Orderbook nghiêng hẳn về một bên (ví dụ Bid/Ask > 1.5) nhưng "ÁP LỰC CUỐI NẾN" (Whale Trades) lại đang ép ngược lại, đó là dấu hiệu của tường ảo để dụ gà. Hãy REJECT.
-2. Xác nhận "Aggressive Money": Whale thật thường đẩy giá dồn dập vào 5 phút cuối nến để tạo nến đẹp (print candle). Nếu "ÁP LỰC CUỐI NẾN" chiếm tỷ trọng cao (>30% của cả nến 15p) và đồng thuận với tín hiệu, hãy CONFIRM mạnh tay.
-3. Độ mạnh vùng thanh khoản: Tín hiệu xảy ra tại vùng có >= 2 lần chạm (Touches) có xác suất đảo chiều cao hơn rất nhiều so với vùng 1-touch. Hãy ưu tiên các vùng Multi-touch.
-4. Quản trị rủi ro: Nếu Áp lực 5p cuối và Tổng quan 15p trái ngược nhau hoàn toàn, hoặc Whale Net tổng là âm nhưng lại báo LONG, thị trường đang cực kỳ hỗn loạn. Hãy REJECT.
+1. Xác định "Bẫy Orderbook" (Hidden Pressure): Nếu Orderbook nghiêng hẳn về một bên (ví dụ Bid/Ask > 1.5) nhưng "ÁP LỰC CUỐI NẾN" (Whale Trades) lại đang ép ngược lại, đó là dấu hiệu của tường ảo để dụ gà. Hãy REJECT.
+2. Xác nhận "Aggressive Money": Whale thật thường đẩy giá dồn dập vào 5 phút cuối nến để tạo nến đẹp. Nếu "ÁP LỰC CUỐI NẾN" chiếm tỷ trọng cao (>30% của cả nến 15p) và đồng thuận với tín hiệu, hãy CONFIRM mạnh tay.
+3. Độ mạnh vùng thanh khoản: Tín hiệu xảy ra tại vùng có >= 2 lần chạm (Touches) có xác suất đảo chiều cao hơn rất nhiều.
+4. Quản trị rủi ro: Nếu Áp lực 5p cuối và Tổng quan 15p trái ngược nhau hoàn toàn, hãy REJECT.
 
-Trả về duy nhất JSON:
-{
-  "decision": "CONFIRM" hoặc "REJECT",
-  "reason": "Giải thích ngắn gọn (tối đa 2 câu) tập trung vào sự hợp lưu giữa OB và Whale Trades",
-  "confidence": 0-100
-}`;
+Trả về duy nhất JSON với format: {"decision": "CONFIRM" hoặc "REJECT", "reason": "...", "confidence": 0-100}`;
 
         console.log(`[AI] Đang phân tích (${modelToUse}) - Lần thử ${i + 1}/${maxRetries}...`);
         
-        const model = genAI.getGenerativeModel({ model: modelToUse });
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        const text = response.text();
+        const response = await ai.models.generateContent({
+          model: modelToUse,
+          contents: prompt,
+        });
+
+        const text = response.text;
         
         if (!text) throw new Error("AI không trả về nội dung.");
         
@@ -234,28 +230,17 @@ Trả về duy nhất JSON:
         return parsed;
         
       } catch (e: any) {
-        const isRateLimit = e.message?.includes("503") || e.message?.includes("429");
         console.warn(`⚠️ [AI RETRY] ${modelToUse} failed (Attempt ${i + 1}): ${e.message}`);
-        
-        if (i < maxRetries - 1 && isRateLimit) {
-          // Đợi 2s rồi thử lại
-          await new Promise(r => setTimeout(r, 2000));
+        if (i < maxRetries - 1) {
+          await new Promise(r => setTimeout(r, 1000));
           continue;
         }
-        
-        // Nếu đã thử hết số lần của model này, chuyển sang model tiếp theo
-        break;
       }
     }
   }
-
-  // Nếu tất cả model và lần thử đều thất bại
-  return { 
-    decision: "REJECT", 
-    reason: `AI Error: Không thể kết nối với cả preview và stable model sau nhiều lần thử.`, 
-    confidence: 0 
-  };
+  return { decision: "REJECT", reason: "AI Service Unavailable", confidence: 0 };
 }
+
 
 // --- TELEGRAM HELPER ---
 async function sendTelegram(msg: string) {

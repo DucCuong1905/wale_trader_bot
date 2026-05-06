@@ -3,7 +3,7 @@ import * as ccxt from "ccxt";
 import fs from "fs";
 import path from "path";
 import dotenv from "dotenv";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 
 dotenv.config();
 
@@ -13,8 +13,8 @@ const RESULTS_FILE = path.join(DATA_DIR, "backtest_results.json");
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
 
 const aiKey = process.env.GEMINI_API_KEY || "";
-const genAI = new GoogleGenerativeAI(aiKey);
-const modelName = "gemini-2.0-flash";
+const ai = new GoogleGenAI({ apiKey: aiKey });
+const modelName = "gemini-3-flash-preview";
 
 const PAIR = "BTC/USDT";
 const TIMEFRAME = "15m";
@@ -126,7 +126,7 @@ function calcADX(ohlcv: any[]) {
 async function getAIBacktestDecision(signal: string, lastPrice: number, bars: any[]) {
   if (!aiKey) return { decision: "REJECT", reason: "No AI Key" };
   
-  const modelsToTry = [modelName, "gemini-1.5-flash"];
+  const modelsToTry = [modelName, "gemini-2.5-flash", "gemini-3.1-flash-lite-preview"];
   const maxRetriesPerModel = 2;
 
   for (const modelToUse of modelsToTry) {
@@ -144,9 +144,13 @@ Hãy dựa thuần túy vào hành động giá (Price Action):
 2. Cấu trúc thị trường trước đó là Trend hay Sideway? Tín hiệu đảo chiều có hợp lý không?
 3. Trả về JSON: {"decision": "CONFIRM" hoặc "REJECT", "reason": "Tại sao?"}`;
 
-        const model = genAI.getGenerativeModel({ model: modelToUse });
-        const result = await model.generateContent(prompt);
-        const text = result.response.text();
+        const response = await ai.models.generateContent({
+          model: modelToUse,
+          contents: prompt,
+        });
+        const text = response.text;
+        if (!text) throw new Error("No response text");
+
         const jsonMatch = text.match(/\{[\s\S]*\}/);
         return JSON.parse(jsonMatch ? jsonMatch[0] : "{\"decision\": \"REJECT\"}");
       } catch (e: any) {
