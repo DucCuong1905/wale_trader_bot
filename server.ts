@@ -761,11 +761,11 @@ async function traderLoop() {
     if (obRatio > 1.25 || (obRatio > 1.1 && whaleNet > 50000)) obSignal = "BULL";
     if (obRatio < 0.8 || (obRatio < 0.9 && whaleNet < -50000)) obSignal = "BEAR";
 
-    console.log(`[PHÂN TÍCH] Giá: ${botState.lastPrice} | ADX: ${adx.toFixed(1)} (Min 20) | Quét Whale: ${sweepLow ? "LOW" : sweepHigh ? "HIGH" : "KHÔNG"} | Tỷ lệ OB: ${obRatio.toFixed(2)} | Whale Net: ${(whaleNet/1000).toFixed(1)}k`);
+    console.log(`[PHÂN TÍCH] Giá: ${botState.lastPrice} | ADX: ${adx.toFixed(1)} (Min 25) | Quét Whale: ${sweepLow ? "LOW" : sweepHigh ? "HIGH" : "KHÔNG"} | Tỷ lệ OB: ${obRatio.toFixed(2)} | Whale Net: ${(whaleNet/1000).toFixed(1)}k | Touches: ${sweepResult.touches || 0}`);
 
     let signal: 'LONG' | 'SHORT' | null = null;
-    if (sweepLow && obSignal === "BULL" && adx >= 20) signal = "LONG";
-    if (sweepHigh && obSignal === "BEAR" && adx >= 20) signal = "SHORT";
+    if (sweepLow && obSignal === "BULL" && adx > 25 && (sweepResult.touches || 0) >= 3) signal = "LONG";
+    if (sweepHigh && obSignal === "BEAR" && adx > 25 && (sweepResult.touches || 0) >= 3) signal = "SHORT";
 
     if (signal) {
       console.log(`🚀 [SIGNAL FOUND] Phát hiện tín hiệu ${signal}. Đang gửi cho AI phân tích...`);

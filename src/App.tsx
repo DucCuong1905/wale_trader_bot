@@ -634,11 +634,49 @@ export default function App() {
                           </p>
                        </div>
                     </div>
-                    <div className="bg-[#12121c] p-8 rounded-[2rem] border border-white/5 glow-green">
-                       <p className="text-[10px] text-emerald-500 font-black uppercase mb-4 tracking-widest">Tổng Lợi Nhuận (R)</p>
+                    <div className={cn(
+                        "bg-[#12121c] p-8 rounded-[2rem] border transition-all",
+                        backtestStatus.lastResult.totalPnL >= 0 
+                          ? "border-emerald-500/20 glow-green" 
+                          : "border-red-500/20 glow-red"
+                      )}>
+                       <p className={cn(
+                          "text-[10px] font-black uppercase mb-4 tracking-widest",
+                          backtestStatus.lastResult.totalPnL >= 0 ? "text-emerald-500" : "text-red-500"
+                       )}>Tổng Lợi Nhuận (R)</p>
                        <div className="flex items-end gap-3">
-                          <p className="text-6xl font-mono font-black text-emerald-400">{backtestStatus.lastResult.totalPnL > 0 ? '+' : ''}{backtestStatus.lastResult.totalPnL.toFixed(1)}</p>
-                          <p className="text-sm font-bold text-emerald-600 mb-2 uppercase">Risk units</p>
+                          <p className={cn(
+                            "text-6xl font-mono font-black",
+                            backtestStatus.lastResult.totalPnL >= 0 ? "text-emerald-400" : "text-red-400"
+                          )}>{backtestStatus.lastResult.totalPnL > 0 ? '+' : ''}{backtestStatus.lastResult.totalPnL.toFixed(1)}</p>
+                          <p className={cn(
+                            "text-sm font-bold mb-2 uppercase",
+                            backtestStatus.lastResult.totalPnL >= 0 ? "text-emerald-600" : "text-red-600"
+                          )}>Risk units</p>
+                       </div>
+                    </div>
+
+                    <div className={cn(
+                        "bg-[#12121c] p-8 rounded-[2rem] border transition-all",
+                        backtestStatus.lastResult.finalBalance >= 2000 
+                          ? "border-blue-500/20 glow-blue shadow-[0_0_20px_rgba(59,130,246,0.1)]" 
+                          : "border-red-500/20 glow-red shadow-[0_0_20px_rgba(239,68,68,0.1)]"
+                      )}>
+                       <p className={cn(
+                          "text-[10px] font-black uppercase mb-4 tracking-widest",
+                          backtestStatus.lastResult.finalBalance >= 2000 ? "text-blue-500" : "text-red-500"
+                       )}>Số Dư Cuối Cùng</p>
+                       <div className="flex items-end gap-3">
+                          <p className={cn(
+                            "text-4xl font-mono font-black",
+                            backtestStatus.lastResult.finalBalance >= 2000 ? "text-blue-400" : "text-red-400"
+                          )}>
+                            ${backtestStatus.lastResult.finalBalance.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                          </p>
+                          <p className={cn(
+                            "text-sm font-bold mb-2 uppercase",
+                            backtestStatus.lastResult.finalBalance >= 2000 ? "text-blue-600" : "text-red-600"
+                          )}>USD</p>
                        </div>
                     </div>
                   </div>
@@ -674,9 +712,9 @@ export default function App() {
                                    <td className="px-8 py-4 text-xs text-slate-300 italic">"{t.reason}"</td>
                                    <td className={cn(
                                      "px-8 py-4 text-right font-mono font-black",
-                                     t.pnl > 0 ? "text-green-400" : "text-red-400"
+                                     (t.pnlR !== undefined ? t.pnlR : t.pnl) > 0 ? "text-green-400" : "text-red-400"
                                    )}>
-                                      {t.pnl > 0 ? '+2R' : '-1R'}
+                                      {t.pnlR !== undefined ? (t.pnlR > 0 ? `+${t.pnlR}R` : `${t.pnlR}R`) : (t.pnl > 0 ? `+${t.pnl}R` : `${t.pnl}R`)}
                                    </td>
                                 </tr>
                               ))}

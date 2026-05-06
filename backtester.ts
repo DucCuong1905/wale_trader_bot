@@ -170,7 +170,7 @@ export async function runBacktest(onProgress?: (p: number) => void) {
     const sweep = detectSweep(window);
     const adx = calcADX(window);
 
-    if ((sweep.sweepLow || sweep.sweepHigh) && adx >= 20) {
+    if ((sweep.sweepLow || sweep.sweepHigh) && adx > 25 && (sweep.touches || 0) >= 3) {
       const type = sweep.sweepLow ? "LONG" : "SHORT";
       const entryPrice = allKlines[i][4];
       const time = new Date(allKlines[i][0]).toISOString();
