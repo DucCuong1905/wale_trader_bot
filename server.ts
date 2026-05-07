@@ -140,6 +140,7 @@ let botState = {
   minusDI: 0,
   aiReasoning: "Đang chờ phân tích...",
   isWsConnected: false,
+  isInitNotified: false, // Thêm cờ thông báo khởi động
   apiError: "",
   recentWhaleTrades: [] as WhaleTrade[],
   lastReportKey: "",
@@ -542,6 +543,24 @@ async function traderLoop() {
     const bars = await ex.fetchOHLCV(PAIR, TIMEFRAME, undefined, 100);
     if (!bars || bars.length < 50) { setTimeout(traderLoop, 10000); return; }
 
+    // THÔNG BÁO KHI SẴN SÀNG (CHỈ GỬI 1 LẦN KHI KHỞI ĐỘNG XONG)
+    if (!botState.isInitNotified) {
+      botState.isInitNotified = true;
+      const vnTime = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
+      await sendTelegram(`🤖 **WHALE BOT ĐÃ SẴN SÀNG!**\n\n` +
+        `✅ Kết nối sàn: Thành công\n` +
+        `✅ Dữ liệu nến: Đã tải ${bars.length} nến ${TIMEFRAME}\n` +
+        `📊 **Chỉ số hiện tại:**\n` +
+        `• VWMA (20): ${vwma.toFixed(2)}\n` +
+        `• ADX: ${adx.adx.toFixed(1)} (+DI: ${adx.pDI.toFixed(1)} | -DI: ${adx.mDI.toFixed(1)})\n` +
+        `• RSI: ${rsi.toFixed(1)}\n` +
+        `• Slope: ${slope.toFixed(4)}\n\n` +
+        `✅ Vốn khởi điểm: ${botState.balance.toFixed(2)}$\n` +
+        `🚀 Chế độ: ${IS_LIVE_TRADING_ENABLED ? "LIVE TRADING ⚡" : "PAPER TRADING 📝"}\n` +
+        `⏰ Thời gian: ${vnTime}`);
+      console.log("[INIT] Bot is ready and notification sent.");
+    }
+
     const lastCandle = bars[bars.length - 1];
     const lastCandleTime = lastCandle[0];
 
@@ -632,10 +651,27 @@ async function traderLoop() {
         const vnTime = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
         botState.lastTradeTime = Date.now(); 
 
-        await sendTelegram(`🚀 [PAPER SIGNAL] ${sig} Detected!\n` +
+        const conditions = [
+          `1. Giá vs VWMA: ${sig === 'LONG' ? (currentPrice > vwma ? '✅ Above' : '❌ Below') : (currentPrice < vwma ? '✅ Below' : '❌ Above')}`,
+          `2. Slope: ${sig === 'LONG' ? (slope > 0 ? '✅ Positive' : '❌ Negative') : (slope < 0 ? '✅ Negative' : '❌ Positive')}`,
+          `3. Distance: ${distance < 0.01 ? '✅ Safe' : '❌ Fomo'} (${(distance * 100).toFixed(2)}%)`,
+          `4. Sweep: ${sig === 'LONG' ? (sweep.sweepLow ? '✅ Low Sweep' : '❌ No Sweep') : (sweep.sweepHigh ? '✅ High Sweep' : '❌ No Sweep')}`,
+          `5. Displacement: ${sig === 'LONG' ? (sweep.displacementBullish ? '✅ Strong Bull' : '❌ Weak') : (sweep.displacementBearish ? '✅ Strong Bear' : '❌ Weak')}`,
+          `6. Volume: ${sweep.volConfirm ? '✅ Confirmed' : '❌ Low'}`,
+          `7. ADX (>15): ${adx.adx > 15 ? '✅' : '❌'} (${adx.adx.toFixed(1)})`,
+          `8. DI Power: ${sig === 'LONG' ? (adx.pDI > adx.mDI ? '✅ +DI > -DI' : '❌') : (adx.mDI > adx.pDI ? '✅ -DI > +DI' : '❌')}`
+        ].join('\n');
+
+        await sendTelegram(`🚀 [PAPER SIGNAL] **${sig}** Detected!\n\n` +
+          `📊 **Thông số lệnh:**\n` +
           `🎯 Entry: ${e.toFixed(2)}\n` +
           `🛑 SL: ${sl.toFixed(2)} | 💎 TP: ${tp.toFixed(2)}\n` +
-          `🏦 Balance: ${paperBalance.toFixed(2)}$\n` +
+          `🏦 Balance: ${paperBalance.toFixed(2)}$\n\n` +
+          `📝 **8 Điều kiện vào lệnh:**\n${conditions}\n\n` +
+          `📈 **Chỉ số kỹ thuật:**\n` +
+          `• VWMA: ${vwma.toFixed(2)}\n` +
+          `• ADX: ${adx.adx.toFixed(1)} (+DI: ${adx.pDI.toFixed(1)} | -DI: ${adx.mDI.toFixed(1)})\n` +
+          `• RSI: ${rsi.toFixed(1)}\n` +
           `⏰ Giờ VN: ${vnTime}`); 
       } else {
         // Chế độ Trade thật trên sàn
@@ -644,7 +680,22 @@ async function traderLoop() {
           const amt = ex.amountToPrecision(PAIR, Math.max(size, 0.001));
           await ex.createMarketOrder(PAIR, sig === 'LONG' ? 'buy' : 'sell', parseFloat(amt));
           botState.lastTradeTime = Date.now();
-          sendTelegram(`⚡ [LIVE ORDER] ${sig} ${amt} BTC at ${e.toFixed(2)}`);
+          
+          const vnTime = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
+          const conditions = [
+            `1. Giá vs VWMA: ${sig === 'LONG' ? (currentPrice > vwma ? '✅ Above' : '❌ Below') : (currentPrice < vwma ? '✅ Below' : '❌ Above')}`,
+            `2. Slope: ${sig === 'LONG' ? (slope > 0 ? '✅ Positive' : '❌ Negative') : (slope < 0 ? '✅ Negative' : '❌ Positive')}`,
+            `3. Distance: ${distance < 0.01 ? '✅ Safe' : '❌ Fomo'} (${(distance * 100).toFixed(2)}%)`,
+            `4. Sweep: ${sig === 'LONG' ? (sweep.sweepLow ? '✅ Low Sweep' : '❌ No Sweep') : (sweep.sweepHigh ? '✅ High Sweep' : '❌ No Sweep')}`,
+            `5. Displacement: ${sig === 'LONG' ? (sweep.displacementBullish ? '✅ Strong Bull' : '❌ Weak') : (sweep.displacementBearish ? '✅ Strong Bear' : '❌ Weak')}`,
+            `6. Volume: ${sweep.volConfirm ? '✅ Confirmed' : '❌ Low'}`,
+            `7. ADX (>15): ${adx.adx > 15 ? '✅' : '❌'} (${adx.adx.toFixed(1)})`,
+            `8. DI Power: ${sig === 'LONG' ? (adx.pDI > adx.mDI ? '✅ +DI > -DI' : '❌') : (adx.mDI > adx.pDI ? '✅ -DI > +DI' : '❌')}`
+          ].join('\n');
+
+          await sendTelegram(`⚡ [LIVE ORDER] **${sig}** ${amt} BTC at ${e.toFixed(2)}\n\n` +
+            `📝 **8 Điều kiện vào lệnh:**\n${conditions}\n` +
+            `⏰ Giờ VN: ${vnTime}`);
         } catch (err) {
           console.error("Order Error:", err);
         }
@@ -666,7 +717,7 @@ async function newsWatcherLoop() {
     if (!aiKey) return;
 
     const genAI = new GoogleGenerativeAI(aiKey);
-    // Dùng gemini-1.5-flash hoặc pro có hỗ trợ search
+    // Sử dụng model gemini-1.5-flash chính xác
     const model = genAI.getGenerativeModel({ 
       model: "gemini-1.5-flash", 
       tools: [{ googleSearch: {} }] as any 
