@@ -26,7 +26,7 @@ const PAIR = "BTC/USDT";
 const TIMEFRAME = "5m";
 const START_DATE = "2026-01-01T00:00:00Z"; 
 const END_DATE = "2026-03-31T23:59:59Z";
-const RR = 1.5; 
+const RR = 1.2; 
 const INITIAL_BALANCE = 2000;
 const RISK_PER_TRADE = 0.005; // 0.5%
 

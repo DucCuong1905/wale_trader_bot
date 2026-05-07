@@ -53,7 +53,7 @@ const SYMBOL_ID = "btcusdt";
 const TIMEFRAME = "5m"; 
 const IS_LIVE_TRADING_ENABLED = false; 
 const RISK_PER_TRADE = 0.005; // 0.5% theo yêu cầu mới
-const RR = 1.5; 
+const RR = 1.2; 
 const COOLDOWN_MS = 30000; 
 const MAX_DAILY_LOSS = 0.03; 
 
