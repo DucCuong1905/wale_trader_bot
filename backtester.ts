@@ -28,7 +28,7 @@ const START_DATE = "2026-01-01T00:00:00Z";
 const END_DATE = "2026-03-31T23:59:59Z";
 const RR = 1.2; 
 const INITIAL_BALANCE = 2000;
-const RISK_PER_TRADE = 0.005; // 0.5%
+const RISK_PER_TRADE = 0.01; // 1%
 
 interface BacktestResult {
   totalTrades: number;
@@ -244,13 +244,18 @@ async function getAIBacktestDecision(signal: string, lastPrice: number, bars: an
 
 // --- MAIN RUNNER ---
 
-export async function runBacktest(onProgress?: (p: number) => void) {
-  console.log(`🚀 Bắt đầu Backtest ${PAIR} từ ${START_DATE} đến ${END_DATE}`);
+export async function runBacktest(
+  startDate: string = START_DATE,
+  endDate: string = END_DATE,
+  rr: number = RR,
+  onProgress?: (p: number) => void
+) {
+  console.log(`🚀 Bắt đầu Backtest ${PAIR} từ ${startDate} đến ${endDate} (RR: ${rr})`);
   const exchange = new ccxt.binance({ options: { defaultType: 'future' } });
   
   let allKlines: any[] = [];
-  let since = exchange.parse8601(START_DATE);
-  const endTs = exchange.parse8601(END_DATE);
+  let since = exchange.parse8601(startDate);
+  const endTs = exchange.parse8601(endDate);
 
   while (since < endTs) {
     const klines = await exchange.fetchOHLCV(PAIR, TIMEFRAME, since, 1000);
@@ -264,7 +269,19 @@ export async function runBacktest(onProgress?: (p: number) => void) {
   allKlines = allKlines.filter(k => k[0] <= endTs);
   console.log(`✅ Đã tải ${allKlines.length} nến.`);
 
-  results = { ...results, totalTrades: 0, wins: 0, losses: 0, totalPnL: 0, finalBalance: INITIAL_BALANCE, isLiquidated: false, liquidationDate: null, trades: [] };
+  results = { 
+    ...results, 
+    totalTrades: 0, 
+    wins: 0, 
+    losses: 0, 
+    totalPnL: 0, 
+    finalBalance: INITIAL_BALANCE, 
+    isLiquidated: false, 
+    liquidationDate: null, 
+    trades: [],
+    startTime: startDate,
+    endTime: endDate
+  };
 
   for (let i = 25; i < allKlines.length; i++) {
     if (onProgress) onProgress(50 + ((i / allKlines.length) * 50));
@@ -306,7 +323,7 @@ export async function runBacktest(onProgress?: (p: number) => void) {
       
       // SL: LONG = sweepLow - ATR*0.2 | SHORT = sweepHigh + ATR*0.2
       const sl = type === "LONG" ? (sweep.low - atr * 0.2) : (sweep.high + atr * 0.2);
-      const tp = entryPrice + (entryPrice - sl > 0 ? (entryPrice - sl) * RR : (sl - entryPrice) * -RR);
+      const tp = entryPrice + (entryPrice - sl > 0 ? (entryPrice - sl) * rr : (sl - entryPrice) * -rr);
         
         // Tìm kết quả trong các nến tiếp theo
         let exitPrice = 0;
@@ -325,7 +342,7 @@ export async function runBacktest(onProgress?: (p: number) => void) {
         }
 
         if (exitPrice === 0) exitPrice = allKlines[Math.min(i + 49, allKlines.length - 1)][4];
-        pnlR = status === "WIN" ? RR : -1.0; 
+        pnlR = status === "WIN" ? rr : -1.0; 
         
         const dollarPnL = results.finalBalance * RISK_PER_TRADE * pnlR;
         results.finalBalance += dollarPnL;

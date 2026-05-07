@@ -52,7 +52,7 @@ const PAIR = "BTC/USDT:USDT";
 const SYMBOL_ID = "btcusdt"; 
 const TIMEFRAME = "5m"; 
 const IS_LIVE_TRADING_ENABLED = false; 
-const RISK_PER_TRADE = 0.005; // 0.5% theo yêu cầu mới
+const RISK_PER_TRADE = 0.01; // 1% theo yêu cầu mới
 const RR = 1.2; 
 const COOLDOWN_MS = 30000; 
 const MAX_DAILY_LOSS = 0.03; 
@@ -492,8 +492,14 @@ async function startServer() {
   app.get("/api/health", (req, res) => res.json({ status: "ok" }));
   app.post("/api/backtest/run", async (req, res) => {
     if (backtestStatus.isRunning) return res.status(400).json({ error: "Running" });
+    const { startDate, endDate, rr } = req.body;
     backtestStatus.isRunning = true;
-    runBacktest(p => { backtestStatus.progress = p; }).then(r => { backtestStatus.isRunning = false; backtestStatus.lastResult = r; });
+    runBacktest(startDate, endDate, rr, p => { 
+      backtestStatus.progress = p; 
+    }).then(r => { 
+      backtestStatus.isRunning = false; 
+      backtestStatus.lastResult = r; 
+    });
     res.json({ message: "Started" });
   });
   app.get("/api/backtest/status", (req, res) => res.json(backtestStatus));

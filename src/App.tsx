@@ -32,6 +32,7 @@ import {
   Area
 } from 'recharts';
 import TradeStats from './components/TradeStats';
+import { cn } from './lib/utils';
 
 // State for the app
 export default function App() {
@@ -45,6 +46,9 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'live' | 'backtest'>('live');
   const [backtestStatus, setBacktestStatus] = useState<any>(null);
   const [isBacktestRunning, setIsBacktestRunning] = useState(false);
+  const [startDate, setStartDate] = useState('2026-01-01');
+  const [endDate, setEndDate] = useState('2026-03-31');
+  const [backtestRR, setBacktestRR] = useState(1.2);
 
   useEffect(() => {
     let retryCount = 0;
@@ -120,7 +124,15 @@ export default function App() {
 
   const startBacktest = async () => {
     try {
-      await fetch('/api/backtest/run', { method: 'POST' });
+      await fetch('/api/backtest/run', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          startDate: `${startDate}T00:00:00Z`, 
+          endDate: `${endDate}T23:59:59Z`, 
+          rr: backtestRR 
+        })
+      });
       setIsBacktestRunning(true);
     } catch (e) {
       alert("Không thể khởi động Backtest");
@@ -581,41 +593,79 @@ export default function App() {
             </div>
           </div>
         ) : (
-          <div className="space-y-6">
-             <div className="flex items-center justify-between bg-[#12121c] p-10 rounded-[2.5rem] border border-white/5 glow-purple relative overflow-hidden">
-                <div className="relative z-10">
-                   <h2 className="text-3xl font-black uppercase italic tracking-tighter mb-2">Hệ Thống Backtest Toàn Diện - 5M</h2>
-                   <p className="text-slate-400 text-sm max-w-xl leading-relaxed">
-                      Phân tích thị trường khung 5 PHÚT. Bot sử dụng VWMA, ADX và RSI để xác định Whale Sweep chính xác hơn trong ngắn hạn.
-                   </p>
-                </div>
-                
-                <div className="relative z-10 flex flex-col items-end gap-4">
-                   {isBacktestRunning ? (
-                      <div className="flex flex-col items-end gap-2">
+           <div className="space-y-6">
+              <div className="bg-[#12121c] p-10 rounded-[2.5rem] border border-white/5 glow-purple relative overflow-hidden">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-center relative z-10">
+                  <div>
+                    <h2 className="text-3xl font-black uppercase italic tracking-tighter mb-4">Cấu Hình Backtest Pro</h2>
+                    <div className="grid grid-cols-2 gap-4 mb-6">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Từ ngày</label>
+                        <input 
+                          type="date" 
+                          value={startDate} 
+                          onChange={(e) => setStartDate(e.target.value)}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs font-mono focus:border-purple-500 transition-all outline-none"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Đến ngày</label>
+                        <input 
+                          type="date" 
+                          value={endDate} 
+                          onChange={(e) => setEndDate(e.target.value)}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs font-mono focus:border-purple-500 transition-all outline-none"
+                        />
+                      </div>
+                      <div className="space-y-2 col-span-2">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Risk/Reward Ratio (1 : X)</label>
+                        <div className="flex items-center gap-4">
+                          <input 
+                            type="range" 
+                            min="0.5" 
+                            max="5" 
+                            step="0.1" 
+                            value={backtestRR} 
+                            onChange={(e) => setBacktestRR(parseFloat(e.target.value))}
+                            className="flex-1 accent-purple-500"
+                          />
+                          <span className="w-16 text-center font-mono font-black text-purple-400 bg-purple-500/10 rounded-lg py-1 border border-purple-500/30">1 : {backtestRR}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <p className="text-slate-500 text-[10px] uppercase tracking-widest font-bold">
+                       Hệ thống sẽ fetch dữ liệu trực tiếp từ Binance Futures (M5).
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col items-center lg:items-end justify-center">
+                    {isBacktestRunning ? (
+                      <div className="flex flex-col items-end gap-3 w-full max-w-xs">
                          <div className="flex items-center gap-3">
                             <div className="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
-                            <span className="text-xs font-black text-purple-400 uppercase tracking-widest">Đang chạy AI ({Math.round(backtestStatus?.progress || 0)}%)</span>
+                            <span className="text-xs font-black text-purple-400 uppercase tracking-widest animate-pulse">Đang Phân Tích Dòng Tiền ({Math.round(backtestStatus?.progress || 0)}%)</span>
                          </div>
-                         <div className="w-64 h-2 bg-white/5 rounded-full overflow-hidden">
+                         <div className="w-full h-3 bg-white/5 rounded-full overflow-hidden p-0.5 border border-white/10">
                             <motion.div 
-                              className="h-full bg-purple-500 shadow-[0_0_10px_rgba(168,85,247,0.5)]"
+                              className="h-full bg-gradient-to-r from-purple-600 to-blue-500 rounded-full shadow-[0_0_20px_rgba(168,85,247,0.5)]"
                               initial={{ width: 0 }}
                               animate={{ width: `${backtestStatus?.progress || 0}%` }}
                             />
                          </div>
                       </div>
-                   ) : (
+                    ) : (
                       <button 
                         onClick={startBacktest}
-                        className="px-10 py-5 bg-purple-600 hover:bg-purple-500 text-white rounded-2xl text-xs font-black uppercase tracking-[0.2em] shadow-2xl shadow-purple-600/30 transition-all active:scale-95"
+                        className="group relative px-12 py-6 bg-purple-600 hover:bg-purple-500 text-white rounded-[2rem] text-xs font-black uppercase tracking-[0.3em] shadow-2xl shadow-purple-600/30 transition-all active:scale-95 overflow-hidden"
                       >
-                        CHẠY KIỂM THỬ 1 NĂM
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
+                        KHỞI ĐỘNG KIỂM THỬ
                       </button>
-                   )}
+                    )}
+                  </div>
                 </div>
-                <div className="absolute top-0 right-0 w-96 h-96 bg-purple-600/5 blur-[100px] -mr-48 -mt-48 rounded-full" />
-             </div>
+                <div className="absolute top-0 right-0 w-96 h-96 bg-purple-600/5 blur-[120px] -mr-48 -mt-48 rounded-full" />
+              </div>
 
              {backtestStatus?.lastResult && (
                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
