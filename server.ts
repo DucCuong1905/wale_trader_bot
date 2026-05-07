@@ -45,7 +45,7 @@ const getEnv = (key: string) => {
 
 const aiKey = getEnv("GEMINI_API_KEY");
 const ai = new GoogleGenAI({ apiKey: aiKey });
-const modelName = "gemini-3-flash-preview"; 
+const modelName = "gemini-2.5-flash"; 
 
 // --- CẤU HÌNH GIAO DỊCH ---
 const PAIR = "BTC/USDT:USDT"; // Cặp giao dịch (Futures)
@@ -158,7 +158,7 @@ let botState = {
  */
 async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number, bars: any[], touches?: number) {
   const maxRetriesPerModel = 2;
-  const modelsToTry = ["gemini-3-flash-preview", "gemini-3.1-flash-lite", "gemini-3.1-pro-preview"]; 
+  const modelsToTry = ["gemini-2.5-flash", "gemini-3.1-flash-lite", "gemini-3.1-pro-preview"]; 
 
   for (let modelToUse of modelsToTry) {
     for (let i = 0; i < maxRetriesPerModel; i++) {
@@ -732,7 +732,7 @@ async function newsWatcherLoop() {
     Chỉ trả về nội dung tóm tắt, không giải thích dài dòng.`;
 
     const result = await genAI.models.generateContent({ 
-      model: "gemini-3-flash-preview", 
+      model: "gemini-2.5-flash", 
       contents: prompt,
       tools: [{ googleSearch: {} }],
       toolConfig: { includeServerSideToolInvocations: true }
