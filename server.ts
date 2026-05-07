@@ -45,7 +45,7 @@ const getEnv = (key: string) => {
 
 const aiKey = getEnv("GEMINI_API_KEY");
 const ai = new GoogleGenAI({ apiKey: aiKey });
-const modelName = "gemini-2.5-flash"; 
+const modelName = "gemini-2.0-flash"; 
 
 // --- CẤU HÌNH GIAO DỊCH ---
 const PAIR = "BTC/USDT:USDT"; // Cặp giao dịch (Futures)
@@ -158,7 +158,7 @@ let botState = {
  */
 async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number, bars: any[], touches?: number) {
   const maxRetriesPerModel = 2;
-  const modelsToTry = ["gemini-2.5-flash", "gemini-3.1-flash-lite", "gemini-3.1-pro-preview"]; 
+  const modelsToTry = ["gemini-2.0-flash", "gemini-1.5-flash"]; 
 
   for (let modelToUse of modelsToTry) {
     for (let i = 0; i < maxRetriesPerModel; i++) {
@@ -547,6 +547,16 @@ async function traderLoop() {
     const bars = await ex.fetchOHLCV(PAIR, TIMEFRAME, undefined, 100);
     if (!bars || bars.length < 50) { setTimeout(traderLoop, 10000); return; }
 
+    // 4. TÍNH TOÁN CÁC CHỈ BÁO KỸ THUẬT (Tính trước để dùng cho thông báo hoặc phân tích)
+    const adx = calcADX(bars, 14); botState.adx = adx.adx; botState.plusDI = adx.pDI; botState.minusDI = adx.mDI;
+    const rsi = calculateRSI(bars.map(b => b[4]), 14);
+    const vwma = calculateVWMA(bars, 20); // VWMA 20 phiên
+    const vwmaPrev = calculateVWMA(bars.slice(0, -1), 20);
+    const slope = vwma - vwmaPrev; // Độ dốc của VWMA (Slope)
+    
+    const currentPrice = bars[bars.length - 1][4];
+    const distance = Math.abs(currentPrice - vwma) / vwma; // Khoảng cách giá đến VWMA
+
     // THÔNG BÁO KHI SẴN SÀNG (CHỈ GỬI 1 LẦN KHI KHỞI ĐỘNG XONG)
     if (!botState.isInitNotified) {
       botState.isInitNotified = true;
@@ -574,16 +584,6 @@ async function traderLoop() {
       return;
     }
     botState.lastProcessedCandleTime = lastCandleTime;
-
-    // 4. TÍNH TOÁN CÁC CHỈ BÁO KỸ THUẬT
-    const adx = calcADX(bars, 14); botState.adx = adx.adx; botState.plusDI = adx.pDI; botState.minusDI = adx.mDI;
-    const rsi = calculateRSI(bars.map(b => b[4]), 14);
-    const vwma = calculateVWMA(bars, 20); // VWMA 20 phiên
-    const vwmaPrev = calculateVWMA(bars.slice(0, -1), 20);
-    const slope = vwma - vwmaPrev; // Độ dốc của VWMA (Slope)
-    
-    const currentPrice = bars[bars.length - 1][4];
-    const distance = Math.abs(currentPrice - vwma) / vwma; // Khoảng cách giá đến VWMA
 
     const sweep = detectWhaleSweep(bars);
     const atr = calculateATR(bars, 14);
@@ -732,11 +732,13 @@ async function newsWatcherLoop() {
     Chỉ trả về nội dung tóm tắt, không giải thích dài dòng.`;
 
     const result = await genAI.models.generateContent({ 
-      model: "gemini-2.5-flash", 
+      model: "gemini-2.0-flash", 
       contents: prompt,
       tools: [{ googleSearch: {} }],
-      toolConfig: { includeServerSideToolInvocations: true }
-    });
+      config: { 
+        tools: [{ googleSearch: {} }]
+      }
+    } as any);
 
     const response = result.text.trim();
 
