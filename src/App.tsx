@@ -798,7 +798,6 @@ export default function App() {
         )}
       </main>
 
-      {/* Footer / Connection Status */}
       <footer className="max-w-[1400px] mx-auto px-6 py-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-4">
         <p className="text-xs text-gray-500">© 2026 WhaleBot. Hệ thống hỗ trợ quyết định giao dịch.</p>
         <div className="flex items-center gap-6">
@@ -848,8 +847,4 @@ function FooterItem({ label, value }: { label: string, value: string }) {
       <span className="text-[10px] text-gray-400 font-mono">{value}</span>
     </div>
   );
-}
-
-function cn(...inputs: any[]) {
-  return inputs.filter(Boolean).join(' ');
 }

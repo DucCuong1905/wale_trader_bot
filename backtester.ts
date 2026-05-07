@@ -20,7 +20,7 @@ function getCleanEnv(key: string) {
 
 const aiKey = getCleanEnv("GEMINI_API_KEY");
 const ai = new GoogleGenAI({ apiKey: aiKey });
-const modelName = "gemini-2.5-flash";
+const modelName = "gemini-3-flash-preview";
 
 const PAIR = "BTC/USDT";
 const TIMEFRAME = "5m";
@@ -131,7 +131,17 @@ function calculateATR(bars: any[], period: number = 14) {
 }
 
 function detectSweep(bars: any[]) {
-  if (bars.length < 15) return { sweepHigh: false, sweepLow: false, displacementBullish: false, displacementBearish: false, volConfirm: false, low: 0, high: 0, confirmHigh: 0, confirmLow: 0 };
+  if (bars.length < 15) return { 
+    sweepHigh: false, 
+    sweepLow: false, 
+    displacementBullish: false, 
+    displacementBearish: false, 
+    volConfirm: false, 
+    low: 0, 
+    high: 0, 
+    confirmHigh: 0, 
+    confirmLow: 0 
+  };
   
   const sweepCandle = bars[bars.length - 2];
   const confirmCandle = bars[bars.length - 1];
@@ -250,7 +260,7 @@ export async function runBacktest(
   rr: number = RR,
   onProgress?: (p: number) => void
 ) {
-  console.log(`🚀 Bắt đầu Backtest ${PAIR} từ ${startDate} đến ${endDate} (RR: ${rr})`);
+  console.log(`[BACKTEST] Start ${PAIR} from ${startDate} to ${endDate} (RR: ${rr})`);
   const exchange = new ccxt.binance({ options: { defaultType: 'future' } });
   
   let allKlines: any[] = [];
@@ -267,7 +277,7 @@ export async function runBacktest(
   }
 
   allKlines = allKlines.filter(k => k[0] <= endTs);
-  console.log(`✅ Đã tải ${allKlines.length} nến.`);
+  console.log(`[DATA] Loaded ${allKlines.length} klines.`);
 
   results = { 
     ...results, 
@@ -290,7 +300,7 @@ export async function runBacktest(
     if (results.finalBalance <= 10) {
       results.isLiquidated = true;
       results.liquidationDate = new Date(allKlines[i][0]).toISOString();
-      console.log(`⚠️ CHÁY TÀI KHOẢN TẠI ${results.liquidationDate}. Dừng Backtest.`);
+      console.log(`[MARGIN] LIQUIDATION AT ${results.liquidationDate}. Stopping.`);
       break;
     }
 
@@ -319,7 +329,7 @@ export async function runBacktest(
       
       const time = new Date(allKlines[i][0]).toISOString();
       
-      console.log(`🔍 Phát hiện tín hiệu ${type} tại ${time} ($${entryPrice}). (Bỏ qua AI Check)`);
+      console.log(`[SIGNAL] Detected ${type} at ${time} ($${entryPrice}). (No AI Check)`);
       
       // SL: LONG = sweepLow - ATR*0.2 | SHORT = sweepHigh + ATR*0.2
       const sl = type === "LONG" ? (sweep.low - atr * 0.2) : (sweep.high + atr * 0.2);
@@ -362,11 +372,11 @@ export async function runBacktest(
           reason: "TA Signal Only" 
         });
         
-        console.log(`💰 Trade: ${status} | PnL: ${pnlR}R ($${dollarPnL.toFixed(2)}) | Balance: $${results.finalBalance.toFixed(2)}`);
+        console.log(`[TRADE] ${status} | PnL: ${pnlR}R ($${dollarPnL.toFixed(2)}) | Balance: $${results.finalBalance.toFixed(2)}`);
     }
   }
 
   fs.writeFileSync(RESULTS_FILE, JSON.stringify(results, null, 2));
-  console.log(`✅ Backtest hoàn tất. Kết quả lưu tại ${RESULTS_FILE}`);
+  console.log(`[DONE] Backtest complete. Results: ${RESULTS_FILE}`);
   return results;
 }

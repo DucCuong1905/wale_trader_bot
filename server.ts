@@ -32,7 +32,7 @@ const getEnv = (key: string) => {
       }
     }
   } catch (e) {
-    console.warn(`⚠️ Error reading .env directly for ${key}:`, e);
+    console.warn(`[WARN] Error reading .env directly for ${key}:`, e);
   }
 
   const val = process.env[key];
@@ -45,7 +45,7 @@ const getEnv = (key: string) => {
 
 const aiKey = getEnv("GEMINI_API_KEY");
 const ai = new GoogleGenAI({ apiKey: aiKey });
-const modelName = "gemini-2.5-flash"; 
+const modelName = "gemini-3-flash-preview"; 
 
 // --- CẤU HÌNH GIAO DỊCH ---
 const PAIR = "BTC/USDT:USDT"; 
@@ -139,7 +139,7 @@ let botState = {
 // --- AI ANALYSIS ---
 async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number, bars: any[], touches?: number) {
   const maxRetriesPerModel = 2;
-  const modelsToTry = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3.1-flash-lite-preview"]; 
+  const modelsToTry = ["gemini-3-flash-preview", "gemini-3.1-flash-lite-preview", "gemini-3.1-pro-preview"]; 
 
   for (let modelToUse of modelsToTry) {
     for (let i = 0; i < maxRetriesPerModel; i++) {
@@ -188,7 +188,7 @@ Trả về duy nhất JSON với format: {"decision": "CONFIRM" hoặc "REJECT",
         console.log(`[AI SUCCESS] ${parsed.decision} (${parsed.confidence}%) dùng ${modelToUse}`);
         return parsed;
       } catch (e: any) {
-        console.warn(`⚠️ [AI RETRY] ${modelToUse} failed: ${e.message}`);
+        console.warn(`[AI RETRY] ${modelToUse} failed: ${e.message}`);
       }
     }
   }
@@ -470,7 +470,7 @@ async function traderLoop() {
       if (aiEval.decision === "CONFIRM") {
         if (!IS_LIVE_TRADING_ENABLED) { 
           botState.lastTradeTime = Date.now(); 
-          sendTelegram(`ℹ️ [PAPER] ${sig} at ${e}`); 
+          sendTelegram(`[PAPER] ${sig} at ${e}`); 
         } else {
           // Live order logic here (simplified)
           try {
@@ -499,6 +499,10 @@ async function startServer() {
     }).then(r => { 
       backtestStatus.isRunning = false; 
       backtestStatus.lastResult = r; 
+    }).catch(err => {
+      console.error("Backtest Error:", err);
+      backtestStatus.isRunning = false;
+      backtestStatus.lastResult = { error: err.message };
     });
     res.json({ message: "Started" });
   });
@@ -522,7 +526,7 @@ async function startServer() {
     if (fs.existsSync(dist)) { app.use(express.static(dist)); app.get("*", (req, res) => res.sendFile(path.join(dist, "index.html"))); }
   }
 
-  app.listen(3000, "0.0.0.0", () => { console.log(`🚀 Server on http://localhost:3000`); startWS(); traderLoop(); });
+  app.listen(3000, "0.0.0.0", () => { console.log(`[START] Server on http://localhost:3000`); startWS(); traderLoop(); });
 }
 
 startServer();
