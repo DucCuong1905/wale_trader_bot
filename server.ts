@@ -53,9 +53,20 @@ const SYMBOL_ID = "btcusdt"; // ID ký hiệu cho WebSocket
 const TIMEFRAME = "5m"; // Khung thời gian nến (5 phút)
 const IS_LIVE_TRADING_ENABLED = false; // Chế độ giao dịch thật (true = bật, false = test)
 const RISK_PER_TRADE = 0.01; // Rủi ro trên mỗi lệnh (1% tài khoản)
-const RR = 1.2; // Tỷ lệ Risk/Reward (Rủi ro/Lợi nhuận)
+const RR = 1.0; // Tỷ lệ Risk/Reward 1:1 theo yêu cầu
 const COOLDOWN_MS = 30000; // Thời gian chờ giữa các lệnh (30 giây)
 const MAX_DAILY_LOSS = 0.03; // Giới hạn lỗ tối đa trong ngày (3%)
+
+// --- QUẢN LÝ VỊ THẾ GIẢ LẬP (PAPER TRADING) ---
+let paperPosition: {
+  type: "LONG" | "SHORT";
+  entry: number;
+  sl: number;
+  tp: number;
+  size: number;
+  startTime: number;
+} | null = null;
+let paperBalance = 5000; // Vốn giả lập ban đầu 5000$
 
 // --- PERSISTENCE ---
 const DATA_DIR = path.join(process.cwd(), "data");
@@ -452,20 +463,25 @@ async function traderLoop() {
 
   try {
     // 1. KIỂM TRA SỐ DƯ VÀ QUẢN LÝ RỦI RO NGÀY
-    let bal;
-    try {
-      bal = await ex.fetchBalance();
-    } catch (authErr: any) {
-      if (authErr.message.includes("-2015") || authErr.name === "AuthenticationError") {
-        console.error("❌ LỖI BINANCE: API Key không hợp lệ hoặc chưa bật quyền 'Enable Futures'!");
-        await sendTelegram("⚠️ Lỗi API Binance: Vui lòng kiểm tra lại Key và quyền 'Enable Futures' trên sàn.");
-        setTimeout(traderLoop, 60000); // Đợi 1 phút mới thử lại
-        return;
+    let curr = 0;
+    if (IS_LIVE_TRADING_ENABLED) {
+      let bal;
+      try {
+        bal = await ex.fetchBalance();
+      } catch (authErr: any) {
+        if (authErr.message.includes("-2015") || authErr.name === "AuthenticationError") {
+          console.error("❌ LỖI BINANCE: API Key không hợp lệ hoặc chưa bật quyền 'Enable Futures'!");
+          await sendTelegram("⚠️ Lỗi API Binance: Vui lòng kiểm tra lại Key và quyền 'Enable Futures' trên sàn.");
+          setTimeout(traderLoop, 60000); 
+          return;
+        }
+        throw authErr;
       }
-      throw authErr;
+      curr = bal.USDT ? (bal.USDT as any).total : 0;
+    } else {
+      curr = paperBalance;
     }
-
-    const curr = bal.USDT ? (bal.USDT as any).total : 0;
+    
     botState.balance = curr;
     // Tự động reset số dư gốc mỗi ngày
     if (botState.lastResetDate !== new Date().toISOString().split('T')[0]) {
@@ -478,9 +494,49 @@ async function traderLoop() {
     }
 
     // 2. KIỂM TRA TRẠNG THÁI VỊ THẾ VÀ COOLDOWN
-    const pos = await ex.fetchPositions([PAIR]);
-    botState.inPosition = pos.some(p => Math.abs(parseFloat(p.info.size || (p as any).contracts || 0)) > 0);
-    if (botState.inPosition || Date.now() - botState.lastTradeTime < COOLDOWN_MS) { setTimeout(traderLoop, 10000); return; }
+    if (IS_LIVE_TRADING_ENABLED) {
+      const pos = await ex.fetchPositions([PAIR]);
+      botState.inPosition = pos.some(p => Math.abs(parseFloat(p.info.size || (p as any).contracts || 0)) > 0);
+    } else {
+      // PAPER POSITION TRACKING
+      if (paperPosition) {
+        const lastCandle = (await ex.fetchOHLCV(PAIR, TIMEFRAME, undefined, 1))[0];
+        const [, , cH, cL, cC] = lastCandle;
+        const currentPrice = cC;
+        let closed = false;
+        let status: "WIN" | "LOSS" = "WIN";
+
+        if (paperPosition.type === "LONG") {
+          if (cL <= paperPosition.sl) { closed = true; status = "LOSS"; }
+          else if (cH >= paperPosition.tp) { closed = true; status = "WIN"; }
+        } else {
+          if (cH <= paperPosition.tp) { closed = true; status = "WIN"; }
+          else if (cL >= paperPosition.sl) { closed = true; status = "LOSS"; }
+        }
+
+        if (closed) {
+          const pnlR = status === "WIN" ? RR : -1.0;
+          const pnlDollar = paperPosition.size * pnlR;
+          paperBalance += pnlDollar;
+          const vnTime = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
+          
+          await sendTelegram(`✅ [PAPER CLOSED] ${status === "WIN" ? "CHỐT LỜI" : "CẮT LỖ"}\n` +
+            `💰 PnL: ${pnlDollar.toFixed(2)}$ (${pnlR}R)\n` +
+            `🎯 Entry: ${paperPosition.entry.toFixed(2)} | Exit: ${status === "WIN" ? paperPosition.tp.toFixed(2) : paperPosition.sl.toFixed(2)}\n` +
+            `🏦 Số dư: ${paperBalance.toFixed(2)}$\n` +
+            `⏰ Giờ VN: ${vnTime}`);
+          
+          paperPosition = null;
+          botState.lastTradeTime = Date.now();
+        }
+      }
+      botState.inPosition = !!paperPosition;
+    }
+
+    if (botState.inPosition || Date.now() - botState.lastTradeTime < COOLDOWN_MS) { 
+      setTimeout(traderLoop, 10000); 
+      return; 
+    }
 
     // 3. LẤY DỮ LIỆU NẾN (OHLCV)
     const bars = await ex.fetchOHLCV(PAIR, TIMEFRAME, undefined, 100);
@@ -559,9 +615,28 @@ async function traderLoop() {
       botState.aiReasoning = `Tín hiệu TA: ${sig} tại ${e.toFixed(2)} (Bỏ qua AI để tối ưu tốc độ)`;
       
       if (!IS_LIVE_TRADING_ENABLED) { 
-        // Chế độ Trade thử nghiệm (Paper Trading)
+        // Chế độ Trade thử nghiệm (Paper Trading) logic nâng cao
+        const riskAmount = paperBalance * RISK_PER_TRADE;
+        const stopLossDistance = Math.abs(e - sl);
+        const positionSize = riskAmount; // Đơn giản hóa: Size tính theo USD Risk
+
+        paperPosition = {
+          type: sig,
+          entry: e,
+          sl: sl,
+          tp: tp,
+          size: positionSize,
+          startTime: Date.now()
+        };
+
+        const vnTime = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
         botState.lastTradeTime = Date.now(); 
-        sendTelegram(`🚀 [SIGNAL] ${sig} Detected!\nEntry: ${e.toFixed(2)}\nSL: ${sl.toFixed(2)}\nTP: ${tp.toFixed(2)}`); 
+
+        await sendTelegram(`🚀 [PAPER SIGNAL] ${sig} Detected!\n` +
+          `🎯 Entry: ${e.toFixed(2)}\n` +
+          `🛑 SL: ${sl.toFixed(2)} | 💎 TP: ${tp.toFixed(2)}\n` +
+          `🏦 Balance: ${paperBalance.toFixed(2)}$\n` +
+          `⏰ Giờ VN: ${vnTime}`); 
       } else {
         // Chế độ Trade thật trên sàn
         try {
