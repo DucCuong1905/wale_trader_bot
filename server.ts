@@ -284,18 +284,19 @@ function calculateATR(bars: any[], period: number = 14) {
 }
 
 function detectWhaleSweep(bars: any[]) {
-  if (bars.length < 50) return { sweepHigh: false, sweepLow: false };
+  if (bars.length < 50) return { sweepHigh: false, sweepLow: false, displacementBullish: false, displacementBearish: false, volConfirm: false, low: 0, high: 0 };
   
   const current = bars[bars.length - 1];
   const [,, h, l, c, v] = current;
   const o = current[1];
   const totalSize = h - l;
-  if (totalSize === 0) return { sweepHigh: false, sweepLow: false };
+  if (totalSize === 0) return { sweepHigh: false, sweepLow: false, displacementBullish: false, displacementBearish: false, volConfirm: false, low: l, high: h };
 
-  // 1. LIQUIDITY SWEEP ROLE (Lookback 30)
-  const lookbackBars = bars.slice(-31, -1);
-  const lowestLow30 = Math.min(...lookbackBars.map(b => b[3]));
-  const highestHigh30 = Math.max(...lookbackBars.map(b => b[2]));
+  // 1. LIQUIDITY SWEEP ROLE (Lookback 20 - Phù hợp M5 hơn)
+  const lookbackPeriod = 20;
+  const lookbackBars = bars.slice(-(lookbackPeriod + 1), -1);
+  const lowestLowLevel = Math.min(...lookbackBars.map(b => b[3]));
+  const highestHighLevel = Math.max(...lookbackBars.map(b => b[2]));
   const prevLow = bars[bars.length - 2][3];
   const prevHigh = bars[bars.length - 2][2];
 
@@ -303,20 +304,20 @@ function detectWhaleSweep(bars: any[]) {
   const lowerWick = Math.min(o, c) - l;
   const upperWick = h - Math.max(o, c);
 
-  const sweepLow = l < lowestLow30 && c > prevLow && lowerWick > body * 1.5;
-  const sweepHigh = h > highestHigh30 && c < prevHigh && upperWick > body * 1.5;
+  const sweepLow = l < lowestLowLevel && c > prevLow && lowerWick > body * 0.8;
+  const sweepHigh = h > highestHighLevel && c < prevHigh && upperWick > body * 0.8;
 
   // 2. DISPLACEMENT ROLE
   const bodySizes = bars.slice(-16, -1).map(b => Math.abs(b[4] - b[1]));
   const avgBody = bodySizes.reduce((a, b) => a + b, 0) / bodySizes.length;
   
-  const displacementBullish = body > avgBody * 1.2 && (c - l) / totalSize > 0.7;
-  const displacementBearish = body > avgBody * 1.2 && (h - c) / totalSize > 0.7;
+  const displacementBullish = body > avgBody * 1.1 && (c - l) / (totalSize || 1) > 0.65;
+  const displacementBearish = body > avgBody * 1.1 && (h - c) / (totalSize || 1) > 0.65;
 
   // 3. VOLUME ROLE
   const volumes = bars.slice(-21, -1).map(b => b[5]);
   const avgVol = volumes.reduce((a, b) => a + b, 0) / volumes.length;
-  const volConfirm = v > avgVol * 1.3;
+  const volConfirm = v > avgVol * 1.2;
 
   return {
     sweepLow,
@@ -324,7 +325,6 @@ function detectWhaleSweep(bars: any[]) {
     displacementBullish,
     displacementBearish,
     volConfirm,
-    price: c,
     low: l,
     high: h
   };
@@ -443,11 +443,11 @@ async function traderLoop() {
     let sig: "LONG" | "SHORT" | null = null;
     
     // LONG ENTRY FLOW
-    if (currentPrice > vwma && slope > 0 && distance < 0.004 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adx.adx > 18) {
+    if (currentPrice > vwma && slope > 0 && distance < 0.006 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adx.adx > 18) {
       sig = "LONG";
     }
     // SHORT ENTRY FLOW
-    if (currentPrice < vwma && slope < 0 && distance < 0.004 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adx.adx > 18) {
+    if (currentPrice < vwma && slope < 0 && distance < 0.006 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adx.adx > 18) {
       sig = "SHORT";
     }
 
