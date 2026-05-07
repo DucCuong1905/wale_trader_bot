@@ -48,14 +48,14 @@ const ai = new GoogleGenAI({ apiKey: aiKey });
 const modelName = "gemini-3-flash-preview"; 
 
 // --- CẤU HÌNH GIAO DỊCH ---
-const PAIR = "BTC/USDT:USDT"; 
-const SYMBOL_ID = "btcusdt"; 
-const TIMEFRAME = "5m"; 
-const IS_LIVE_TRADING_ENABLED = false; 
-const RISK_PER_TRADE = 0.01; // 1% theo yêu cầu mới
-const RR = 1.2; 
-const COOLDOWN_MS = 30000; 
-const MAX_DAILY_LOSS = 0.03; 
+const PAIR = "BTC/USDT:USDT"; // Cặp giao dịch (Futures)
+const SYMBOL_ID = "btcusdt"; // ID ký hiệu cho WebSocket
+const TIMEFRAME = "5m"; // Khung thời gian nến (5 phút)
+const IS_LIVE_TRADING_ENABLED = false; // Chế độ giao dịch thật (true = bật, false = test)
+const RISK_PER_TRADE = 0.01; // Rủi ro trên mỗi lệnh (1% tài khoản)
+const RR = 1.2; // Tỷ lệ Risk/Reward (Rủi ro/Lợi nhuận)
+const COOLDOWN_MS = 30000; // Thời gian chờ giữa các lệnh (30 giây)
+const MAX_DAILY_LOSS = 0.03; // Giới hạn lỗ tối đa trong ngày (3%)
 
 // --- PERSISTENCE ---
 const DATA_DIR = path.join(process.cwd(), "data");
@@ -136,7 +136,14 @@ let botState = {
   latestSweepCandle: -1,
 };
 
-// --- AI ANALYSIS ---
+/**
+ * Hàm lấy phân tích từ AI Gemini để xác nhận tín hiệu giao dịch.
+ * @param signal Loại tín hiệu (LONG/SHORT)
+ * @param lastPrice Giá hiện tại
+ * @param obRatio Tỷ lệ Orderbook (Mua/Bán)
+ * @param bars Dữ liệu nến gần đây
+ * @param touches Số lần chạm vùng thanh khoản
+ */
 async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number, bars: any[], touches?: number) {
   const maxRetriesPerModel = 2;
   const modelsToTry = ["gemini-3-flash-preview", "gemini-3.1-flash-lite-preview", "gemini-3.1-pro-preview"]; 
@@ -196,6 +203,9 @@ Trả về duy nhất JSON với format: {"decision": "CONFIRM" hoặc "REJECT",
 }
 
 // --- HELPERS ---
+/**
+ * Gửi thông báo qua Telegram.
+ */
 async function sendTelegram(msg: string) {
   const token = getEnv("TELEGRAM_BOT_TOKEN");
   const chatId = getEnv("TELEGRAM_CHAT_ID");
@@ -211,6 +221,9 @@ async function sendTelegram(msg: string) {
 }
 
 let exchange: ccxt.binance | null = null;
+/**
+ * Khởi tạo hoặc lấy đối tượng kết nối với sàn Binance.
+ */
 function getExchange() {
   if (!exchange) {
     const apiKey = getEnv("BINANCE_API_KEY");
@@ -284,37 +297,43 @@ function calculateATR(bars: any[], period: number = 14) {
   return trs.slice(-period).reduce((a, b) => a + b, 0) / period;
 }
 
+/**
+ * Phát hiện hành động quét thanh khoản (Whale Sweep).
+ * Sử dụng logic 2 nến: Nến quét (n-2) và nến xác nhận (n-1).
+ */
 function detectWhaleSweep(bars: any[]) {
   if (bars.length < 15) return { sweepLow: false, sweepHigh: false };
   
-  const sweepCandle = bars[bars.length - 2];
-  const confirmCandle = bars[bars.length - 1];
+  const sweepCandle = bars[bars.length - 2]; // Nến quét thanh khoản
+  const confirmCandle = bars[bars.length - 1]; // Nến xác nhận (Displacement)
 
   const [, sO, sH, sL, sC] = sweepCandle;
   const [, cO, cH, cL, cC, cV] = confirmCandle;
 
-  // 1. SWEEP LOGIC (Local Swing Sweep - 5 nến trước nến quét)
+  // 1. LOGIC QUÉT THANH KHOẢN (Local Swing Sweep - 5 nến trước nến quét)
   const prev5Bars = bars.slice(bars.length - 7, bars.length - 2);
   const localLow = Math.min(...prev5Bars.map(b => b[3]));
   const localHigh = Math.max(...prev5Bars.map(b => b[2]));
 
+  // Quét đáy: Râu nến quét thấp hơn đáy cũ nhưng đóng cửa trên đáy cũ
   const sweepLow = sL < localLow && sC > localLow;
+  // Quét đỉnh: Râu nến quét cao hơn đỉnh cũ nhưng đóng cửa dưới đỉnh cũ
   const sweepHigh = sH > localHigh && sC < localHigh;
 
-  // 2. DISPLACEMENT ROLE (Nến xác nhận)
+  // 2. VAI TRÒ XÁC NHẬN (Displacement - Thể hiện lực đẩy mạnh)
   const body = Math.abs(cC - cO);
   const totalSize = cH - cL || 1;
   const bodySizes = bars.slice(-16, -1).map(b => Math.abs(b[4] - b[1]));
   const avgBody = bodySizes.reduce((a, b) => a + b, 0) / bodySizes.length;
   
-  // body > avgBody * 1.2
+  // Nến xác nhận phải có thân nến lớn (body > 1.2 lần trung bình) và chiếm phần lớn cây nến (> 70%)
   const displacementBullish = body > avgBody * 1.2 && (cC - cL) / totalSize > 0.7;
   const displacementBearish = body > avgBody * 1.2 && (cH - cC) / totalSize > 0.7;
 
-  // 3. VOLUME ROLE
+  // 3. VAI TRÒ KHỐI LƯỢNG (Volume)
   const volumes = bars.slice(-21, -1).map(b => b[5]);
   const avgVol = volumes.reduce((a, b) => a + b, 0) / volumes.length;
-  // cV > avgVol
+  // Khối lượng của nến xác nhận phải cao hơn trung bình (cV > avgVol)
   const volConfirm = cV > avgVol;
 
   return {
@@ -403,86 +422,129 @@ function startWS() {
   ws.on('close', () => { botState.isWsConnected = false; setTimeout(startWS, 5000); });
 }
 
+/**
+ * Vòng lặp chính của Bot: Kiểm tra nến, tín hiệu và thực hiện giao dịch.
+ */
 async function traderLoop() {
   const ex = getExchange(); if (!ex) { setTimeout(traderLoop, 10000); return; }
   try {
+    // 1. KIỂM TRA SỐ DƯ VÀ QUẢN LÝ RỦI RO NGÀY
     const bal = await ex.fetchBalance();
     const curr = bal.USDT ? (bal.USDT as any).total : 0;
     botState.balance = curr;
+    // Tự động reset số dư gốc mỗi ngày
     if (botState.lastResetDate !== new Date().toISOString().split('T')[0]) {
       botState.dailyStartingBalance = curr; botState.lastResetDate = new Date().toISOString().split('T')[0];
     }
+    // Dừng nếu lỗ quá 3% trong ngày
     if ((curr - botState.dailyStartingBalance) / (botState.dailyStartingBalance || 1) <= -MAX_DAILY_LOSS) {
       setTimeout(traderLoop, 15 * 60000); return;
     }
+
+    // 2. KIỂM TRA TRẠNG THÁI VỊ THẾ VÀ COOLDOWN
     const pos = await ex.fetchPositions([PAIR]);
     botState.inPosition = pos.some(p => Math.abs(parseFloat(p.info.size || (p as any).contracts || 0)) > 0);
     if (botState.inPosition || Date.now() - botState.lastTradeTime < COOLDOWN_MS) { setTimeout(traderLoop, 10000); return; }
 
+    // 3. LẤY DỮ LIỆU NẾN (OHLCV)
     const bars = await ex.fetchOHLCV(PAIR, TIMEFRAME, undefined, 100);
     if (!bars || bars.length < 50) { setTimeout(traderLoop, 10000); return; }
 
     const lastCandle = bars[bars.length - 1];
     const lastCandleTime = lastCandle[0];
 
-    // Chỉ phân tích khi có nến mới đóng
+    // Chỉ phân tích khi có nến mới đóng (M5)
     if (lastCandleTime <= botState.lastProcessedCandleTime) {
       setTimeout(traderLoop, 5000);
       return;
     }
     botState.lastProcessedCandleTime = lastCandleTime;
 
+    // 4. TÍNH TOÁN CÁC CHỈ BÁO KỸ THUẬT
     const adx = calcADX(bars, 14); botState.adx = adx.adx; botState.plusDI = adx.pDI; botState.minusDI = adx.mDI;
     const rsi = calculateRSI(bars.map(b => b[4]), 14);
-    const vwma = calculateVWMA(bars, 20);
+    const vwma = calculateVWMA(bars, 20); // VWMA 20 phiên
     const vwmaPrev = calculateVWMA(bars.slice(0, -1), 20);
-    const slope = vwma - vwmaPrev;
+    const slope = vwma - vwmaPrev; // Độ dốc của VWMA (Slope)
     
-    // DISTANCE TO VWMA
     const currentPrice = bars[bars.length - 1][4];
-    const distance = Math.abs(currentPrice - vwma) / vwma;
+    const distance = Math.abs(currentPrice - vwma) / vwma; // Khoảng cách giá đến VWMA
 
     const sweep = detectWhaleSweep(bars);
     const atr = calculateATR(bars, 14);
 
     let sig: "LONG" | "SHORT" | null = null;
     
-    // LONG ENTRY FLOW
-    if (currentPrice > vwma && slope > 0 && distance < 0.01 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adx.adx > 15 && adx.pDI > adx.mDI) {
+    // ========================================================
+    // 5. ĐIỀU KIỆN VÀO LỆNH LONG (MUA)
+    // ========================================================
+    if (
+      currentPrice > vwma &&             // 1. Giá nằm trên đường VWMA 20
+      slope > 0 &&                       // 2. Xu hướng VWMA đang đi lên (Slope dương)
+      distance < 0.01 &&                 // 3. Giá không quá xa VWMA (tránh fomo)
+      sweep.sweepLow &&                  // 4. Có tín hiệu quét râu ở đáy (Liquidity Sweep Low)
+      sweep.displacementBullish &&       // 5. Có nến xác nhận tăng mạnh (Displacement)
+      sweep.volConfirm &&                // 6. Khối lượng nến xác nhận đủ lớn
+      adx.adx > 15 &&                    // 7. Độ mạnh xu hướng ADX > 15
+      adx.pDI > adx.mDI                  // 8. Phe mua mạnh hơn phe bán (+DI > -DI)
+    ) {
       sig = "LONG";
     }
-    // SHORT ENTRY FLOW
-    if (currentPrice < vwma && slope < 0 && distance < 0.01 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adx.adx > 15 && adx.mDI > adx.pDI) {
+
+    // ========================================================
+    // 6. ĐIỀU KIỆN VÀO LỆNH SHORT (BÁN)
+    // ========================================================
+    if (
+      currentPrice < vwma &&             // 1. Giá nằm dưới đường VWMA 20
+      slope < 0 &&                       // 2. Xu hướng VWMA đang đi xuống (Slope âm)
+      distance < 0.01 &&                 // 3. Giá không quá xa VWMA
+      sweep.sweepHigh &&                 // 4. Có tín hiệu quét râu ở đỉnh (Liquidity Sweep High)
+      sweep.displacementBearish &&       // 5. Có nến xác nhận giảm mạnh (Displacement)
+      sweep.volConfirm &&                // 6. Khối lượng nến xác nhận đủ lớn
+      adx.adx > 15 &&                    // 7. Độ mạnh xu hướng ADX > 15
+      adx.mDI > adx.pDI                  // 8. Phe bán mạnh hơn phe mua (-DI > +DI)
+    ) {
       sig = "SHORT";
     }
 
+    // 7. XỬ LÝ LỆNH VÀ KIỂM TRA AI
     if (sig) {
       const confirmRange = sweep.confirmHigh - sweep.confirmLow;
+      // Vào lệnh tại điểm hồi (Retracement 40% của nến xác nhận)
       const entryPrice = sig === "LONG" 
         ? sweep.confirmLow + confirmRange * 0.4 
         : sweep.confirmHigh - confirmRange * 0.4;
       
       const e = entryPrice;
+      // Stop Loss tại đáy/đỉnh râu quét +- một chút ATR
       const sl = sig === "LONG" ? (sweep.low - atr * 0.2) : (sweep.high + atr * 0.2);
       const tp = e + (e - sl > 0 ? (e - sl) * RR : (sl - e) * -RR);
+      
+      // Gọi AI Gemini để lọc nhiễu cuối cùng
       const aiEval = await getAIAnalysis(sig, e, botState.obRatioEMA, bars);
       botState.aiReasoning = aiEval.reason;
+      
       if (aiEval.decision === "CONFIRM") {
         if (!IS_LIVE_TRADING_ENABLED) { 
+          // Chế độ Trade thử nghiệm (Paper Trading)
           botState.lastTradeTime = Date.now(); 
           sendTelegram(`[PAPER] ${sig} at ${e}`); 
         } else {
-          // Live order logic here (simplified)
+          // Chế độ Trade thật trên sàn
           try {
             const size = (botState.balance * RISK_PER_TRADE) / Math.abs(e - sl);
             const amt = ex.amountToPrecision(PAIR, Math.max(size, 0.001));
             await ex.createMarketOrder(PAIR, sig === 'LONG' ? 'buy' : 'sell', parseFloat(amt));
             botState.lastTradeTime = Date.now();
-          } catch (err) {}
+          } catch (err) {
+            console.error("Order Error:", err);
+          }
         }
       }
     }
-  } catch (e) {}
+  } catch (e) {
+    console.error("Trader Loop Error:", e);
+  }
   setTimeout(traderLoop, 5000);
 }
 
