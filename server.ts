@@ -52,7 +52,7 @@ const PAIR = "BTC/USDT:USDT";
 const SYMBOL_ID = "btcusdt"; 
 const TIMEFRAME = "5m"; 
 const IS_LIVE_TRADING_ENABLED = false; 
-const RISK_PER_TRADE = 0.01; 
+const RISK_PER_TRADE = 0.005; // 0.5% theo yêu cầu mới
 const RR = 1.5; 
 const COOLDOWN_MS = 30000; 
 const MAX_DAILY_LOSS = 0.03; 
@@ -273,46 +273,61 @@ function getLiquidityZones(bars: any[], type: 'high' | 'low') {
   return zones.filter(z => z.touches >= 2).sort((a, b) => (b.touches * 10 + b.lastTouch) - (a.touches * 10 + a.lastTouch));
 }
 
+function calculateATR(bars: any[], period: number = 14) {
+  if (bars.length < period + 1) return 0;
+  let trs: number[] = [];
+  for (let i = 1; i < bars.length; i++) {
+    const h = bars[i][2], l = bars[i][3], pc = bars[i-1][4];
+    trs.push(Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)));
+  }
+  return trs.slice(-period).reduce((a, b) => a + b, 0) / period;
+}
+
 function detectWhaleSweep(bars: any[]) {
   if (bars.length < 50) return { sweepHigh: false, sweepLow: false };
-  const historicalBars = bars.slice(0, -1);
-  const highZones = getLiquidityZones(historicalBars, 'high');
-  const lowZones = getLiquidityZones(historicalBars, 'low');
-  const currentBar = bars[bars.length - 1];
-  const [, o, h, l, c, v] = currentBar;
+  
+  const current = bars[bars.length - 1];
+  const [,, h, l, c, v] = current;
+  const o = current[1];
   const totalSize = h - l;
   if (totalSize === 0) return { sweepHigh: false, sweepLow: false };
 
-  const avgVol = bars.slice(-21, -1).reduce((sum, b) => sum + b[5], 0) / 20;
-  const volRatio = v / avgVol;
-  const isClimaxVol = volRatio >= 1.35;
-  const upperWickRatio = (h - Math.max(o, c)) / totalSize;
-  const lowerWickRatio = (Math.min(o, c) - l) / totalSize;
-  const bodyRatio = Math.abs(c - o) / totalSize;
-  const bullishDisplacement = c > o && bodyRatio >= 0.5;
-  const bearishDisplacement = c < o && bodyRatio >= 0.5;
-  const avgRange = getAvgRange(bars, 20);
-  const vwma20 = calculateVWMA(historicalBars, 20);
-  const bullishTrend = c > vwma20;
-  const bearishTrend = c < vwma20;
+  // 1. LIQUIDITY SWEEP ROLE (Lookback 30)
+  const lookbackBars = bars.slice(-31, -1);
+  const lowestLow30 = Math.min(...lookbackBars.map(b => b[3]));
+  const highestHigh30 = Math.max(...lookbackBars.map(b => b[2]));
+  const prevLow = bars[bars.length - 2][3];
+  const prevHigh = bars[bars.length - 2][2];
 
-  for (const zone of lowZones) {
-    if (l < zone.price && c > zone.price && (zone.price - l) >= avgRange * 0.12 && lowerWickRatio >= 0.4 && bullishDisplacement && isClimaxVol && bullishTrend) {
-      return { sweepLow: true, sweepHigh: false, direction: 'LONG', zone: zone.price, touches: zone.touches, volumeRatio: volRatio };
-    }
-  }
-  for (const zone of highZones) {
-    if (h > zone.price && c < zone.price && (h - zone.price) >= avgRange * 0.12 && upperWickRatio >= 0.4 && bearishDisplacement && isClimaxVol && bearishTrend) {
-      return { sweepLow: false, sweepHigh: true, direction: 'SHORT', zone: zone.price, touches: zone.touches, volumeRatio: volRatio };
-    }
-  }
-  const swingLookback = 24;
-  const sLow = Math.min(...bars.slice(-swingLookback - 1, -1).map(b => b[3]));
-  const sHigh = Math.max(...bars.slice(-swingLookback - 1, -1).map(b => b[2]));
-  if (isClimaxVol && bullishTrend && l < sLow && c > sLow && lowerWickRatio >= 0.45 && bullishDisplacement) return { sweepLow: true, sweepHigh: false, touches: 1 };
-  if (isClimaxVol && bearishTrend && h > sHigh && c < sHigh && upperWickRatio >= 0.45 && bearishDisplacement) return { sweepLow: false, sweepHigh: true, touches: 1 };
+  const body = Math.abs(c - o);
+  const lowerWick = Math.min(o, c) - l;
+  const upperWick = h - Math.max(o, c);
 
-  return { sweepHigh: false, sweepLow: false };
+  const sweepLow = l < lowestLow30 && c > prevLow && lowerWick > body * 1.5;
+  const sweepHigh = h > highestHigh30 && c < prevHigh && upperWick > body * 1.5;
+
+  // 2. DISPLACEMENT ROLE
+  const bodySizes = bars.slice(-16, -1).map(b => Math.abs(b[4] - b[1]));
+  const avgBody = bodySizes.reduce((a, b) => a + b, 0) / bodySizes.length;
+  
+  const displacementBullish = body > avgBody * 1.2 && (c - l) / totalSize > 0.7;
+  const displacementBearish = body > avgBody * 1.2 && (h - c) / totalSize > 0.7;
+
+  // 3. VOLUME ROLE
+  const volumes = bars.slice(-21, -1).map(b => b[5]);
+  const avgVol = volumes.reduce((a, b) => a + b, 0) / volumes.length;
+  const volConfirm = v > avgVol * 1.3;
+
+  return {
+    sweepLow,
+    sweepHigh,
+    displacementBullish,
+    displacementBearish,
+    volConfirm,
+    price: c,
+    low: l,
+    high: h
+  };
 }
 
 function calcADX(ohlcv: any[], period: number = 14) {
@@ -409,6 +424,13 @@ async function traderLoop() {
     const adx = calcADX(bars, 14); botState.adx = adx.adx; botState.plusDI = adx.pDI; botState.minusDI = adx.mDI;
     const rsi = calculateRSI(bars.map(b => b[4]), 14);
     const vwma = calculateVWMA(bars, 20);
+    const vwmaPrev = calculateVWMA(bars.slice(0, -1), 20);
+    const slope = vwma - vwmaPrev;
+    
+    // DISTANCE TO VWMA
+    const currentPrice = bars[bars.length - 1][4];
+    const distance = Math.abs(currentPrice - vwma) / vwma;
+
     const sweep = detectWhaleSweep(bars);
     
     // Candle close constraint
@@ -416,24 +438,24 @@ async function traderLoop() {
     const sToClose = Math.floor((nextClose - Date.now()) / 1000);
     if (sToClose > 15) { setTimeout(traderLoop, 5000); return; }
 
-    // Ob Signal
-    const buyV = botState.recentWhaleTrades.filter(t => t.side === 'buy').reduce((s, t) => s + t.amount, 0);
-    const sellV = botState.recentWhaleTrades.filter(t => t.side === 'sell').reduce((s, t) => s + t.amount, 0);
-    const wNet = buyV - sellV;
-    let obSig: "BULL" | "BEAR" | null = null;
-    if (botState.obRatioEMA > 1.25 || (botState.obRatioEMA > 1.1 && wNet > 50000)) obSig = "BULL";
-    if (botState.obRatioEMA < 0.8 || (botState.obRatioEMA < 0.9 && wNet < -50000)) obSig = "BEAR";
+    const atr = calculateATR(bars, 14);
 
-    const trend = bars[bars.length - 1][4] > vwma ? "UP" : "DOWN";
     let sig: "LONG" | "SHORT" | null = null;
-    if (sweep.sweepLow && obSig === "BULL" && adx.adx > 20 && (sweep.touches || 0) >= 1 && trend === "UP" && rsi < 70) sig = "LONG";
-    if (sweep.sweepHigh && obSig === "BEAR" && adx.adx > 20 && (sweep.touches || 0) >= 1 && trend === "DOWN" && rsi > 30) sig = "SHORT";
+    
+    // LONG ENTRY FLOW
+    if (currentPrice > vwma && slope > 0 && distance < 0.004 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adx.adx > 18) {
+      sig = "LONG";
+    }
+    // SHORT ENTRY FLOW
+    if (currentPrice < vwma && slope < 0 && distance < 0.004 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adx.adx > 18) {
+      sig = "SHORT";
+    }
 
     if (sig) {
-      const e = botState.lastPrice, range = getAvgRange(bars, 14);
-      const sl = sig === "LONG" ? e - range : e + range;
-      const tp = e + (e - sl) * RR;
-      const aiEval = await getAIAnalysis(sig, e, botState.obRatioEMA, bars, sweep.touches);
+      const e = botState.lastPrice;
+      const sl = sig === "LONG" ? (sweep.low - atr * 0.2) : (sweep.high + atr * 0.2);
+      const tp = e + (e - sl > 0 ? (e - sl) * RR : (sl - e) * -RR);
+      const aiEval = await getAIAnalysis(sig, e, botState.obRatioEMA, bars);
       botState.aiReasoning = aiEval.reason;
       if (aiEval.decision === "CONFIRM") {
         if (!IS_LIVE_TRADING_ENABLED) { 

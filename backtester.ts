@@ -24,11 +24,11 @@ const modelName = "gemini-2.5-flash";
 
 const PAIR = "BTC/USDT";
 const TIMEFRAME = "5m";
-const START_DATE = "2025-01-01T00:00:00Z"; 
-const END_DATE = "2026-03-31T23:59:59Z";
+const START_DATE = "2026-03-31T00:00:00Z"; 
+const END_DATE = "2026-04-30T23:59:59Z";
 const RR = 1.5; 
 const INITIAL_BALANCE = 2000;
-const RISK_PER_TRADE = 0.01; 
+const RISK_PER_TRADE = 0.005; // 0.5%
 
 interface BacktestResult {
   totalTrades: number;
@@ -120,73 +120,73 @@ function getLiquidityZones(bars: any[], type: 'high' | 'low') {
   });
 }
 
+function calculateATR(bars: any[], period: number = 14) {
+  if (bars.length < period + 1) return 0;
+  let trs: number[] = [];
+  for (let i = 1; i < bars.length; i++) {
+    const h = bars[i][2], l = bars[i][3], pc = bars[i-1][4];
+    trs.push(Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)));
+  }
+  return trs.slice(-period).reduce((a, b) => a + b, 0) / period;
+}
+
 function detectSweep(bars: any[]) {
-  if (bars.length < 50) return { sweepHigh: false, sweepLow: false };
+  if (bars.length < 50) return { sweepHigh: false, sweepLow: false, displacementBullish: false, displacementBearish: false, volConfirm: false, low: 0, high: 0 };
   
-  const historicalBars = bars.slice(0, -1);
-  const highZones = getLiquidityZones(historicalBars, 'high');
-  const lowZones = getLiquidityZones(historicalBars, 'low');
-  
-  const currentBar = bars[bars.length - 1];
-  const [, o, h, l, c, v] = currentBar;
+  const current = bars[bars.length - 1];
+  const [,, h, l, c, v] = current;
+  const o = current[1];
   const totalSize = h - l;
-  if (totalSize === 0) return { sweepHigh: false, sweepLow: false };
+  if (totalSize === 0) return { sweepHigh: false, sweepLow: false, displacementBullish: false, displacementBearish: false, volConfirm: false, low: l, high: h };
 
-  const avgVol = bars.slice(-21, -1).reduce((sum, b) => sum + b[5], 0) / 20;
-  const volRatio = v / avgVol;
-  const isClimaxVol = volRatio >= 1.35;
-
-  const upperWick = h - Math.max(o, c);
-  const lowerWick = Math.min(o, c) - l;
-  const upperWickRatio = upperWick / totalSize;
-  const lowerWickRatio = lowerWick / totalSize;
+  // 1. LIQUIDITY SWEEP ROLE (Lookback 30)
+  const lookbackBars = bars.slice(-31, -1);
+  const lowestLow30 = Math.min(...lookbackBars.map(b => b[3]));
+  const highestHigh30 = Math.max(...lookbackBars.map(b => b[2]));
+  const prevLow = bars[bars.length - 2][3];
+  const prevHigh = bars[bars.length - 2][2];
 
   const body = Math.abs(c - o);
-  const bodyRatio = body / totalSize;
-  const bullishDisplacement = c > o && bodyRatio >= 0.5;
-  const bearishDisplacement = c < o && bodyRatio >= 0.5;
+  const lowerWick = Math.min(o, c) - l;
+  const upperWick = h - Math.max(o, c);
 
-  const avgRange = getAvgRange(bars, 20);
-  const vwma20 = calculateVWMA(historicalBars, 20);
-  const bullishTrend = c > vwma20;
-  const bearishTrend = c < vwma20;
+  const sweepLow = l < lowestLow30 && c > prevLow && lowerWick > body * 1.5;
+  const sweepHigh = h > highestHigh30 && c < prevHigh && upperWick > body * 1.5;
 
-  // SWEEP LOW
-  for (const zone of lowZones) {
-    const sweepDepth = zone.price - l;
-    const validSweepDepth = sweepDepth >= avgRange * 0.12;
-    const reclaim = l < zone.price && c > zone.price;
+  // 2. DISPLACEMENT ROLE
+  const bodySizes = bars.slice(-16, -1).map(b => Math.abs(b[4] - b[1]));
+  const avgBody = bodySizes.reduce((a, b) => a + b, 0) / bodySizes.length;
+  
+  const displacementBullish = body > avgBody * 1.2 && (c - l) / (totalSize || 1) > 0.7;
+  const displacementBearish = body > avgBody * 1.2 && (h - c) / (totalSize || 1) > 0.7;
 
-    if (reclaim && validSweepDepth && lowerWickRatio >= 0.4 && bullishDisplacement && isClimaxVol && bullishTrend) {
-      return { sweepLow: true, sweepHigh: false, touches: zone.touches };
-    }
+  // 3. VOLUME ROLE
+  const volumes = bars.slice(-21, -1).map(b => b[5]);
+  const avgVol = volumes.reduce((a, b) => a + b, 0) / volumes.length;
+  const volConfirm = v > avgVol * 1.3;
+
+  return {
+    sweepLow,
+    sweepHigh,
+    displacementBullish,
+    displacementBearish,
+    volConfirm,
+    low: l,
+    high: h
+  };
+}
+
+function calculateVWMA(bars: any[], period: number) {
+  if (bars.length < period) return bars[bars.length - 1][4];
+  let pvSum = 0;
+  let volSum = 0;
+  for (let i = bars.length - period; i < bars.length; i++) {
+    const price = bars[i][4];
+    const volume = bars[i][5];
+    pvSum += price * volume;
+    volSum += volume;
   }
-
-  // SWEEP HIGH
-  for (const zone of highZones) {
-    const sweepDepth = h - zone.price;
-    const validSweepDepth = sweepDepth >= avgRange * 0.12;
-    const reclaim = h > zone.price && c < zone.price;
-
-    if (reclaim && validSweepDepth && upperWickRatio >= 0.4 && bearishDisplacement && isClimaxVol && bearishTrend) {
-      return { sweepLow: false, sweepHigh: true, touches: zone.touches };
-    }
-  }
-
-  // FALLBACK SWING SWEEP (1-touch)
-  const swingLookback = 24;
-  const swingLow = Math.min(...bars.slice(-swingLookback - 1, -1).map(b => b[3]));
-  const swingHigh = Math.max(...bars.slice(-swingLookback - 1, -1).map(b => b[2]));
-
-  if (isClimaxVol && bullishTrend && l < swingLow && c > swingLow && lowerWickRatio >= 0.45 && bullishDisplacement) {
-    return { sweepLow: true, sweepHigh: false, touches: 1 };
-  }
-
-  if (isClimaxVol && bearishTrend && h > swingHigh && c < swingHigh && upperWickRatio >= 0.45 && bearishDisplacement) {
-    return { sweepLow: false, sweepHigh: true, touches: 1 };
-  }
-
-  return { sweepHigh: false, sweepLow: false };
+  return volSum === 0 ? bars[bars.length - 1][4] : pvSum / volSum;
 }
 
 function calcADX(ohlcv: any[]) {
@@ -218,8 +218,6 @@ function calcADX(ohlcv: any[]) {
   return adxList[adxList.length - 1];
 }
 
-
-
 function calculateRSI(prices: number[], period: number) {
   if (prices.length < period + 1) return 50;
   let gains = 0;
@@ -234,19 +232,6 @@ function calculateRSI(prices: number[], period: number) {
   if (losses === 0) return 100;
   const rs = (gains / period) / (losses / period);
   return 100 - (100 / (1 + rs));
-}
-
-function calculateVWMA(bars: any[], period: number) {
-  if (bars.length < period) return bars[bars.length - 1][4];
-  let pvSum = 0;
-  let volSum = 0;
-  for (let i = bars.length - period; i < bars.length; i++) {
-    const price = bars[i][4];
-    const volume = bars[i][5];
-    pvSum += price * volume;
-    volSum += volume;
-  }
-  return volSum === 0 ? bars[bars.length - 1][4] : pvSum / volSum;
 }
 
 async function getAIBacktestDecision(signal: string, lastPrice: number, bars: any[]) {
@@ -290,26 +275,31 @@ export async function runBacktest(onProgress?: (p: number) => void) {
     }
 
     const window = allKlines.slice(0, i + 1);
-    const sweep = detectSweep(window);
+    const currentPrice = allKlines[i][4];
+    
+    // NEW LOGIC
+    const vwma = calculateVWMA(window, 20);
+    const vwmaPrev = calculateVWMA(window.slice(0, -1), 20);
+    const slope = vwma - vwmaPrev;
+    const distance = Math.abs(currentPrice - vwma) / vwma;
+    
     const adx = calcADX(window);
-    const prices = window.map(b => b[4]);
-    const rsi = calculateRSI(prices, 14);
+    const sweep = detectSweep(window);
+    const atr = calculateATR(window, 14);
 
-    // Cấp lỏng điều kiện filter bên ngoài vì detectSweep đã check Volume, Trend, Displacement rồi
-    const isLong = sweep.sweepLow && adx > 20 && rsi < 75;
-    const isShort = sweep.sweepHigh && adx > 20 && rsi > 25;
+    let isLong = currentPrice > vwma && slope > 0 && distance < 0.004 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adx > 18;
+    let isShort = currentPrice < vwma && slope < 0 && distance < 0.004 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adx > 18;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
-      const entryPrice = allKlines[i][4];
+      const entryPrice = currentPrice;
       const time = new Date(allKlines[i][0]).toISOString();
       
       console.log(`🔍 Phát hiện tín hiệu ${type} tại ${time} ($${entryPrice}). (Bỏ qua AI Check)`);
       
-      // Giả lập Trade: SL/TP logic
-      const range = window.slice(-14).reduce((acc, b) => acc + (b[2] - b[3]), 0) / 14;
-        const sl = type === "LONG" ? entryPrice - range : entryPrice + range;
-        const tp = type === "LONG" ? entryPrice + range * RR : entryPrice - range * RR;
+      // SL: LONG = sweepLow - ATR*0.2 | SHORT = sweepHigh + ATR*0.2
+      const sl = type === "LONG" ? (sweep.low - atr * 0.2) : (sweep.high + atr * 0.2);
+      const tp = entryPrice + (entryPrice - sl > 0 ? (entryPrice - sl) * RR : (sl - entryPrice) * -RR);
         
         // Tìm kết quả trong các nến tiếp theo
         let exitPrice = 0;
