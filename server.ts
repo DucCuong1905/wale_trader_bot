@@ -507,7 +507,7 @@ async function traderLoop() {
       sig = "SHORT";
     }
 
-    // 7. XỬ LÝ LỆNH VÀ KIỂM TRA AI
+    // 7. XỬ LÝ LỆNH (BỎ QUA AI CHECK ĐỂ TRÁNH DELAY)
     if (sig) {
       const confirmRange = sweep.confirmHigh - sweep.confirmLow;
       // Vào lệnh tại điểm hồi (Retracement 40% của nến xác nhận)
@@ -520,25 +520,22 @@ async function traderLoop() {
       const sl = sig === "LONG" ? (sweep.low - atr * 0.2) : (sweep.high + atr * 0.2);
       const tp = e + (e - sl > 0 ? (e - sl) * RR : (sl - e) * -RR);
       
-      // Gọi AI Gemini để lọc nhiễu cuối cùng
-      const aiEval = await getAIAnalysis(sig, e, botState.obRatioEMA, bars);
-      botState.aiReasoning = aiEval.reason;
+      botState.aiReasoning = `Tín hiệu TA: ${sig} tại ${e.toFixed(2)} (Bỏ qua AI để tối ưu tốc độ)`;
       
-      if (aiEval.decision === "CONFIRM") {
-        if (!IS_LIVE_TRADING_ENABLED) { 
-          // Chế độ Trade thử nghiệm (Paper Trading)
-          botState.lastTradeTime = Date.now(); 
-          sendTelegram(`[PAPER] ${sig} at ${e}`); 
-        } else {
-          // Chế độ Trade thật trên sàn
-          try {
-            const size = (botState.balance * RISK_PER_TRADE) / Math.abs(e - sl);
-            const amt = ex.amountToPrecision(PAIR, Math.max(size, 0.001));
-            await ex.createMarketOrder(PAIR, sig === 'LONG' ? 'buy' : 'sell', parseFloat(amt));
-            botState.lastTradeTime = Date.now();
-          } catch (err) {
-            console.error("Order Error:", err);
-          }
+      if (!IS_LIVE_TRADING_ENABLED) { 
+        // Chế độ Trade thử nghiệm (Paper Trading)
+        botState.lastTradeTime = Date.now(); 
+        sendTelegram(`🚀 [SIGNAL] ${sig} Detected!\nEntry: ${e.toFixed(2)}\nSL: ${sl.toFixed(2)}\nTP: ${tp.toFixed(2)}`); 
+      } else {
+        // Chế độ Trade thật trên sàn
+        try {
+          const size = (botState.balance * RISK_PER_TRADE) / Math.abs(e - sl);
+          const amt = ex.amountToPrecision(PAIR, Math.max(size, 0.001));
+          await ex.createMarketOrder(PAIR, sig === 'LONG' ? 'buy' : 'sell', parseFloat(amt));
+          botState.lastTradeTime = Date.now();
+          sendTelegram(`⚡ [LIVE ORDER] ${sig} ${amt} BTC at ${e.toFixed(2)}`);
+        } catch (err) {
+          console.error("Order Error:", err);
         }
       }
     }
@@ -546,6 +543,47 @@ async function traderLoop() {
     console.error("Trader Loop Error:", e);
   }
   setTimeout(traderLoop, 5000);
+}
+
+/**
+ * AI News Watcher: Quét tin tức thế giới ảnh hưởng đến BTC mỗi giờ.
+ * Sử dụng Google Search Grounding để lấy thông tin thực tế.
+ */
+async function newsWatcherLoop() {
+  try {
+    const aiKey = getEnv("GEMINI_API_KEY");
+    if (!aiKey) return;
+
+    const genAI = new GoogleGenAI({ apiKey: aiKey });
+    // Dùng gemini-1.5-flash hoặc pro có hỗ trợ search
+    const model = genAI.getGenerativeModel({ 
+      model: "gemini-1.5-flash", 
+      tools: [{ googleSearch: {} }] as any 
+    });
+
+    const prompt = `Bạn là một chuyên gia phân tích tài chính vĩ mô. 
+    Hãy tìm kiếm tin tức thế giới mới nhất trong 1 giờ qua (kinh tế Mỹ, chính sách Fed, cá voi di chuyển, tin tức sàn giao dịch) có ảnh hưởng MẠNH đến Bitcoin.
+    
+    YÊU CẦU:
+    1. Nếu KHÔNG có tin gì đặc biệt quan trọng có khả năng thay đổi xu hướng, hãy trả về kết quả duy nhất là từ: "NONE".
+    2. Nếu CÓ tin quan trọng, hãy tóm tắt bằng TIẾNG VIỆT: Tên tin, Tác động (Xấu/Tốt), và mức độ ảnh hưởng (1-10).
+    
+    Chỉ trả về nội dung tóm tắt, không giải thích dài dòng.`;
+
+    const result = await model.generateContent(prompt);
+    const response = result.response.text().trim();
+
+    if (response !== "NONE" && response.length > 10) {
+      console.log("[NEWS WATCHER] Tin tức quan trọng phát hiện.");
+      await sendTelegram(`📰 **AI MACRO WATCHER**\n\n${response}`);
+    } else {
+      console.log("[NEWS WATCHER] Không có tin mới quan trọng.");
+    }
+  } catch (err) {
+    console.error("News Watcher Error:", err);
+  }
+  // Chạy lại sau 1 giờ
+  setTimeout(newsWatcherLoop, 3600000);
 }
 
 async function startServer() {
@@ -588,7 +626,12 @@ async function startServer() {
     if (fs.existsSync(dist)) { app.use(express.static(dist)); app.get("*", (req, res) => res.sendFile(path.join(dist, "index.html"))); }
   }
 
-  app.listen(3000, "0.0.0.0", () => { console.log(`[START] Server on http://localhost:3000`); startWS(); traderLoop(); });
+  app.listen(3000, "0.0.0.0", () => { 
+    console.log(`[START] Server on http://localhost:3000`); 
+    startWS(); 
+    traderLoop(); 
+    newsWatcherLoop(); // Bắt đầu loop tin tức
+  });
 }
 
 startServer();
