@@ -285,20 +285,18 @@ function calculateATR(bars: any[], period: number = 14) {
 }
 
 function detectWhaleSweep(bars: any[]) {
-  if (bars.length < 10) return { sweepLow: false, sweepHigh: false };
+  if (bars.length < 15) return { sweepLow: false, sweepHigh: false };
   
-  // Xác định nến quét (nến N-1 so với nến hiện tại)
-  // Trong logic 2 nến: nến N-2 là nến quét, nến N-1 là nến xác nhận (Displacement)
   const sweepCandle = bars[bars.length - 2];
   const confirmCandle = bars[bars.length - 1];
 
   const [, sO, sH, sL, sC] = sweepCandle;
   const [, cO, cH, cL, cC, cV] = confirmCandle;
 
-  // 1. SWEEP LOGIC (Local Swing Sweep - 3 nến trước nến quét)
-  const prev3Bars = bars.slice(bars.length - 5, bars.length - 2);
-  const localLow = Math.min(...prev3Bars.map(b => b[3]));
-  const localHigh = Math.max(...prev3Bars.map(b => b[2]));
+  // 1. SWEEP LOGIC (Local Swing Sweep - 5 nến trước nến quét)
+  const prev5Bars = bars.slice(bars.length - 7, bars.length - 2);
+  const localLow = Math.min(...prev5Bars.map(b => b[3]));
+  const localHigh = Math.max(...prev5Bars.map(b => b[2]));
 
   const sweepLow = sL < localLow && sC > localLow;
   const sweepHigh = sH > localHigh && sC < localHigh;
@@ -309,13 +307,15 @@ function detectWhaleSweep(bars: any[]) {
   const bodySizes = bars.slice(-16, -1).map(b => Math.abs(b[4] - b[1]));
   const avgBody = bodySizes.reduce((a, b) => a + b, 0) / bodySizes.length;
   
-  const displacementBullish = body > avgBody && (cC - cL) / totalSize > 0.7;
-  const displacementBearish = body > avgBody && (cH - cC) / totalSize > 0.7;
+  // body > avgBody * 1.2
+  const displacementBullish = body > avgBody * 1.2 && (cC - cL) / totalSize > 0.7;
+  const displacementBearish = body > avgBody * 1.2 && (cH - cC) / totalSize > 0.7;
 
   // 3. VOLUME ROLE
   const volumes = bars.slice(-21, -1).map(b => b[5]);
   const avgVol = volumes.reduce((a, b) => a + b, 0) / volumes.length;
-  const volConfirm = cV > avgVol * 1.05;
+  // cV > avgVol
+  const volConfirm = cV > avgVol;
 
   return {
     sweepLow,
@@ -324,7 +324,9 @@ function detectWhaleSweep(bars: any[]) {
     displacementBearish,
     volConfirm,
     low: sL,
-    high: sH
+    high: sH,
+    confirmHigh: cH,
+    confirmLow: cL
   };
 }
 
@@ -446,16 +448,21 @@ async function traderLoop() {
     let sig: "LONG" | "SHORT" | null = null;
     
     // LONG ENTRY FLOW
-    if (currentPrice > vwma && slope > 0 && distance < 0.01 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adx.adx > 15) {
+    if (currentPrice > vwma && slope > 0 && distance < 0.01 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adx.adx > 15 && adx.pDI > adx.mDI) {
       sig = "LONG";
     }
     // SHORT ENTRY FLOW
-    if (currentPrice < vwma && slope < 0 && distance < 0.01 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adx.adx > 15) {
+    if (currentPrice < vwma && slope < 0 && distance < 0.01 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adx.adx > 15 && adx.mDI > adx.pDI) {
       sig = "SHORT";
     }
 
     if (sig) {
-      const e = botState.lastPrice;
+      const confirmRange = sweep.confirmHigh - sweep.confirmLow;
+      const entryPrice = sig === "LONG" 
+        ? sweep.confirmLow + confirmRange * 0.4 
+        : sweep.confirmHigh - confirmRange * 0.4;
+      
+      const e = entryPrice;
       const sl = sig === "LONG" ? (sweep.low - atr * 0.2) : (sweep.high + atr * 0.2);
       const tp = e + (e - sl > 0 ? (e - sl) * RR : (sl - e) * -RR);
       const aiEval = await getAIAnalysis(sig, e, botState.obRatioEMA, bars);

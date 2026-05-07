@@ -131,7 +131,7 @@ function calculateATR(bars: any[], period: number = 14) {
 }
 
 function detectSweep(bars: any[]) {
-  if (bars.length < 10) return { sweepHigh: false, sweepLow: false, displacementBullish: false, displacementBearish: false, volConfirm: false, low: 0, high: 0 };
+  if (bars.length < 15) return { sweepHigh: false, sweepLow: false, displacementBullish: false, displacementBearish: false, volConfirm: false, low: 0, high: 0, confirmHigh: 0, confirmLow: 0 };
   
   const sweepCandle = bars[bars.length - 2];
   const confirmCandle = bars[bars.length - 1];
@@ -139,9 +139,9 @@ function detectSweep(bars: any[]) {
   const [, sO, sH, sL, sC] = sweepCandle;
   const [, cO, cH, cL, cC, cV] = confirmCandle;
 
-  const prev3Bars = bars.slice(bars.length - 5, bars.length - 2);
-  const localLow = Math.min(...prev3Bars.map(b => b[3]));
-  const localHigh = Math.max(...prev3Bars.map(b => b[2]));
+  const prev5Bars = bars.slice(bars.length - 7, bars.length - 2);
+  const localLow = Math.min(...prev5Bars.map(b => b[3]));
+  const localHigh = Math.max(...prev5Bars.map(b => b[2]));
 
   const sweepLow = sL < localLow && sC > localLow;
   const sweepHigh = sH > localHigh && sC < localHigh;
@@ -151,12 +151,12 @@ function detectSweep(bars: any[]) {
   const bodySizes = bars.slice(-16, -1).map(b => Math.abs(b[4] - b[1]));
   const avgBody = bodySizes.reduce((a, b) => a + b, 0) / bodySizes.length;
   
-  const displacementBullish = body > avgBody && (cC - cL) / totalSize > 0.7;
-  const displacementBearish = body > avgBody && (cH - cC) / totalSize > 0.7;
+  const displacementBullish = body > avgBody * 1.2 && (cC - cL) / totalSize > 0.7;
+  const displacementBearish = body > avgBody * 1.2 && (cH - cC) / totalSize > 0.7;
 
   const volumes = bars.slice(-21, -1).map(b => b[5]);
   const avgVol = volumes.reduce((a, b) => a + b, 0) / volumes.length;
-  const volConfirm = cV > avgVol * 1.05;
+  const volConfirm = cV > avgVol;
 
   return {
     sweepLow,
@@ -165,7 +165,9 @@ function detectSweep(bars: any[]) {
     displacementBearish,
     volConfirm,
     low: sL,
-    high: sH
+    high: sH,
+    confirmHigh: cH,
+    confirmLow: cL
   };
 }
 
@@ -184,7 +186,7 @@ function calculateVWMA(bars: any[], period: number) {
 
 function calcADX(ohlcv: any[]) {
   const period = 14;
-  if (ohlcv.length < period * 2) return 0;
+  if (ohlcv.length < period * 2) return { adx: 0, pDI: 0, mDI: 0 };
   let tr: number[] = [], plusDM: number[] = [], minusDM: number[] = [];
 
   for (let i = 1; i < ohlcv.length; i++) {
@@ -203,12 +205,20 @@ function calcADX(ohlcv: any[]) {
 
   const str = smooth(tr), sdmP = smooth(plusDM), sdmM = smooth(minusDM);
   const dx: number[] = [];
+  const pDIs: number[] = [];
+  const mDIs: number[] = [];
   for (let i = 0; i < str.length; i++) {
     const pDI = 100 * (sdmP[i] / str[i]), mDI = 100 * (sdmM[i] / str[i]);
+    pDIs.push(pDI);
+    mDIs.push(mDI);
     dx.push(100 * Math.abs(pDI - mDI) / (pDI + mDI || 1));
   }
   const adxList = smooth(dx);
-  return adxList[adxList.length - 1];
+  return {
+    adx: adxList[adxList.length - 1],
+    pDI: pDIs[pDIs.length - 1],
+    mDI: mDIs[mDIs.length - 1]
+  };
 }
 
 function calculateRSI(prices: number[], period: number) {
@@ -280,12 +290,16 @@ export async function runBacktest(onProgress?: (p: number) => void) {
     const sweep = detectSweep(window);
     const atr = calculateATR(window, 14);
 
-    let isLong = currentPrice > vwma && slope > 0 && distance < 0.01 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adx > 15;
-    let isShort = currentPrice < vwma && slope < 0 && distance < 0.01 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adx > 15;
+    let isLong = currentPrice > vwma && slope > 0 && distance < 0.01 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adx.adx > 15 && adx.pDI > adx.mDI;
+    let isShort = currentPrice < vwma && slope < 0 && distance < 0.01 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adx.adx > 15 && adx.mDI > adx.pDI;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
-      const entryPrice = currentPrice;
+      const confirmRange = sweep.confirmHigh - sweep.confirmLow;
+      const entryPrice = type === "LONG" 
+        ? sweep.confirmLow + confirmRange * 0.4 
+        : sweep.confirmHigh - confirmRange * 0.4;
+      
       const time = new Date(allKlines[i][0]).toISOString();
       
       console.log(`🔍 Phát hiện tín hiệu ${type} tại ${time} ($${entryPrice}). (Bỏ qua AI Check)`);
