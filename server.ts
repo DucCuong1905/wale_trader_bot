@@ -45,7 +45,7 @@ const getEnv = (key: string) => {
 
 const aiKey = getEnv("GEMINI_API_KEY");
 const ai = new GoogleGenAI({ apiKey: aiKey });
-const modelName = "gemini-2.5-flash"; 
+const modelName = "gemini-2.0-flash"; 
 
 // --- CẤU HÌNH GIAO DỊCH ---
 const PAIR = "BTC/USDT:USDT"; // Cặp giao dịch (Futures)
@@ -158,7 +158,7 @@ let botState = {
  */
 async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number, bars: any[], touches?: number) {
   const maxRetriesPerModel = 2;
-  const modelsToTry = ["gemini-2.5-flash", "gemini-2.0-flash"]; 
+  const modelsToTry = ["gemini-2.0-flash", "gemini-1.5-flash"]; 
 
   for (let modelToUse of modelsToTry) {
     for (let i = 0; i < maxRetriesPerModel; i++) {
@@ -742,7 +742,7 @@ async function newsWatcherLoop() {
     Chỉ trả về nội dung tóm tắt, không giải thích dài dòng.`;
 
     const result = await genAI.models.generateContent({ 
-      model: "gemini-2.5-flash", 
+      model: "gemini-2.0-flash", 
       contents: prompt,
       tools: [{ googleSearch: {} }],
       toolConfig: { includeServerSideToolInvocations: true }
@@ -806,10 +806,13 @@ async function startServer() {
   app.listen(3000, "0.0.0.0", async () => { 
     console.log(`🚀 [SERVER] Bot running at http://0.0.0.0:3000`);
     console.log(`--- SYSTEM REBOOTED 2026 ---`);
-    await sendTelegram("🔄 **WHALE BOT ĐÃ RESTART**\nĐang khởi tạo các kết nối...");
+    
+    // Gửi test Telegram ngay lập tức
+    await sendTelegram("🔄 **WHALE BOT ĐÃ RESTART**\nĐang khởi tạo các kết nối và tải dữ liệu nến...");
+    
     startWS(); 
     traderLoop(); 
-    newsWatcherLoop(); // Bắt đầu loop tin tức
+    newsWatcherLoop();
   });
 }
 
