@@ -9,7 +9,7 @@ import WebSocket from "ws";
 import cors from "cors";
 import { runBacktest } from "./backtester.ts";
 
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 dotenv.config();
 
@@ -44,7 +44,7 @@ const getEnv = (key: string) => {
 };
 
 const aiKey = getEnv("GEMINI_API_KEY");
-const ai = new GoogleGenAI({ apiKey: aiKey });
+const ai = new GoogleGenerativeAI(aiKey);
 const modelName = "gemini-3-flash-preview"; 
 
 // --- CẤU HÌNH GIAO DỊCH ---
@@ -225,19 +225,36 @@ let exchange: ccxt.binance | null = null;
  * Khởi tạo hoặc lấy đối tượng kết nối với sàn Binance.
  */
 function getExchange() {
-  if (!exchange) {
-    const apiKey = getEnv("BINANCE_API_KEY");
-    const secret = getEnv("BINANCE_API_SECRET");
-    if (!apiKey || !secret) {
-      botState.apiError = "Thiếu API Key hoặc Secret.";
-      return null;
+  const apiKey = getEnv("BINANCE_API_KEY");
+  const secret = getEnv("BINANCE_API_SECRET");
+
+  if (!apiKey || !secret) {
+    if (!botState.apiError) {
+      console.warn("[WARN] BINANCE_API_KEY hoặc BINANCE_API_SECRET chưa được cấu hình.");
+      botState.apiError = "Thiếu API Key/Secret. Vui lòng cấu hình trong Settings.";
     }
-    exchange = new ccxt.binance({ apiKey, secret, enableRateLimit: true, options: { defaultType: 'future' } });
+    return null;
+  }
+
+  if (!exchange) {
+    exchange = new ccxt.binance({ 
+      apiKey, 
+      secret, 
+      enableRateLimit: true, 
+      options: { defaultType: 'future', adjustForTimeDifference: true } 
+    });
+    
+    // Set leverage and margin once
     (async () => {
       try {
         await exchange!.setLeverage(10, PAIR);
         await exchange!.setMarginMode('CROSSED', PAIR);
-      } catch (e) {}
+        botState.apiError = null; // Clear error if success
+      } catch (e: any) {
+        if (e.name === 'AuthenticationError') {
+          botState.apiError = "Lỗi xác thực: API Key sai hoặc thiếu quyền Futures.";
+        }
+      }
     })();
   }
   return exchange;
@@ -426,10 +443,28 @@ function startWS() {
  * Vòng lặp chính của Bot: Kiểm tra nến, tín hiệu và thực hiện giao dịch.
  */
 async function traderLoop() {
-  const ex = getExchange(); if (!ex) { setTimeout(traderLoop, 10000); return; }
+  const ex = getExchange(); 
+  if (!ex) { 
+    console.log("[INFO] Đang chờ cấu hình API Key để bắt đầu giao dịch...");
+    setTimeout(traderLoop, 15000); 
+    return; 
+  }
+
   try {
     // 1. KIỂM TRA SỐ DƯ VÀ QUẢN LÝ RỦI RO NGÀY
-    const bal = await ex.fetchBalance();
+    let bal;
+    try {
+      bal = await ex.fetchBalance();
+    } catch (authErr: any) {
+      if (authErr.message.includes("-2015") || authErr.name === "AuthenticationError") {
+        console.error("❌ LỖI BINANCE: API Key không hợp lệ hoặc chưa bật quyền 'Enable Futures'!");
+        await sendTelegram("⚠️ Lỗi API Binance: Vui lòng kiểm tra lại Key và quyền 'Enable Futures' trên sàn.");
+        setTimeout(traderLoop, 60000); // Đợi 1 phút mới thử lại
+        return;
+      }
+      throw authErr;
+    }
+
     const curr = bal.USDT ? (bal.USDT as any).total : 0;
     botState.balance = curr;
     // Tự động reset số dư gốc mỗi ngày
@@ -437,7 +472,8 @@ async function traderLoop() {
       botState.dailyStartingBalance = curr; botState.lastResetDate = new Date().toISOString().split('T')[0];
     }
     // Dừng nếu lỗ quá 3% trong ngày
-    if ((curr - botState.dailyStartingBalance) / (botState.dailyStartingBalance || 1) <= -MAX_DAILY_LOSS) {
+    if (botState.dailyStartingBalance > 0 && (curr - botState.dailyStartingBalance) / botState.dailyStartingBalance <= -MAX_DAILY_LOSS) {
+      console.log("[WARNING] Đã chạm giới hạn lỗ tối đa trong ngày. Tạm dừng.");
       setTimeout(traderLoop, 15 * 60000); return;
     }
 
@@ -554,7 +590,7 @@ async function newsWatcherLoop() {
     const aiKey = getEnv("GEMINI_API_KEY");
     if (!aiKey) return;
 
-    const genAI = new GoogleGenAI({ apiKey: aiKey });
+    const genAI = new GoogleGenerativeAI(aiKey);
     // Dùng gemini-1.5-flash hoặc pro có hỗ trợ search
     const model = genAI.getGenerativeModel({ 
       model: "gemini-1.5-flash", 
