@@ -3,7 +3,7 @@ import * as ccxt from "ccxt";
 import fs from "fs";
 import path from "path";
 import dotenv from "dotenv";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 
 dotenv.config();
 
@@ -19,7 +19,7 @@ function getCleanEnv(key: string) {
 }
 
 const aiString = getCleanEnv("GEMINI_API_KEY");
-const ai = new GoogleGenerativeAI(aiString);
+const ai = new GoogleGenAI({ apiKey: aiString });
 const modelName = "gemini-3-flash-preview";
 
 const PAIR = "BTC/USDT";

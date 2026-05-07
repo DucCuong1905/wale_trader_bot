@@ -9,7 +9,7 @@ import WebSocket from "ws";
 import cors from "cors";
 import { runBacktest } from "./backtester.ts";
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 
 dotenv.config();
 
@@ -44,7 +44,7 @@ const getEnv = (key: string) => {
 };
 
 const aiKey = getEnv("GEMINI_API_KEY");
-const ai = new GoogleGenerativeAI(aiKey);
+const ai = new GoogleGenAI({ apiKey: aiKey });
 const modelName = "gemini-3-flash-preview"; 
 
 // --- CẤU HÌNH GIAO DỊCH ---
@@ -158,7 +158,7 @@ let botState = {
  */
 async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number, bars: any[], touches?: number) {
   const maxRetriesPerModel = 2;
-  const modelsToTry = ["gemini-3-flash-preview", "gemini-3.1-flash-lite-preview", "gemini-3.1-pro-preview"]; 
+  const modelsToTry = ["gemini-3-flash-preview", "gemini-3.1-flash-lite", "gemini-3.1-pro-preview"]; 
 
   for (let modelToUse of modelsToTry) {
     for (let i = 0; i < maxRetriesPerModel; i++) {
@@ -197,9 +197,13 @@ HƯỚNG DẪN RA QUYẾT ĐỊNH CHUYÊN SÂU:
 
 Trả về duy nhất JSON với format: {"decision": "CONFIRM" hoặc "REJECT", "reason": "...", "confidence": 0-100}`;
 
-        console.log(`[AI] Đang phân tích (${modelToUse})...`);
-        const response = await ai.models.generateContent({ model: modelToUse, contents: prompt });
-        const text = response.text;
+        const result = await ai.models.generateContent({
+          model: modelToUse,
+          contents: prompt,
+          config: { responseMimeType: "application/json" }
+        });
+
+        const text = result.text;
         if (!text) throw new Error("AI không trả về nội dung.");
         const jsonMatch = text.match(/\{[\s\S]*\}/);
         const cleanText = jsonMatch ? jsonMatch[0] : text;
@@ -716,13 +720,8 @@ async function newsWatcherLoop() {
     const aiKey = getEnv("GEMINI_API_KEY");
     if (!aiKey) return;
 
-    const genAI = new GoogleGenerativeAI(aiKey);
-    // Sử dụng model gemini-1.5-flash chính xác
-    const model = genAI.getGenerativeModel({ 
-      model: "gemini-1.5-flash", 
-      tools: [{ googleSearch: {} }] as any 
-    });
-
+    const genAI = new GoogleGenAI({ apiKey: aiKey });
+    
     const prompt = `Bạn là một chuyên gia phân tích tài chính vĩ mô. 
     Hãy tìm kiếm tin tức thế giới mới nhất trong 1 giờ qua (kinh tế Mỹ, chính sách Fed, cá voi di chuyển, tin tức sàn giao dịch) có ảnh hưởng MẠNH đến Bitcoin.
     
@@ -732,8 +731,14 @@ async function newsWatcherLoop() {
     
     Chỉ trả về nội dung tóm tắt, không giải thích dài dòng.`;
 
-    const result = await model.generateContent(prompt);
-    const response = result.response.text().trim();
+    const result = await genAI.models.generateContent({ 
+      model: "gemini-3-flash-preview", 
+      contents: prompt,
+      tools: [{ googleSearch: {} }],
+      toolConfig: { includeServerSideToolInvocations: true }
+    });
+
+    const response = result.text.trim();
 
     if (response !== "NONE" && response.length > 10) {
       console.log("[NEWS WATCHER] Tin tức quan trọng phát hiện.");
