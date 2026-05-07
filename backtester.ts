@@ -23,7 +23,7 @@ const ai = new GoogleGenAI({ apiKey: aiString });
 const modelName = "gemini-2.0-flash";
 
 const PAIR = "BTC/USDT";
-const TIMEFRAME = "5m";
+const TIMEFRAME = "1m";
 const START_DATE = "2026-01-01T00:00:00Z"; 
 const END_DATE = "2026-03-31T23:59:59Z";
 const RR = 1.0; 

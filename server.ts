@@ -50,7 +50,7 @@ const modelName = "gemini-2.0-flash";
 // --- CẤU HÌNH GIAO DỊCH ---
 const PAIR = "BTC/USDT:USDT"; // Cặp giao dịch (Futures)
 const SYMBOL_ID = "btcusdt"; // ID ký hiệu cho WebSocket
-const TIMEFRAME = "5m"; // Khung thời gian nến (5 phút)
+const TIMEFRAME = "1m"; // Khung thời gian nến (1 phút)
 const IS_LIVE_TRADING_ENABLED = false; // Chế độ giao dịch thật (true = bật, false = test)
 const RISK_PER_TRADE = 0.01; // Rủi ro trên mỗi lệnh (1% tài khoản)
 const RR = 1.0; // Tỷ lệ Risk/Reward 1:1 theo yêu cầu
@@ -158,7 +158,7 @@ let botState = {
  */
 async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number, bars: any[], touches?: number) {
   const maxRetriesPerModel = 2;
-  const modelsToTry = ["gemini-2.0-flash", "gemini-1.5-flash"]; 
+  const modelsToTry = ["gemini-2.0-flash", "gemini-2.0-flash-lite-preview-02-05"]; 
 
   for (let modelToUse of modelsToTry) {
     for (let i = 0; i < maxRetriesPerModel; i++) {
