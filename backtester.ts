@@ -60,69 +60,132 @@ let results: BacktestResult = {
 
 
 
-function getLiquidityZones(bars: any[], type: 'high' | 'low') {
-  const points = bars.slice(-60).map(b => type === 'high' ? b[2] : b[3]);
-  const zones: { price: number, touches: number }[] = [];
-  const avgPrice = points.reduce((a, b) => a + b, 0) / points.length;
-  const threshold = avgPrice * 0.0007; // Nới rộng vùng thanh khoản một chút
+function getAvgRange(bars: any[], period: number = 20) {
+  const slice = bars.slice(-period);
+  if (slice.length === 0) return 0;
+  return slice.reduce((sum, b) => sum + (b[2] - b[3]), 0) / slice.length;
+}
 
-  for (const p of points) {
+function getSwingPoints(bars: any[], type: 'high' | 'low', lookback: number = 2) {
+  const swings: { price: number; index: number }[] = [];
+  for (let i = lookback; i < bars.length - lookback; i++) {
+    const current = type === 'high' ? bars[i][2] : bars[i][3];
+    let isSwing = true;
+    for (let j = 1; j <= lookback; j++) {
+      if (type === 'high') {
+        if (current <= bars[i - j][2] || current <= bars[i + j][2]) {
+          isSwing = false;
+          break;
+        }
+      } else {
+        if (current >= bars[i - j][3] || current >= bars[i + j][3]) {
+          isSwing = false;
+          break;
+        }
+      }
+    }
+    if (isSwing) {
+      swings.push({ price: current, index: i });
+    }
+  }
+  return swings;
+}
+
+function getLiquidityZones(bars: any[], type: 'high' | 'low') {
+  const swings = getSwingPoints(bars, type);
+  const zones: { price: number; touches: number; lastTouch: number; }[] = [];
+  const avgRange = getAvgRange(bars, 20);
+  const threshold = avgRange * 0.15;
+
+  for (const swing of swings) {
     let found = false;
     for (const zone of zones) {
-      if (Math.abs(zone.price - p) <= threshold) {
-        zone.price = (zone.price * zone.touches + p) / (zone.touches + 1);
+      if (Math.abs(zone.price - swing.price) <= threshold) {
+        zone.price = (zone.price * zone.touches + swing.price) / (zone.touches + 1);
         zone.touches++;
+        zone.lastTouch = swing.index;
         found = true;
         break;
       }
     }
-    if (!found) zones.push({ price: p, touches: 1 });
+    if (!found) {
+      zones.push({ price: swing.price, touches: 1, lastTouch: swing.index });
+    }
   }
-  // Giảm xuống touches >= 1 để quét được nhiều vùng hơn trên 5m
-  return zones.filter(z => z.touches >= 1).sort((a, b) => b.touches - a.touches);
+
+  return zones.filter(z => z.touches >= 2).sort((a, b) => {
+    const scoreA = a.touches * 10 + a.lastTouch;
+    const scoreB = b.touches * 10 + b.lastTouch;
+    return scoreB - scoreA;
+  });
 }
 
 function detectSweep(bars: any[]) {
-  if (bars.length < 25) return { sweepHigh: false, sweepLow: false };
-  const highZones = getLiquidityZones(bars.slice(0, -1), 'high');
-  const lowZones = getLiquidityZones(bars.slice(0, -1), 'low');
+  if (bars.length < 50) return { sweepHigh: false, sweepLow: false };
+  
+  const historicalBars = bars.slice(0, -1);
+  const highZones = getLiquidityZones(historicalBars, 'high');
+  const lowZones = getLiquidityZones(historicalBars, 'low');
+  
   const currentBar = bars[bars.length - 1];
   const [, o, h, l, c, v] = currentBar;
-  
-  const prevPeriod = bars.slice(-21, -1);
-  const avgVol = prevPeriod.reduce((sum, b) => sum + b[5], 0) / prevPeriod.length;
-  // Giảm Climax Vol xuống 1.1 để nhạy hơn
-  const isClimaxVol = v / avgVol >= 1.1; 
-  
   const totalSize = h - l;
   if (totalSize === 0) return { sweepHigh: false, sweepLow: false };
-  const lowerWickRatio = (Math.min(o, c) - l) / totalSize;
-  const upperWickRatio = (h - Math.max(o, c)) / totalSize;
 
+  const avgVol = bars.slice(-21, -1).reduce((sum, b) => sum + b[5], 0) / 20;
+  const volRatio = v / avgVol;
+  const isClimaxVol = volRatio >= 1.35;
+
+  const upperWick = h - Math.max(o, c);
+  const lowerWick = Math.min(o, c) - l;
+  const upperWickRatio = upperWick / totalSize;
+  const lowerWickRatio = lowerWick / totalSize;
+
+  const body = Math.abs(c - o);
+  const bodyRatio = body / totalSize;
+  const bullishDisplacement = c > o && bodyRatio >= 0.5;
+  const bearishDisplacement = c < o && bodyRatio >= 0.5;
+
+  const avgRange = getAvgRange(bars, 20);
+  const vwma20 = calculateVWMA(historicalBars, 20);
+  const bullishTrend = c > vwma20;
+  const bearishTrend = c < vwma20;
+
+  // SWEEP LOW
   for (const zone of lowZones) {
-    // Rút chân 35% cho 5m
-    if (isClimaxVol && l < zone.price && c > zone.price && lowerWickRatio >= 0.35) {
+    const sweepDepth = zone.price - l;
+    const validSweepDepth = sweepDepth >= avgRange * 0.12;
+    const reclaim = l < zone.price && c > zone.price;
+
+    if (reclaim && validSweepDepth && lowerWickRatio >= 0.4 && bullishDisplacement && isClimaxVol && bullishTrend) {
       return { sweepLow: true, sweepHigh: false, touches: zone.touches };
     }
   }
 
-  // Fallback 1-touch
-  const swingLow = Math.min(...bars.slice(-25, -1).map(b => b[3]));
-  if (isClimaxVol && l < swingLow && c > swingLow && lowerWickRatio >= 0.35) {
-    return { sweepLow: true, sweepHigh: false, touches: 1 };
-  }
-  
+  // SWEEP HIGH
   for (const zone of highZones) {
-    if (isClimaxVol && h > zone.price && c < zone.price && upperWickRatio >= 0.35) {
+    const sweepDepth = h - zone.price;
+    const validSweepDepth = sweepDepth >= avgRange * 0.12;
+    const reclaim = h > zone.price && c < zone.price;
+
+    if (reclaim && validSweepDepth && upperWickRatio >= 0.4 && bearishDisplacement && isClimaxVol && bearishTrend) {
       return { sweepLow: false, sweepHigh: true, touches: zone.touches };
     }
   }
 
-  // Fallback 1-touch
-  const swingHigh = Math.max(...bars.slice(-25, -1).map(b => b[2]));
-  if (isClimaxVol && h > swingHigh && c < swingHigh && upperWickRatio >= 0.35) {
+  // FALLBACK SWING SWEEP (1-touch)
+  const swingLookback = 24;
+  const swingLow = Math.min(...bars.slice(-swingLookback - 1, -1).map(b => b[3]));
+  const swingHigh = Math.max(...bars.slice(-swingLookback - 1, -1).map(b => b[2]));
+
+  if (isClimaxVol && bullishTrend && l < swingLow && c > swingLow && lowerWickRatio >= 0.45 && bullishDisplacement) {
+    return { sweepLow: true, sweepHigh: false, touches: 1 };
+  }
+
+  if (isClimaxVol && bearishTrend && h > swingHigh && c < swingHigh && upperWickRatio >= 0.45 && bearishDisplacement) {
     return { sweepLow: false, sweepHigh: true, touches: 1 };
   }
+
   return { sweepHigh: false, sweepLow: false };
 }
 
@@ -231,12 +294,10 @@ export async function runBacktest(onProgress?: (p: number) => void) {
     const adx = calcADX(window);
     const prices = window.map(b => b[4]);
     const rsi = calculateRSI(prices, 14);
-    const vwma20 = calculateVWMA(window, 20);
-    const lastPrice = prices[prices.length - 1];
-    const trend = lastPrice > vwma20 ? "UP" : "DOWN";
 
-    const isLong = sweep.sweepLow && adx > 20 && (sweep.touches || 0) >= 1 && trend === "UP" && rsi < 70;
-    const isShort = sweep.sweepHigh && adx > 20 && (sweep.touches || 0) >= 1 && trend === "DOWN" && rsi > 30;
+    // Cấp lỏng điều kiện filter bên ngoài vì detectSweep đã check Volume, Trend, Displacement rồi
+    const isLong = sweep.sweepLow && adx > 20 && rsi < 75;
+    const isShort = sweep.sweepHigh && adx > 20 && rsi > 25;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";

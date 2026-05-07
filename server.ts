@@ -18,7 +18,6 @@ const __dirname = path.dirname(__filename);
 
 // --- AI CONFIG ---
 const getEnv = (key: string) => {
-  // Thử đọc trực tiếp từ file .env để chắc chắn không bị cache/override
   try {
     const envPath = path.join(process.cwd(), ".env");
     if (fs.existsSync(envPath)) {
@@ -40,35 +39,23 @@ const getEnv = (key: string) => {
   if (!val) return "";
   
   let cleaned = val.trim();
-  
-  // Bỏ ngoặc kép hoặc đơn bao quanh
   cleaned = cleaned.replace(/^["']|["']$/g, '').trim();
   return cleaned;
 };
 
-// Ưu tiên dùng GEMINI_API_KEY từ hệ thống nếu có
 const aiKey = getEnv("GEMINI_API_KEY");
-console.log("-----------------------------------------");
-if (!aiKey) {
-  console.error("❌ CRITICAL: GEMINI_API_KEY IS MISSING!");
-} else {
-  console.log(`🚀 AI KEY DETECTED! (Prefix: ${aiKey.substring(0, 6)}...)`);
-  console.log(`🚀 Length: ${aiKey.length} characters`);
-}
-console.log("-----------------------------------------");
-
 const ai = new GoogleGenAI({ apiKey: aiKey });
 const modelName = "gemini-2.5-flash"; 
 
-// --- CẤU HÌNH GIAO DỊCH (TRADING CONSTANTS) ---
-const PAIR = "BTC/USDT:USDT"; // Cặp giao dịch (BTC Futures trên Binance)
-const SYMBOL_ID = "btcusdt"; // ID Symbol cho WebSocket (lowercase cho Binance)
-const TIMEFRAME = "5m"; // Chuyển sang khung 5m cho bot nhanh hơn
-const IS_LIVE_TRADING_ENABLED = false; // TẠM THỜI TẮT GIAO DỊCH THỰC (LIVE TRADING)
-const RISK_PER_TRADE = 0.01; // Rủi ro 1% tổng tài sản cho mỗi lệnh
-const RR = 1.5; // Tỷ lệ Lợi nhuận/Rủi ro 1:1.5
-const COOLDOWN_MS = 30000; // Thời gian nghỉ giữa các lệnh (30 giây) để tránh vào lệnh liên tục
-const MAX_DAILY_LOSS = 0.03; // Giới hạn lỗ tối đa trong ngày (3%). Nếu chạm mốc này, Bot sẽ dừng giao dịch.
+// --- CẤU HÌNH GIAO DỊCH ---
+const PAIR = "BTC/USDT:USDT"; 
+const SYMBOL_ID = "btcusdt"; 
+const TIMEFRAME = "5m"; 
+const IS_LIVE_TRADING_ENABLED = false; 
+const RISK_PER_TRADE = 0.01; 
+const RR = 1.5; 
+const COOLDOWN_MS = 30000; 
+const MAX_DAILY_LOSS = 0.03; 
 
 // --- PERSISTENCE ---
 const DATA_DIR = path.join(process.cwd(), "data");
@@ -90,25 +77,11 @@ function loadTrades() {
     try {
       const data = fs.readFileSync(TRADES_FILE, "utf-8");
       let trades = JSON.parse(data);
-      
-      // Xóa giao dịch test ngày 3/5/2026 16:09:19 (Thử cả UTC và Local)
       const filtered = trades.filter((t: any) => {
         if (!t.time) return true;
         const isTest = t.time.includes('2026-05-03T16:09:19') || t.time.includes('2026-05-03T09:09:19');
         return !isTest;
       });
-
-      if (filtered.length !== trades.length) {
-        console.log(`🧹 Đã dọn dẹp ${trades.length - filtered.length} giao dịch test khỏi bộ nhớ.`);
-        // Lưu lại file đã lọc sạch
-        try {
-          fs.writeFileSync(TRADES_FILE, JSON.stringify(filtered, null, 2));
-          console.log(`✅ Đã cập nhật file ${TRADES_FILE} (đã xóa bản ghi test).`);
-        } catch (err) {
-          console.error("Lỗi khi cập nhật file trades sau khi lọc:", err);
-        }
-      }
-      
       return filtered;
     } catch (e) {
       console.error("Error loading trades:", e);
@@ -121,7 +94,6 @@ function loadTrades() {
 function saveTrade(trade: any) {
   const trades = loadTrades();
   trades.unshift(trade);
-  // Keep only last 1000 trades
   const limited = trades.slice(0, 1000);
   try {
     fs.writeFileSync(TRADES_FILE, JSON.stringify(limited, null, 2));
@@ -130,42 +102,40 @@ function saveTrade(trade: any) {
   }
 }
 
-// Trạng thái hệ thống (System State) để theo dõi dữ liệu thời gian thực
 interface WhaleTrade {
   time: number;
   side: 'buy' | 'sell';
-  amount: number; // USDT
+  amount: number; 
   price: number;
 }
 
 let botState = {
-  isRunning: true, // Trạng thái hoạt động của Bot
-  lastPrice: 0, // Giá thị trường hiện tại
-  bid: 0, // Tổng khối lượng mua trong Orderbook
-  ask: 0, // Tổng khối lượng bán trong Orderbook
-  inPosition: false, // Kiểm tra xem Bot có đang giữ lệnh nào không
-  lastPositionCheck: false,
-  lastTradeTime: 0, // Thời điểm vào lệnh gần nhất
-  balance: 0, // Số dư hiện tại (USDT)
-  dailyStartingBalance: 0, // Số dư lúc bắt đầu ngày mới (để tính lãi/lỗ ngày)
-  lastResetDate: "", // Ngày reset số dư gần nhất
-  trades: loadTrades() as any[], // Lịch sử giao dịch
-  signals: [] as any[], // Các tín hiệu đã phát hiện
-  lastNotifiedCandle: -1, // Lưu index nến cuối cùng đã báo telegram
-  obRatioEMA: 1.0, // Tỷ lệ Bid/Ask đã được làm mượt (EMA)
-  adx: 0, // Chỉ số ADX hiện tại
-  plusDI: 0, // Chỉ số +DI
-  minusDI: 0, // Chỉ số -DI
-  aiReasoning: "Đang chờ phân tích...", // Phân tích gần nhất từ AI
-  isWsConnected: false, // Trạng thái kết nối WebSocket
-  apiError: "" as string, // Lưu lỗi API nếu có
-  recentWhaleTrades: [] as WhaleTrade[], // Lịch sử Whale Trades khớp thực tế
-  lastReportKey: "", // Khóa duy nhất để chặn trùng lặp báo cáo
-  latestSweepStatus: "None" as "None" | "Low" | "High", // Trạng thái quét thanh khoản
-  latestSweepCandle: -1, // Index của nến cuối cùng phát hiện sweep
+  isRunning: true,
+  lastPrice: 0,
+  bid: 0,
+  ask: 0,
+  inPosition: false,
+  lastTradeTime: 0,
+  balance: 0,
+  dailyStartingBalance: 0,
+  lastResetDate: "",
+  trades: loadTrades() as any[],
+  signals: [] as any[],
+  lastNotifiedCandle: -1,
+  obRatioEMA: 1.0,
+  adx: 0,
+  plusDI: 0,
+  minusDI: 0,
+  aiReasoning: "Đang chờ phân tích...",
+  isWsConnected: false,
+  apiError: "",
+  recentWhaleTrades: [] as WhaleTrade[],
+  lastReportKey: "",
+  latestSweepStatus: "None" as "None" | "Low" | "High",
+  latestSweepCandle: -1,
 };
 
-// --- LOGIC PHÂN TÍCH AI (AI ANALYSIS) ---
+// --- AI ANALYSIS ---
 async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number, bars: any[], touches?: number) {
   const maxRetriesPerModel = 2;
   const modelsToTry = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3.1-flash-lite-preview"]; 
@@ -173,23 +143,17 @@ async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number,
   for (let modelToUse of modelsToTry) {
     for (let i = 0; i < maxRetriesPerModel; i++) {
       try {
-        const context = bars.slice(-20).map((b) => {
+        const context = bars.slice(-20).map((b: any) => {
           const time = new Date(b[0]).toLocaleTimeString();
           return `[${time}] O:${b[1]} H:${b[2]} L:${b[3]} C:${b[4]} V:${b[5]}`;
         }).join("\n");
 
-        // Tính toán xu hướng từ Whale Trades khớp thực tế gần đây (Phiên bản chuyên sâu cho AI)
-        const fiveMinsAgo = Date.now() - 300000; // 5 phút gần nhất (300s)
+        const fiveMinsAgo = Date.now() - 300000;
         const whales30k = botState.recentWhaleTrades.filter(t => t.amount >= 30000 && t.time >= fiveMinsAgo);
-        
         const aggressiveBuy = whales30k.filter(t => t.side === 'buy').reduce((sum, t) => sum + t.amount, 0);
         const aggressiveSell = whales30k.filter(t => t.side === 'sell').reduce((sum, t) => sum + t.amount, 0);
-        
         const totalWhaleBuy = botState.recentWhaleTrades.filter(t => t.side === 'buy').reduce((sum, t) => sum + t.amount, 0);
         const totalWhaleSell = botState.recentWhaleTrades.filter(t => t.side === 'sell').reduce((sum, t) => sum + t.amount, 0);
-        
-        const buyIntensity = totalWhaleBuy > 0 ? (aggressiveBuy / totalWhaleBuy) * 100 : 0;
-        const sellIntensity = totalWhaleSell > 0 ? (aggressiveSell / totalWhaleSell) * 100 : 0;
 
         const whaleSummary = `
 - TỔNG DÒNG TIỀN (5m): Buy $${(totalWhaleBuy/1000000).toFixed(2)}M / Sell $${(totalWhaleSell/1000000).toFixed(2)}M.
@@ -207,869 +171,320 @@ ${context}
 
 HƯỚNG DẪN RA QUYẾT ĐỊNH CHUYÊN SÂU:
 1. Xác định "Bẫy Orderbook" (Hidden Pressure): Nếu Orderbook nghiêng hẳn về một bên (ví dụ Bid/Ask > 1.5) nhưng "ÁP LỰC CUỐI NẾN" (Whale Trades) lại đang ép ngược lại, đó là dấu hiệu của tường ảo để dụ gà. Hãy REJECT.
-2. Xác nhận "Aggressive Money": Whale thật thường đẩy giá dồn dập vào 5 phút cuối nến để tạo nến đẹp. Nếu "ÁP LỰC CUỐI NẾN" chiếm tỷ trọng cao (>30% của cả nến 15p) và đồng thuận với tín hiệu, hãy CONFIRM mạnh tay.
-3. Độ mạnh vùng thanh khoản: Tín hiệu xảy ra tại vùng có >= 2 lần chạm (Touches) có xác suất đảo chiều cao hơn rất nhiều.
-4. Quản trị rủi ro: Nếu Áp lực 5p cuối và Tổng quan 15p trái ngược nhau hoàn toàn, hãy REJECT.
+2. Xác nhận "Aggressive Money": Whale thật thường đẩy giá dồn dập vào 5 phút cuối nến để tạo nến đẹp. Nếu "ÁP LỰC CUỐI NẾN" đồng thuận với tín hiệu, hãy CONFIRM mạnh tay.
+3. Độ mạnh vùng thanh khoản: Tín hiệu xảy ra tại vùng có >= 2 lần chạm (Touches) có xác suất đảo chiều cao hơn.
+4. Quản trị rủi ro: Nếu Áp lực 5p cuối và Tổng quan trái ngược nhau hoàn toàn, hãy REJECT.
 
 Trả về duy nhất JSON với format: {"decision": "CONFIRM" hoặc "REJECT", "reason": "...", "confidence": 0-100}`;
 
-        console.log(`[AI] Đang phân tích (${modelToUse}) - Lần thử ${i + 1}/${maxRetriesPerModel}...`);
-        
-        const response = await ai.models.generateContent({
-          model: modelToUse,
-          contents: prompt,
-        });
-
+        console.log(`[AI] Đang phân tích (${modelToUse})...`);
+        const response = await ai.models.generateContent({ model: modelToUse, contents: prompt });
         const text = response.text;
-        
         if (!text) throw new Error("AI không trả về nội dung.");
-        
         const jsonMatch = text.match(/\{[\s\S]*\}/);
         const cleanText = jsonMatch ? jsonMatch[0] : text;
         const parsed = JSON.parse(cleanText);
-        
         console.log(`[AI SUCCESS] ${parsed.decision} (${parsed.confidence}%) dùng ${modelToUse}`);
         return parsed;
-        
       } catch (e: any) {
-        const isTransient = e.message?.includes("503") || e.message?.includes("429") || e.message?.includes("overloaded");
         console.warn(`⚠️ [AI RETRY] ${modelToUse} failed: ${e.message}`);
-        
-        if (i < maxRetriesPerModel - 1) {
-          const waitTime = isTransient ? 3000 * (i + 1) : 1000;
-          await new Promise(r => setTimeout(r, waitTime));
-          continue;
-        }
       }
     }
   }
-  return { decision: "REJECT", reason: "AI Service Unavailable (All models busy)", confidence: 0 };
+  return { decision: "REJECT", reason: "AI Service Unavailable", confidence: 0 };
 }
 
-
-// --- TELEGRAM HELPER ---
+// --- HELPERS ---
 async function sendTelegram(msg: string) {
   const token = getEnv("TELEGRAM_BOT_TOKEN");
   const chatId = getEnv("TELEGRAM_CHAT_ID");
-  if (!token || !chatId) {
-    console.warn("⚠️ Telegram credentials missing.");
-    return;
-  }
-
+  if (!token || !chatId) return;
   try {
     const url = `https://api.telegram.org/bot${token}/sendMessage`;
-    console.log(`[TELEGRAM] Sending message to ${chatId}...`);
-    const response = await fetch(url, {
+    await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: msg,
-        parse_mode: "Markdown"
-      })
+      body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: "Markdown" })
     });
-    const result = await response.json();
-    if (!response.ok) {
-        console.error(`❌ Telegram API error: ${response.status}`, result);
-    } else {
-        console.log(`✅ Telegram message sent successfully.`);
-    }
-  } catch (e) {
-    console.error("Telegram Error:", e);
-  }
+  } catch (e) { console.error("Telegram Error:", e); }
 }
 
-// Exchange Init (Lazy)
 let exchange: ccxt.binance | null = null;
 function getExchange() {
   if (!exchange) {
     const apiKey = getEnv("BINANCE_API_KEY");
     const secret = getEnv("BINANCE_API_SECRET");
-
     if (!apiKey || !secret) {
-      botState.apiError = "Thiếu BINANCE_API_KEY hoặc BINANCE_API_SECRET trong cài đặt.";
+      botState.apiError = "Thiếu API Key hoặc Secret.";
       return null;
     }
-
-    exchange = new ccxt.binance({
-      apiKey,
-      secret,
-      enableRateLimit: true,
-      options: { 
-        defaultType: 'future',
-      }
-    });
-    
-    // Cấu hình tài khoản cho Binance
+    exchange = new ccxt.binance({ apiKey, secret, enableRateLimit: true, options: { defaultType: 'future' } });
     (async () => {
       try {
-        console.log(`[INIT] Cấu hình tài khoản Binance cho ${PAIR}...`);
-        
-        // 1. Thiết lập Đòn bẩy
-        try {
-          await (exchange as ccxt.binance).setLeverage(10, PAIR);
-          console.log(`✅ Đòn bẩy thiết lập: 10x`);
-        } catch (e) {}
-
-        // 2. Thiết lập Margin Mode là Isolated
-        try {
-          await (exchange as ccxt.binance).setMarginMode('isolated', PAIR);
-          console.log(`✅ Chế độ ký quỹ: Isolated`);
-        } catch (e) {}
-
-        // 3. Binance cũng cần thiết lập Hedge Mode hay One-way
-        // Mặc định thường là One-way, nhưng ta thử cấu hình
-        try {
-          await (exchange as any).setPositionMode(false, PAIR); // false = One-way
-          console.log(`✅ Chế độ vị thế: One-way`);
-        } catch (e) {}
-      } catch (e: any) {
-        console.log(`ℹ️ Cấu hình tài khoản: ${e.message || 'Done'}`);
-      }
+        await exchange!.setLeverage(10, PAIR);
+        await exchange!.setMarginMode('CROSSED', PAIR);
+      } catch (e) {}
     })();
   }
   return exchange;
 }
 
-/**
- * Tìm các vùng thanh khoản (Liquidity Zones) dựa trên các cụm đỉnh/đáy hội tụ.
- * @param bars Dữ liệu nến
- * @param type 'high' để tìm vùng kháng cự, 'low' để tìm vùng hỗ trợ
- */
-function getLiquidityZones(bars: any[], type: 'high' | 'low') {
-  const points = bars.slice(-60).map(b => type === 'high' ? b[2] : b[3]);
-  const zones: { price: number, touches: number }[] = [];
-  
-  // Ngưỡng gom nhóm (Threshold): 0.05% giá hiện tại cho BTC
-  const avgPrice = points.reduce((a, b) => a + b, 0) / points.length;
-  const threshold = avgPrice * 0.0005; 
+function getAvgRange(bars: any[], period: number = 20) {
+  const slice = bars.slice(-period);
+  if (slice.length === 0) return 0;
+  return slice.reduce((sum, b) => sum + (b[2] - b[3]), 0) / slice.length;
+}
 
-  for (const p of points) {
+function getSwingPoints(bars: any[], type: 'high' | 'low', lookback: number = 2) {
+  const swings: { price: number; index: number }[] = [];
+  for (let i = lookback; i < bars.length - lookback; i++) {
+    const current = type === 'high' ? bars[i][2] : bars[i][3];
+    let isSwing = true;
+    for (let j = 1; j <= lookback; j++) {
+      if (type === 'high') {
+        if (current <= bars[i - j][2] || current <= bars[i + j][2]) { isSwing = false; break; }
+      } else {
+        if (current >= bars[i - j][3] || current >= bars[i + j][3]) { isSwing = false; break; }
+      }
+    }
+    if (isSwing) swings.push({ price: current, index: i });
+  }
+  return swings;
+}
+
+function getLiquidityZones(bars: any[], type: 'high' | 'low') {
+  const swings = getSwingPoints(bars, type);
+  const zones: { price: number; touches: number; lastTouch: number; }[] = [];
+  const avgRange = getAvgRange(bars, 20);
+  const threshold = avgRange * 0.15;
+  for (const swing of swings) {
     let found = false;
     for (const zone of zones) {
-      if (Math.abs(zone.price - p) <= threshold) {
-        // Cập nhật giá trung bình của vùng để vùng trở nên chính xác hơn
-        zone.price = (zone.price * zone.touches + p) / (zone.touches + 1);
+      if (Math.abs(zone.price - swing.price) <= threshold) {
+        zone.price = (zone.price * zone.touches + swing.price) / (zone.touches + 1);
         zone.touches++;
+        zone.lastTouch = swing.index;
         found = true;
         break;
       }
     }
-    if (!found) {
-      zones.push({ price: p, touches: 1 });
-    }
+    if (!found) zones.push({ price: swing.price, touches: 1, lastTouch: swing.index });
   }
-
-  // Giảm xuống touches >= 1 để nhạy hơn trên khung 5m
-  return zones.filter(z => z.touches >= 1).sort((a, b) => b.touches - a.touches);
+  return zones.filter(z => z.touches >= 2).sort((a, b) => (b.touches * 10 + b.lastTouch) - (a.touches * 10 + a.lastTouch));
 }
 
 function detectWhaleSweep(bars: any[]) {
-  if (bars.length < 25) return { sweepHigh: false, sweepLow: false };
-  
-  const highZones = getLiquidityZones(bars.slice(0, -1), 'high');
-  const lowZones = getLiquidityZones(bars.slice(0, -1), 'low');
-
+  if (bars.length < 50) return { sweepHigh: false, sweepLow: false };
+  const historicalBars = bars.slice(0, -1);
+  const highZones = getLiquidityZones(historicalBars, 'high');
+  const lowZones = getLiquidityZones(historicalBars, 'low');
   const currentBar = bars[bars.length - 1];
   const [, o, h, l, c, v] = currentBar;
-  
-  // Tính toán Volume trung bình 20 nến
-  const prevPeriod = bars.slice(-21, -1);
-  const avgVol = prevPeriod.reduce((sum, b) => sum + b[5], 0) / prevPeriod.length;
-  const volRatio = v / avgVol;
-  // Giảm Climax Vol xuống 1.1 cho khung 5m
-  const isClimaxVol = volRatio >= 1.1; 
-  
   const totalSize = h - l;
   if (totalSize === 0) return { sweepHigh: false, sweepLow: false };
 
-  const upperWick = h - Math.max(o, c);
-  const lowerWick = Math.min(o, c) - l;
-  const lowerWickRatio = lowerWick / totalSize;
-  const upperWickRatio = upperWick / totalSize;
+  const avgVol = bars.slice(-21, -1).reduce((sum, b) => sum + b[5], 0) / 20;
+  const volRatio = v / avgVol;
+  const isClimaxVol = volRatio >= 1.35;
+  const upperWickRatio = (h - Math.max(o, c)) / totalSize;
+  const lowerWickRatio = (Math.min(o, c) - l) / totalSize;
+  const bodyRatio = Math.abs(c - o) / totalSize;
+  const bullishDisplacement = c > o && bodyRatio >= 0.5;
+  const bearishDisplacement = c < o && bodyRatio >= 0.5;
+  const avgRange = getAvgRange(bars, 20);
+  const vwma20 = calculateVWMA(historicalBars, 20);
+  const bullishTrend = c > vwma20;
+  const bearishTrend = c < vwma20;
 
-  // --- LOGIC QUÉT VÙNG THANH KHOẢN DƯỚI (SUPPORT SWEEP) ---
   for (const zone of lowZones) {
-    if (isClimaxVol && l < zone.price && c > zone.price) {
-      if (lowerWickRatio >= 0.35) { // Giảm wick xuống 35% cho 5m
-        console.log(`🔥 [LIQUIDITY SWEEP LOW] Quét vùng hỗ trợ $${zone.price.toFixed(1)} (${zone.touches} touches) | Wick: ${(lowerWickRatio*100).toFixed(1)}%`);
-        return { sweepLow: true, sweepHigh: false, candleIndex: bars.length - 1, touches: zone.touches };
-      }
+    if (l < zone.price && c > zone.price && (zone.price - l) >= avgRange * 0.12 && lowerWickRatio >= 0.4 && bullishDisplacement && isClimaxVol && bullishTrend) {
+      return { sweepLow: true, sweepHigh: false, direction: 'LONG', zone: zone.price, touches: zone.touches, volumeRatio: volRatio };
     }
   }
-
-  // Fallback: Quét đáy Swing Low của 24 nến gần nhất (1-touch)
-  const swingLowLookback = 24;
-  const swingLow = Math.min(...bars.slice(-swingLowLookback - 1, -1).map(b => b[3]));
-  if (isClimaxVol && l < swingLow && c > swingLow) {
-    if (lowerWickRatio >= 0.35) {
-      console.log(`🧹 [SWING LOW SWEEP] Quét đáy Swing Low $${swingLow.toFixed(1)} (1 touch) | Wick: ${(lowerWickRatio*100).toFixed(1)}%`);
-      return { sweepLow: true, sweepHigh: false, candleIndex: bars.length - 1, touches: 1 };
-    }
-  }
-
-  // --- LOGIC QUÉT VÙNG THANH KHOẢN TRÊN (RESISTANCE SWEEP) ---
   for (const zone of highZones) {
-    if (isClimaxVol && h > zone.price && c < zone.price) {
-      if (upperWickRatio >= 0.35) {
-        console.log(`🔥 [LIQUIDITY SWEEP HIGH] Quét vùng kháng cự $${zone.price.toFixed(1)} (${zone.touches} touches) | Wick: ${(upperWickRatio*100).toFixed(1)}%`);
-        return { sweepLow: false, sweepHigh: true, candleIndex: bars.length - 1, touches: zone.touches };
-      }
+    if (h > zone.price && c < zone.price && (h - zone.price) >= avgRange * 0.12 && upperWickRatio >= 0.4 && bearishDisplacement && isClimaxVol && bearishTrend) {
+      return { sweepLow: false, sweepHigh: true, direction: 'SHORT', zone: zone.price, touches: zone.touches, volumeRatio: volRatio };
     }
   }
+  const swingLookback = 24;
+  const sLow = Math.min(...bars.slice(-swingLookback - 1, -1).map(b => b[3]));
+  const sHigh = Math.max(...bars.slice(-swingLookback - 1, -1).map(b => b[2]));
+  if (isClimaxVol && bullishTrend && l < sLow && c > sLow && lowerWickRatio >= 0.45 && bullishDisplacement) return { sweepLow: true, sweepHigh: false, touches: 1 };
+  if (isClimaxVol && bearishTrend && h > sHigh && c < sHigh && upperWickRatio >= 0.45 && bearishDisplacement) return { sweepLow: false, sweepHigh: true, touches: 1 };
 
-  // Fallback: Quét đỉnh Swing High của 24 nến gần nhất (1-touch)
-  const swingHighLookback = 24;
-  const swingHigh = Math.max(...bars.slice(-swingHighLookback - 1, -1).map(b => b[2]));
-  if (isClimaxVol && h > swingHigh && c < swingHigh) {
-    if (upperWickRatio >= 0.35) {
-      console.log(`🧹 [SWING HIGH SWEEP] Quét đỉnh Swing High $${swingHigh.toFixed(1)} (1 touch) | Wick: ${(upperWickRatio*100).toFixed(1)}%`);
-      return { sweepLow: false, sweepHigh: true, candleIndex: bars.length - 1, touches: 1 };
-    }
-  }
-  
   return { sweepHigh: false, sweepLow: false };
-}
-
-function getOrderbookSignal() {
-  if (botState.bid === 0 || botState.ask === 0) return null;
-  // Sử dụng EMA để tránh nhiễu từ lệnh ảo (Spoofing)
-  const ratio = botState.obRatioEMA;
-  if (ratio > 1.25) return "BULL";
-  if (ratio < 0.8) return "BEAR";
-  return null;
-}
-
-function startWS() {
-  // Binance Combined Streams: Tên stream TRONG URL phải viết thường hoàn toàn
-  const streams = `${SYMBOL_ID}@aggtrade/${SYMBOL_ID}@trade/${SYMBOL_ID}@miniticker/${SYMBOL_ID}@depth20`;
-  const wsUrl = `wss://fstream.binance.com/stream?streams=${streams}`;
-  const ws = new WebSocket(wsUrl);
-
-  ws.on('open', () => {
-    console.log("🔌 Connected to Binance WS (Depth, Ticker, AggTrade)");
-    botState.isWsConnected = true;
-  });
-
-  ws.on('message', (data) => {
-    try {
-      const msg = data.toString();
-      const payload = JSON.parse(msg);
-      
-      const streamName = payload.stream || "";
-      const d = payload.data;
-
-      if (!d) return;
-
-      const sName = streamName.toLowerCase();
-      
-      // LOG ĐỂ KIỂM TRA (Chỉ log 5 lần đầu)
-      if ((global as any).wsLogCount === undefined) (global as any).wsLogCount = 0;
-      if ((global as any).wsLogCount < 5) {
-        console.log(`[WS DEBUG] Nhận stream: ${streamName}`);
-        (global as any).wsLogCount++;
-      }
-
-      // Cập nhật giá từ TẤT CẢ các luồng có dữ liệu giá
-      let incomingPrice = 0;
-      if (d.p) incomingPrice = parseFloat(d.p); // aggTrade
-      else if (d.c) incomingPrice = parseFloat(d.c); // miniTicker
-      else if (d.b && d.b[0]) incomingPrice = parseFloat(d.b[0][0]); // Best bid từ Depth
-
-      if (incomingPrice > 0) {
-        botState.lastPrice = incomingPrice;
-      }
-
-      if (sName.includes('@depth')) {
-        const bids = d.b || d.bids;
-        const asks = d.a || d.asks;
-
-        if (bids && Array.isArray(bids) && asks && Array.isArray(asks)) {
-          botState.bid = bids.reduce((sum: number, x: any) => sum + parseFloat(x[1]), 0);
-          botState.ask = asks.reduce((sum: number, x: any) => sum + parseFloat(x[1]), 0);
-          
-          const currentRatio = botState.ask !== 0 ? botState.bid / botState.ask : 1.0;
-          botState.obRatioEMA = (currentRatio * 0.1) + (botState.obRatioEMA * 0.9);
-        }
-      } 
-
-      if (sName.includes('trade')) {
-        // aggTrade hoặc trade đều có p (price) và q (quantity)
-        const qty = parseFloat(d.q);
-        const price = parseFloat(d.p);
-        
-        if (!isNaN(qty) && !isNaN(price)) {
-          const amount = qty * price;
-          const side = d.m ? 'sell' : 'buy';
-
-          // Whale Detection: Ngưỡng $30,000 theo yêu cầu mới
-          if (amount > 30000) {
-            botState.recentWhaleTrades.push({ time: Date.now(), side, amount, price });
-            
-            // Log whale trades to server console for debugging if > $1M
-            if (amount > 1000000) {
-              console.log(`🐋 [WHALE DETECTED] ${side.toUpperCase()} $${amount.toFixed(0)} at ${price}`);
-            }
-            
-            const cutoff = Date.now() - 300000; // Quay lại 5 phút
-            botState.recentWhaleTrades = botState.recentWhaleTrades.filter(t => t.time > cutoff);
-          }
-        }
-      }
-    } catch (e) { }
-  });
-
-  ws.on('error', (err) => {
-    console.error("❌ Binance WS Error:", err.message);
-    botState.isWsConnected = false;
-  });
-
-  ws.on('close', () => {
-    console.log("🔌 Binance WS Closed. Reconnecting in 5s...");
-    botState.isWsConnected = false;
-    setTimeout(startWS, 5000);
-  });
-}
-
-function getAvgRange(ohlcv: any[], period: number = 14) {
-  const slice = ohlcv.slice(-period);
-  const sum = slice.reduce((acc, bar: any) => acc + (bar[2] - bar[3]), 0);
-  return sum / period;
 }
 
 function calcADX(ohlcv: any[], period: number = 14) {
   if (ohlcv.length < period * 2) return { adx: 0, pDI: 0, mDI: 0 };
-  let tr: number[] = [];
-  let plusDM: number[] = [];
-  let minusDM: number[] = [];
-
+  let tr: number[] = [], pDM: number[] = [], mDM: number[] = [];
   for (let i = 1; i < ohlcv.length; i++) {
-    const prevC = ohlcv[i - 1][4];
-    const [ts, o, h, l, c] = ohlcv[i];
-    const prevH = ohlcv[i - 1][2];
-    const prevL = ohlcv[i - 1][3];
-
-    tr.push(Math.max(h - l, Math.abs(h - prevC), Math.abs(l - prevC)));
-    const upMove = h - prevH;
-    const downMove = prevL - l;
-    plusDM.push(upMove > downMove && upMove > 0 ? upMove : 0);
-    minusDM.push(downMove > upMove && downMove > 0 ? downMove : 0);
+    const pc = ohlcv[i - 1][4], [ts, o, h, l, c] = ohlcv[i], ph = ohlcv[i - 1][2], pl = ohlcv[i - 1][3];
+    tr.push(Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)));
+    const up = h - ph, down = pl - l;
+    pDM.push(up > down && up > 0 ? up : 0);
+    mDM.push(down > up && down > 0 ? down : 0);
   }
-
   const smooth = (arr: number[]) => {
-    let result = [arr.slice(0, period).reduce((a, b) => a + b, 0) / period];
-    for (let i = period; i < arr.length; i++) {
-      result.push((result[result.length - 1] * (period - 1) + arr[i]) / period);
-    }
-    return result;
+    let res = [arr.slice(0, period).reduce((a, b) => a + b, 0) / period];
+    for (let i = period; i < arr.length; i++) res.push((res[res.length - 1] * (period - 1) + arr[i]) / period);
+    return res;
   };
-
-  const str = smooth(tr);
-  const sdmP = smooth(plusDM);
-  const sdmM = smooth(minusDM);
-
-  const dx: number[] = [];
-  const pDIs: number[] = [];
-  const mDIs: number[] = [];
-
+  const str = smooth(tr), spDM = smooth(pDM), smDM = smooth(mDM);
+  const dx: number[] = [], pDIs: number[] = [], mDIs: number[] = [];
   for (let i = 0; i < str.length; i++) {
-    const pDI = 100 * (sdmP[i] / str[i]);
-    const mDI = 100 * (sdmM[i] / str[i]);
-    pDIs.push(pDI);
-    mDIs.push(mDI);
+    const pDI = 100 * (spDM[i] / str[i]), mDI = 100 * (smDM[i] / str[i]);
+    pDIs.push(pDI); mDIs.push(mDI);
     dx.push(100 * Math.abs(pDI - mDI) / (pDI + mDI || 1));
   }
-  const adxList = smooth(dx);
-  
-  return {
-    adx: adxList[adxList.length - 1],
-    pDI: pDIs[pDIs.length - 1],
-    mDI: mDIs[mDIs.length - 1]
-  };
+  const adxl = smooth(dx);
+  return { adx: adxl[adxl.length - 1], pDI: pDIs[pDIs.length - 1], mDI: mDIs[mDIs.length - 1] };
 }
-
 
 function calculateRSI(prices: number[], period: number) {
   if (prices.length < period + 1) return 50;
-  let gains = 0;
-  let losses = 0;
-
+  let g = 0, l = 0;
   for (let i = 1; i <= period; i++) {
-    const diff = prices[prices.length - i] - prices[prices.length - i - 1];
-    if (diff >= 0) gains += diff;
-    else losses -= diff;
+    const d = prices[prices.length - i] - prices[prices.length - i - 1];
+    if (d >= 0) g += d; else l -= d;
   }
-
-  if (losses === 0) return 100;
-  const rs = (gains / period) / (losses / period);
-  return 100 - (100 / (1 + rs));
+  if (l === 0) return 100;
+  return 100 - (100 / (1 + (g / period) / (l / period)));
 }
-
 
 function calculateVWMA(bars: any[], period: number) {
   if (bars.length < period) return bars[bars.length - 1][4];
-  let pvSum = 0;
-  let volSum = 0;
-  for (let i = bars.length - period; i < bars.length; i++) {
-    const price = bars[i][4];
-    const volume = bars[i][5];
-    pvSum += price * volume;
-    volSum += volume;
-  }
-  return volSum === 0 ? bars[bars.length - 1][4] : pvSum / volSum;
+  let pv = 0, v = 0;
+  for (let i = bars.length - period; i < bars.length; i++) { pv += bars[i][4] * bars[i][5]; v += bars[i][5]; }
+  return v === 0 ? bars[bars.length - 1][4] : pv / v;
+}
+
+// --- WS ---
+function startWS() {
+  const streams = `${SYMBOL_ID}@aggtrade/${SYMBOL_ID}@trade/${SYMBOL_ID}@miniticker/${SYMBOL_ID}@depth20`;
+  const ws = new WebSocket(`wss://fstream.binance.com/stream?streams=${streams}`);
+  ws.on('open', () => { botState.isWsConnected = true; });
+  ws.on('message', (data) => {
+    try {
+      const p = JSON.parse(data.toString());
+      const d = p.data; if (!d) return;
+      if (d.p) botState.lastPrice = parseFloat(d.p);
+      else if (d.c) botState.lastPrice = parseFloat(d.c);
+      if (p.stream.includes('@depth')) {
+        botState.bid = (d.b || d.bids).reduce((s: number, x: any) => s + parseFloat(x[1]), 0);
+        botState.ask = (d.a || d.asks).reduce((s: number, x: any) => s + parseFloat(x[1]), 0);
+        const r = botState.ask !== 0 ? botState.bid / botState.ask : 1.0;
+        botState.obRatioEMA = (r * 0.1) + (botState.obRatioEMA * 0.9);
+      } else if (p.stream.includes('trade')) {
+        const amount = parseFloat(d.q) * parseFloat(d.p);
+        if (amount > 30000) {
+          botState.recentWhaleTrades.push({ time: Date.now(), side: d.m ? 'sell' : 'buy', amount, price: parseFloat(d.p) });
+          botState.recentWhaleTrades = botState.recentWhaleTrades.filter(t => t.time > Date.now() - 300000);
+        }
+      }
+    } catch (e) {}
+  });
+  ws.on('error', () => { botState.isWsConnected = false; });
+  ws.on('close', () => { botState.isWsConnected = false; setTimeout(startWS, 5000); });
 }
 
 async function traderLoop() {
-  const ex = getExchange();
-  if (!ex) {
-    if (botState.isRunning) console.log("🔍 Đang quét thị trường (Chế độ giám sát)...");
-    setTimeout(traderLoop, 10000);
-    return;
-  }
-
+  const ex = getExchange(); if (!ex) { setTimeout(traderLoop, 10000); return; }
   try {
-    console.log("🔄 Vòng lặp giao dịch đang chạy...");
-    let balanceInfo;
-    try {
-      balanceInfo = await ex.fetchBalance();
-      botState.apiError = ""; // Clear error on success
-    } catch (e: any) {
-      if (e instanceof ccxt.AuthenticationError) {
-        botState.apiError = "Lỗi xác thực Binance: API Key hoặc Secret không hợp lệ / Thiếu quyền Futures.";
-        console.error("❌ " + botState.apiError);
-      } else {
-        botState.apiError = `Lỗi kết nối sàn: ${e.message}`;
-      }
-      setTimeout(traderLoop, 15000);
-      return;
+    const bal = await ex.fetchBalance();
+    const curr = bal.USDT ? (bal.USDT as any).total : 0;
+    botState.balance = curr;
+    if (botState.lastResetDate !== new Date().toISOString().split('T')[0]) {
+      botState.dailyStartingBalance = curr; botState.lastResetDate = new Date().toISOString().split('T')[0];
     }
-
-    const currentBalance = balanceInfo.USDT ? (balanceInfo.USDT as any).total : 0;
-    botState.balance = currentBalance;
-
-    const today = new Date().toISOString().split('T')[0];
-    if (botState.lastResetDate !== today) {
-      botState.dailyStartingBalance = currentBalance;
-      botState.lastResetDate = today;
+    if ((curr - botState.dailyStartingBalance) / (botState.dailyStartingBalance || 1) <= -MAX_DAILY_LOSS) {
+      setTimeout(traderLoop, 15 * 60000); return;
     }
+    const pos = await ex.fetchPositions([PAIR]);
+    botState.inPosition = pos.some(p => Math.abs(parseFloat(p.info.size || (p as any).contracts || 0)) > 0);
+    if (botState.inPosition || Date.now() - botState.lastTradeTime < COOLDOWN_MS) { setTimeout(traderLoop, 10000); return; }
 
-    const dailyPnL = currentBalance - botState.dailyStartingBalance;
-    const dailyLossPercent = botState.dailyStartingBalance > 0 ? (dailyPnL / botState.dailyStartingBalance) : 0;
-
-    if (dailyLossPercent <= -MAX_DAILY_LOSS) {
-      console.log(`🛑 Đã chạm giới hạn lỗ ngày (${(dailyLossPercent*100).toFixed(2)}%). Dừng giao dịch trong 30 phút.`);
-      setTimeout(traderLoop, 60000 * 30);
-      return;
-    }
-
-    const positions = await ex.fetchPositions([PAIR]);
-    const isNowInPosition = positions.some(p => Math.abs(parseFloat(p.info.size || (p as any).contracts || 0)) > 0);
-
-    if (botState.inPosition && !isNowInPosition) {
-      const pnlPercent = (dailyPnL / botState.dailyStartingBalance * 100).toFixed(2);
-      const tradeResult = { type: 'CLOSE', balance: currentBalance, pnl: dailyPnL, time: new Date().toISOString(), status: 'CLOSED' };
-      botState.trades.unshift(tradeResult);
-      saveTrade(tradeResult);
-      sendTelegram(`🔔 *VỊ THẾ ĐÃ ĐÓNG*\n💰 Số dư: $${botState.balance.toFixed(2)}\n📊 PnL: ${dailyPnL >= 0 ? '+' : ''}$${dailyPnL.toFixed(2)} (${pnlPercent}%)`);
-    }
-
-    botState.inPosition = isNowInPosition;
-    if (botState.inPosition) {
-      // Monitor position for TP/SL is handled by Exchange or our Stop Loss orders
-      setTimeout(traderLoop, 10000);
-      return;
-    }
-
-    if (Date.now() - botState.lastTradeTime < COOLDOWN_MS) {
-      setTimeout(traderLoop, 5000);
-      return;
-    }
-
-    if (botState.lastPrice === 0) {
-      console.log("⏳ Đang chờ dữ liệu giá từ WebSocket...");
-      setTimeout(traderLoop, 5000);
-      return;
-    }
-
-    console.log(`🎯 [MONITORING] Đang kiểm tra tín hiệu Whale Sweep...`);
     const bars = await ex.fetchOHLCV(PAIR, TIMEFRAME, undefined, 100);
-    if (!bars || bars.length < 30) {
-      console.log(`⚠️ Không đủ dữ liệu nến (${bars?.length || 0}). Đang cần tối thiểu 30 nến cho ADX...`);
-      setTimeout(traderLoop, 10000);
-      return;
-    }
-
-    // --- TÍNH TOÁN CÁC CHỈ BÁO KỸ THUẬT (TECHNICAL INDICATORS) ---
-    // Tính toán ADX liên tục để cập nhật lên giao diện Realtime
-    const adxData = calcADX(bars, 14);
-    botState.adx = adxData.adx;
-    botState.plusDI = adxData.pDI;
-    botState.minusDI = adxData.mDI;
-
-    // --- TÍNH TOÁN EMA 200 & RSI (MỚI) ---
-    const prices = bars.map(b => b[4]);
-    const rsi = calculateRSI(prices, 14);
-    const vwma20 = calculateVWMA(bars, 20);
-    const lastPrice = prices[prices.length - 1];
-    const trend = lastPrice > vwma20 ? "UP" : "DOWN";
-
-    // --- QUÉT TÍN HIỆU SWEEP ---
-    const sweepResult = detectWhaleSweep(bars);
-    const sweepLow = sweepResult.sweepLow;
-    const sweepHigh = sweepResult.sweepHigh;
-    const currentCandleIndex = bars.length - 1;
-
-    // Cập nhật trạng thái hiển thị trên UI (vẫn giữ để người dùng xem Realtime)
-    botState.latestSweepStatus = sweepLow ? "Low" : (sweepHigh ? "High" : "None");
-    if (sweepLow || sweepHigh) {
-        botState.latestSweepCandle = currentCandleIndex;
-    } else if (currentCandleIndex > botState.latestSweepCandle + 2) {
-        botState.latestSweepStatus = "None";
-    }
-
-    // --- KIỂM TRA THỜI GIAN ĐÓNG NẾN (CANDLE CLOSE CONSTRAINT) ---
-    const timeframeMs = 5 * 60 * 1000; // Quay lại 5 phút gốc
-    const now = Date.now();
-    const nextClose = Math.ceil(now / timeframeMs) * timeframeMs;
-    const timeToClose = nextClose - now;
-    const secondsToClose = Math.floor(timeToClose / 1000);
-
-    if (secondsToClose > 15) {
-      if (now % 60000 < 5000) { 
-        console.log(`⏳ Đang chờ nến đóng... (Còn ${secondsToClose}s nữa)`);
-      }
-      setTimeout(traderLoop, 5000);
-      return;
-    }
-
-    // --- GỬI BẢN TIN INTEL (CHỈ GỬI 1 LẦN KHI CÒN 10-15S ĐÓNG NẾN) ---
-    const reportKey = `REPORT-${nextClose}`; // Key duy nhất theo timestamp đóng nến
-    if (botState.lastReportKey !== reportKey && secondsToClose <= 12) {
-      botState.lastReportKey = reportKey;
-      
-      const buyVol = botState.recentWhaleTrades.filter(t => t.side === 'buy').reduce((s, t) => s + t.amount, 0);
-      const sellVol = botState.recentWhaleTrades.filter(t => t.side === 'sell').reduce((s, t) => s + t.amount, 0);
-      const net = (buyVol - sellVol) / 1000000;
-
-      // Áp lực 5 phút cuối (300s)
-      const fiveMinsAgo = Date.now() - 300000;
-      const whales5m = botState.recentWhaleTrades.filter(t => t.time >= fiveMinsAgo);
-      const buy5m = whales5m.filter(t => t.side === 'buy').reduce((s, t) => s + t.amount, 0);
-      const sell5m = whales5m.filter(t => t.side === 'sell').reduce((s, t) => s + t.amount, 0);
-      const net5m = (buy5m - sell5m) / 1000000;
-      
-      // Sweep check ngay tại thời điểm này
-      const finalSweep = detectWhaleSweep(bars) as any;
-      const touchesStr = finalSweep.touches ? ` (${finalSweep.touches} touches)` : "";
-      const sweepIcon = finalSweep.sweepLow ? `🟢 QUÉT ĐÁY${touchesStr}` : (finalSweep.sweepHigh ? `🔴 QUÉT ĐỈNH${touchesStr}` : "❌ KHÔNG (NONE)");
-      
-      const wsStatus = botState.isWsConnected ? "✅ STREAMING" : "❌ OFFLINE";
-      const envTag = process.env.NODE_ENV === "production" ? "🏷️ *PROD*" : "🏷️ *DEV*";
-      
-      const whaleCount = botState.recentWhaleTrades.length;
-      
-      const intelMsg = `📝 *BẢN TIN INTEL (5M)*\n` +
-        `⏰ Đóng nến: ${new Date(nextClose).toLocaleTimeString()}\n` +
-        `${envTag} | PID: ${process.pid}\n\n` +
-        `🌐 WS Binance: ${wsStatus}\n` +
-        `💰 BTC Price: *$${botState.lastPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}*\n` +
-        `🧹 Sweep: *${sweepIcon}*\n` +
-        `⚖️ OB Ratio: *${botState.obRatioEMA.toFixed(2)}*\n` +
-        `📈 ADX: *${botState.adx.toFixed(1)}* (Trends: ${botState.plusDI.toFixed(1)} / ${botState.minusDI.toFixed(1)})\n` +
-        `🐋 Whale Net (5m): ${net >= 0 ? '🟢 +' : '🔴 '}${net.toFixed(2)}M (${whaleCount} lệnh)\n` +
-        `🔥 Áp lực 5p cuối: ${net5m >= 0 ? '🟢 +' : '🔴 '}${net5m.toFixed(2)}M\n\n` +
-        `_Đang phân tích chiến lược vào lệnh..._`;
-      
-      sendTelegram(intelMsg);
-    }
-
-    console.log(`🎯 [ENTRY WINDOW] Chỉ còn ${secondsToClose}s trước khi đóng nến. Tiến hành kiểm tra tín hiệu cuối cùng...`);
-
-    const adx = botState.adx;
-    const obRatio = botState.obRatioEMA;
+    if (!bars || bars.length < 50) { setTimeout(traderLoop, 10000); return; }
+    const adx = calcADX(bars, 14); botState.adx = adx.adx; botState.plusDI = adx.pDI; botState.minusDI = adx.mDI;
+    const rsi = calculateRSI(bars.map(b => b[4]), 14);
+    const vwma = calculateVWMA(bars, 20);
+    const sweep = detectWhaleSweep(bars);
     
-    // Tín hiệu OB linh hoạt: 
-    // Nếu Whale Net mạnh (> 50k), chỉ cần OB Ratio > 1.1 (cho Long) hoặc < 0.9 (cho Short)
-    const buyVol = botState.recentWhaleTrades.filter(t => t.side === 'buy').reduce((s, t) => s + t.amount, 0);
-    const sellVol = botState.recentWhaleTrades.filter(t => t.side === 'sell').reduce((s, t) => s + t.amount, 0);
-    const whaleNet = buyVol - sellVol;
+    // Candle close constraint
+    const nextClose = Math.ceil(Date.now() / (5 * 60000)) * (5 * 60000);
+    const sToClose = Math.floor((nextClose - Date.now()) / 1000);
+    if (sToClose > 15) { setTimeout(traderLoop, 5000); return; }
 
-    let obSignal: "BULL" | "BEAR" | null = null;
-    if (obRatio > 1.25 || (obRatio > 1.1 && whaleNet > 50000)) obSignal = "BULL";
-    if (obRatio < 0.8 || (obRatio < 0.9 && whaleNet < -50000)) obSignal = "BEAR";
+    // Ob Signal
+    const buyV = botState.recentWhaleTrades.filter(t => t.side === 'buy').reduce((s, t) => s + t.amount, 0);
+    const sellV = botState.recentWhaleTrades.filter(t => t.side === 'sell').reduce((s, t) => s + t.amount, 0);
+    const wNet = buyV - sellV;
+    let obSig: "BULL" | "BEAR" | null = null;
+    if (botState.obRatioEMA > 1.25 || (botState.obRatioEMA > 1.1 && wNet > 50000)) obSig = "BULL";
+    if (botState.obRatioEMA < 0.8 || (botState.obRatioEMA < 0.9 && wNet < -50000)) obSig = "BEAR";
 
-    console.log(`[PHÂN TÍCH] Giá: ${botState.lastPrice} | Xu hướng (VWMA): ${trend} | ADX: ${adx.toFixed(1)} | Touches: ${sweepResult.touches || 0} | RSI: ${rsi.toFixed(1)}`);
-    
-    // CHIẾN LƯỢC 5M:
-    // 1. Quét vùng Whale (Sweep)
-    // 2. Chạm ít nhất 1 lần (Touches >= 1)
-    // 3. Phù hợp xu hướng VWMA (Trend UP cho Long, Trend DOWN cho Short)
-    // 4. ADX > 20 (Có lực thị trường)
-    // 5. RSI không quá mua/bán (RSI < 70 cho Long, RSI > 30 cho Short)
-    let signal: 'LONG' | 'SHORT' | null = null;
-    if (sweepLow && obSignal === "BULL" && adx > 20 && (sweepResult.touches || 0) >= 1 && trend === "UP" && rsi < 70) signal = "LONG";
-    if (sweepHigh && obSignal === "BEAR" && adx > 20 && (sweepResult.touches || 0) >= 1 && trend === "DOWN" && rsi > 30) signal = "SHORT";
+    const trend = bars[bars.length - 1][4] > vwma ? "UP" : "DOWN";
+    let sig: "LONG" | "SHORT" | null = null;
+    if (sweep.sweepLow && obSig === "BULL" && adx.adx > 20 && (sweep.touches || 0) >= 1 && trend === "UP" && rsi < 70) sig = "LONG";
+    if (sweep.sweepHigh && obSig === "BEAR" && adx.adx > 20 && (sweep.touches || 0) >= 1 && trend === "DOWN" && rsi > 30) sig = "SHORT";
 
-    if (signal) {
-      console.log(`🚀 [SIGNAL FOUND] Phát hiện tín hiệu ${signal}. Đang gửi cho AI phân tích...`);
-      const entry = botState.lastPrice;
-      
-      // Stop Loss động: Sử dụng khoảng cách biến động trung bình (ATR-like) để tránh quét râu
-      const rangeAvg = getAvgRange(bars, 14);
-      const sl = signal === "LONG" ? entry - rangeAvg : entry + rangeAvg;
-      
-      const tp = signal === "LONG" ? entry + (entry - sl) * RR : entry - (sl - entry) * RR;
-
-      const riskAmt = botState.balance * RISK_PER_TRADE;
-      const stopDist = Math.abs(entry - sl);
-
-      if (stopDist > 0) {
-        let size = riskAmt / stopDist;
-        
-        // Đảm bảo khối lượng tối thiểu là 0.001 BTC (Binance Futures limit)
-        // Và giới hạn tối đa không vượt quá 50% vốn (để an toàn) nếu tính theo Margin x10
-        const minBTC = 0.001; 
-        const maxNotionalValue = botState.balance * 5; // Cho phép vị thế tối đa gấp 5 lần vốn (Leverage x5 thực tế)
-        const maxSize = maxNotionalValue / entry;
-
-        size = Math.max(size, minBTC);
-        size = Math.min(size, maxSize);
-
-        if (size >= minBTC) {
-          const currentRatio = botState.ask !== 0 ? botState.bid / botState.ask : 1.0;
-          
-          // Lưu tín hiệu vào danh sách signals
-          const signalInfo = {
-            time: new Date().toISOString(),
-            type: signal,
-            price: entry,
-            obRatio: currentRatio.toFixed(2),
-            adx: adx.toFixed(1),
-            sweep: sweepLow ? "LOW" : "HIGH",
-            status: "PENDING"
-          };
-          botState.signals.unshift(signalInfo);
-          if (botState.signals.length > 50) botState.signals.pop();
-
-          sendTelegram(`🚀 *VÀO LỆNH ${signal}*\n💰 Giá: ${entry}\n✋ Touches: ${sweepResult.touches || 1}\n🛑 SL: ${sl.toFixed(1)}\n🎯 TP: ${tp.toFixed(1)}`);
-          const aiEval = await getAIAnalysis(signal, entry, currentRatio, bars, sweepResult.touches);
-          botState.aiReasoning = aiEval.reason;
-          signalInfo.status = aiEval.decision;
-
-          if (aiEval.decision === "REJECT") {
-            sendTelegram(`🤖 *AI TỪ CHỐI LỆNH*\nLý do: ${aiEval.reason}`);
-            // Không return nữa để code chạy xuống cuối hàm gọi setTimeout
-          } else {
-            sendTelegram(`🤖 *AI XÁC NHẬN LỆNH* (${aiEval.confidence}%)\nLý do: ${aiEval.reason}`);
-            
-            if (!IS_LIVE_TRADING_ENABLED) {
-              console.log(`[PAPER TRADE] Tín hiệu hợp lệ nhưng đang ở chế độ CHỈ THEO DÕI. Không đặt lệnh thật.`);
-              sendTelegram(`ℹ️ *CHẾ ĐỘ THEO DÕI*: Bot giả lập vào lệnh ${signal} tại ${entry}.`);
-              botState.lastTradeTime = Date.now();
-              return;
-            }
-
-            try {
-              const amount = ex.amountToPrecision(PAIR, size);
-              console.log(`[ORDER] Placing ${signal} order. Size: ${amount}`);
-              
-              // Mở vị thế (Market Order)
-              await ex.createMarketOrder(PAIR, signal === 'LONG' ? 'buy' : 'sell', parseFloat(amount));
-              
-              // Đợi một chút để lệnh Market khớp hoàn toàn trước khi đặt TP/SL
-              await new Promise(r => setTimeout(r, 1000));
-  
-              // Set TP và SL sử dụng reduceOnly: true cho chế độ One-way
-              try {
-                // Chốt lời (Limit Order)
-                const tpPrice = ex.priceToPrecision(PAIR, tp);
-                await ex.createOrder(PAIR, 'limit', signal === 'LONG' ? 'sell' : 'buy', parseFloat(amount), parseFloat(tpPrice), { 'reduceOnly': true });
-                
-                // Cắt lỗ (Stop Market Order)
-                const slPrice = ex.priceToPrecision(PAIR, sl);
-                await ex.createOrder(PAIR, 'stop_market', signal === 'LONG' ? 'sell' : 'buy', parseFloat(amount), undefined, { 
-                  'stopPrice': parseFloat(slPrice), 
-                  'reduceOnly': true 
-                });
-                
-                console.log(`[ORDER] TP/SL set successfully.`);
-              } catch (tpslErr: any) {
-                console.error("⚠️ TP/SL Order Error:", tpslErr.message);
-                sendTelegram(`⚠️ *CẢNH BÁO*: Lệnh đã khớp nhưng không đặt được TP/SL tự động. Vui lòng kiểm tra sàn!\nLỗi: ${tpslErr.message}`);
-              }
-  
-              botState.lastTradeTime = Date.now();
-              botState.inPosition = true;
-              sendTelegram(`✅ *ĐẶT LỆNH THÀNH CÔNG*\nBot đã thực thi lệnh ${signal} trên Binance.`);
-            } catch (e: any) {
-              console.error("❌ Order Execution Error:", e);
-              sendTelegram(`❌ *LỖI ĐẶT LỆNH SÀN*\nKhông thể thực thi lệnh trên Binance.\nLỗi: ${e.message}`);
-            }
-          }
+    if (sig) {
+      const e = botState.lastPrice, range = getAvgRange(bars, 14);
+      const sl = sig === "LONG" ? e - range : e + range;
+      const tp = e + (e - sl) * RR;
+      const aiEval = await getAIAnalysis(sig, e, botState.obRatioEMA, bars, sweep.touches);
+      botState.aiReasoning = aiEval.reason;
+      if (aiEval.decision === "CONFIRM") {
+        if (!IS_LIVE_TRADING_ENABLED) { 
+          botState.lastTradeTime = Date.now(); 
+          sendTelegram(`ℹ️ [PAPER] ${sig} at ${e}`); 
+        } else {
+          // Live order logic here (simplified)
+          try {
+            const size = (botState.balance * RISK_PER_TRADE) / Math.abs(e - sl);
+            const amt = ex.amountToPrecision(PAIR, Math.max(size, 0.001));
+            await ex.createMarketOrder(PAIR, sig === 'LONG' ? 'buy' : 'sell', parseFloat(amt));
+            botState.lastTradeTime = Date.now();
+          } catch (err) {}
         }
       }
     }
-  } catch (e) {
-    console.error("Trader Loop Error:", e);
-  }
+  } catch (e) {}
   setTimeout(traderLoop, 5000);
 }
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
-  
-  app.use(cors());
-  app.use(express.json());
-
-  // Logging middleware
-  app.use((req, res, next) => {
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
-    next();
-  });
-
-  // API routes defined BEFORE Vite middleware and other routes
+  app.use(cors()); app.use(express.json());
   app.get("/api/health", (req, res) => res.json({ status: "ok" }));
-
-  // API Backtest
   app.post("/api/backtest/run", async (req, res) => {
-    if (backtestStatus.isRunning) return res.status(400).json({ error: "Backtest is already running" });
-    
+    if (backtestStatus.isRunning) return res.status(400).json({ error: "Running" });
     backtestStatus.isRunning = true;
-    backtestStatus.progress = 0;
-    
-    runBacktest((p) => {
-      backtestStatus.progress = p;
-    }).then(results => {
-      backtestStatus.isRunning = false;
-      backtestStatus.lastResult = results;
-      backtestStatus.progress = 100;
-    }).catch(err => {
-      console.error("Backtest error:", err);
-      backtestStatus.isRunning = false;
-    });
-
-    res.json({ message: "Backtest started" });
+    runBacktest(p => { backtestStatus.progress = p; }).then(r => { backtestStatus.isRunning = false; backtestStatus.lastResult = r; });
+    res.json({ message: "Started" });
   });
-
-  app.get("/api/backtest/status", (req, res) => {
-    if (!backtestStatus.lastResult && fs.existsSync(BACKTEST_RESULTS_FILE)) {
-      try {
-        backtestStatus.lastResult = JSON.parse(fs.readFileSync(BACKTEST_RESULTS_FILE, "utf-8"));
-      } catch (e) {}
-    }
-    res.json(backtestStatus);
-  });
-  
+  app.get("/api/backtest/status", (req, res) => res.json(backtestStatus));
   app.get("/api/trading/status", (req, res) => {
-    try {
-      // Tính Whale Pressure
-      const buyVol = botState.recentWhaleTrades.filter(t => t.side === 'buy').reduce((s, t) => s + t.amount, 0);
-      const sellVol = botState.recentWhaleTrades.filter(t => t.side === 'sell').reduce((s, t) => s + t.amount, 0);
-
-      res.json({
-        status: botState.isRunning ? "running" : "idle",
-        symbol: PAIR,
-        last_price: botState.lastPrice || 0,
-        is_ws_connected: botState.isWsConnected,
-        api_error: botState.apiError,
-        bid_ratio: botState.obRatioEMA.toFixed(2),
-        in_position: botState.inPosition,
-        signals: (botState.signals || []).slice(0, 10),
-        balance: botState.balance || 0,
-        ai_reasoning: botState.aiReasoning || "Đang chờ phân tích...",
-        adx: botState.adx.toFixed(1),
-        plus_di: botState.plusDI.toFixed(1),
-        minus_di: botState.minusDI.toFixed(1),
-        whale_trades: {
-          buy: buyVol.toFixed(0),
-          sell: sellVol.toFixed(0),
-          count: botState.recentWhaleTrades.length
-        }
-      });
-    } catch (err) {
-      console.error("Error in /api/trading/status:", err);
-      res.status(500).json({ error: "Internal Server Error" });
-    }
+    const b = botState.recentWhaleTrades.filter(t => t.side === 'buy').reduce((s, t) => s + t.amount, 0);
+    const s = botState.recentWhaleTrades.filter(t => t.side === 'sell').reduce((s, t) => s + t.amount, 0);
+    res.json({
+      symbol: PAIR, last_price: botState.lastPrice, bid_ratio: botState.obRatioEMA.toFixed(2), in_position: botState.inPosition,
+      signals: botState.signals.slice(0, 10), balance: botState.balance, ai_reasoning: botState.aiReasoning,
+      adx: botState.adx.toFixed(1), whale_trades: { buy: b.toFixed(0), sell: s.toFixed(0), count: botState.recentWhaleTrades.length }
+    });
   });
+  app.get("/api/trading/history", (req, res) => res.json(botState.trades));
 
-  app.get("/api/trading/history", (req, res) => {
-    try {
-      res.json(botState.trades || []);
-    } catch (err) {
-      console.error("Error in /api/trading/history:", err);
-      res.status(500).json({ error: "Internal Server Error" });
-    }
-  });
-
-  // API Catch-all: Ensure any unknown /api route returns JSON, not HTML
-  app.all("/api/*", (req, res) => {
-    res.status(404).json({ error: `API Route ${req.method} ${req.url} not found` });
-  });
-
-  // Vite middleware or static serving
   if (process.env.NODE_ENV !== "production") {
-    try {
-      console.log("🛠️ Initializing Vite middleware...");
-      const vite = await createViteServer({ 
-        server: { middlewareMode: true }, 
-        appType: "spa" 
-      });
-      app.use(vite.middlewares);
-      console.log("✅ Vite middleware loaded");
-    } catch (ve) {
-      console.error("❌ Failed to load Vite middleware:", ve);
-    }
+    const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
+    app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
-    if (fs.existsSync(distPath)) {
-      app.use(express.static(distPath));
-      app.get("*", (req, res) => res.sendFile(path.join(distPath, "index.html")));
-    }
+    const dist = path.join(process.cwd(), "dist");
+    if (fs.existsSync(dist)) { app.use(express.static(dist)); app.get("*", (req, res) => res.sendFile(path.join(dist, "index.html"))); }
   }
 
-  // --- START SERVER ---
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`🚀 Trading Server running on http://localhost:${PORT}`);
-  });
-
-  // Start background processes AFTER server is listening
-  console.log("🔄 Starting Background Processes...");
-  startWS();
-  traderLoop();
-  
-  console.log("✅ Background Processes Initialized.");
-
-  // --- KIỂM TRA KẾT NỐI AI (Background) ---
-  (async () => {
-    console.log("-----------------------------------------");
-    console.log(`🤖 Đang kiểm tra kết nối AI (${modelName})...`);
-    try {
-      const dummyBars = [[Date.now(), 70000, 71000, 69000, 70500, 100]];
-      const testEval = await getAIAnalysis("TEST_STARTUP", 70500, 1.2, dummyBars);
-      
-      if (testEval && testEval.decision && !testEval.reason.includes("AI Error")) {
-        console.log(`✅ Kết nối AI thành công!`);
-        botState.aiReasoning = testEval.reason;
-      } else {
-        console.error("❌ AI chưa hoạt động ổn định. Lý do:", testEval.reason);
-      }
-    } catch (err: any) {
-      console.error("❌ Lỗi nghiêm trọng khi khởi tạo AI:", err.message);
-    }
-  })();
-
-  sendTelegram(`🐳 *Whale Bot Đã Sẵn Sàng*\n🚀 Server PID: ${process.pid}`);
-
-  // Error handling middleware
-  app.use((err: any, req: any, res: any, next: any) => {
-    console.error("Express Error Handler:", err);
-    if (!res.headersSent) {
-      res.status(500).send("Internal Server Error");
-    }
-  });
+  app.listen(3000, "0.0.0.0", () => { console.log(`🚀 Server on http://localhost:3000`); startWS(); traderLoop(); });
 }
 
-startServer().catch(err => {
-  console.error("❌ CRITICAL: startServer failed to launch:", err);
-});
+startServer();
