@@ -45,7 +45,7 @@ const getEnv = (key: string) => {
 
 const aiKey = getEnv("GEMINI_API_KEY");
 const ai = new GoogleGenAI({ apiKey: aiKey });
-const modelName = "gemini-2.0-flash"; 
+const modelName = "gemini-2.5-flash"; 
 
 // --- CẤU HÌNH GIAO DỊCH ---
 const PAIR = "BTC/USDT:USDT"; // Cặp giao dịch (Futures)
@@ -158,7 +158,7 @@ let botState = {
  */
 async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number, bars: any[], touches?: number) {
   const maxRetriesPerModel = 2;
-  const modelsToTry = ["gemini-2.0-flash", "gemini-1.5-flash"]; 
+  const modelsToTry = ["gemini-2.5-flash", "gemini-2.0-flash"]; 
 
   for (let modelToUse of modelsToTry) {
     for (let i = 0; i < maxRetriesPerModel; i++) {
@@ -225,15 +225,26 @@ Trả về duy nhất JSON với format: {"decision": "CONFIRM" hoặc "REJECT",
 async function sendTelegram(msg: string) {
   const token = getEnv("TELEGRAM_BOT_TOKEN");
   const chatId = getEnv("TELEGRAM_CHAT_ID");
-  if (!token || !chatId) return;
+  if (!token || !chatId) {
+    console.error("[TELEGRAM] Thiếu TOKEN hoặc CHAT_ID trong .env");
+    return;
+  }
   try {
     const url = `https://api.telegram.org/bot${token}/sendMessage`;
-    await fetch(url, {
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: "Markdown" })
     });
-  } catch (e) { console.error("Telegram Error:", e); }
+    const data = await res.json() as any;
+    if (!data.ok) {
+      console.error("[TELEGRAM ERROR]", data);
+    } else {
+      console.log("[TELEGRAM] Đã gửi thông báo thành công.");
+    }
+  } catch (e: any) {
+    console.error("[TELEGRAM FETCH ERROR]", e.message);
+  }
 }
 
 let exchange: ccxt.binance | null = null;
@@ -560,6 +571,7 @@ async function traderLoop() {
     // THÔNG BÁO KHI SẴN SÀNG (CHỈ GỬI 1 LẦN KHI KHỞI ĐỘNG XONG)
     if (!botState.isInitNotified) {
       botState.isInitNotified = true;
+      console.log("[INIT] Gửi thông báo khởi động...");
       const vnTime = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
       await sendTelegram(`🤖 **WHALE BOT ĐÃ SẴN SÀNG!**\n\n` +
         `✅ Kết nối sàn: Thành công\n` +
@@ -567,12 +579,10 @@ async function traderLoop() {
         `📊 **Chỉ số hiện tại:**\n` +
         `• VWMA (20): ${vwma.toFixed(2)}\n` +
         `• ADX: ${adx.adx.toFixed(1)} (+DI: ${adx.pDI.toFixed(1)} | -DI: ${adx.mDI.toFixed(1)})\n` +
-        `• RSI: ${rsi.toFixed(1)}\n` +
-        `• Slope: ${slope.toFixed(4)}\n\n` +
+        `• RSI: ${rsi.toFixed(1)}\n\n` +
         `✅ Vốn khởi điểm: ${botState.balance.toFixed(2)}$\n` +
         `🚀 Chế độ: ${IS_LIVE_TRADING_ENABLED ? "LIVE TRADING ⚡" : "PAPER TRADING 📝"}\n` +
         `⏰ Thời gian: ${vnTime}`);
-      console.log("[INIT] Bot is ready and notification sent.");
     }
 
     const lastCandle = bars[bars.length - 1];
@@ -732,13 +742,11 @@ async function newsWatcherLoop() {
     Chỉ trả về nội dung tóm tắt, không giải thích dài dòng.`;
 
     const result = await genAI.models.generateContent({ 
-      model: "gemini-2.0-flash", 
+      model: "gemini-2.5-flash", 
       contents: prompt,
       tools: [{ googleSearch: {} }],
-      config: { 
-        tools: [{ googleSearch: {} }]
-      }
-    } as any);
+      toolConfig: { includeServerSideToolInvocations: true }
+    });
 
     const response = result.text.trim();
 
@@ -795,8 +803,10 @@ async function startServer() {
     if (fs.existsSync(dist)) { app.use(express.static(dist)); app.get("*", (req, res) => res.sendFile(path.join(dist, "index.html"))); }
   }
 
-  app.listen(3000, "0.0.0.0", () => { 
-    console.log(`[START] Server on http://localhost:3000`); 
+  app.listen(3000, "0.0.0.0", async () => { 
+    console.log(`🚀 [SERVER] Bot running at http://0.0.0.0:3000`);
+    console.log(`--- SYSTEM REBOOTED 2026 ---`);
+    await sendTelegram("🔄 **WHALE BOT ĐÃ RESTART**\nĐang khởi tạo các kết nối...");
     startWS(); 
     traderLoop(); 
     newsWatcherLoop(); // Bắt đầu loop tin tức
