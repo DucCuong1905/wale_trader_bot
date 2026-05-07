@@ -131,40 +131,32 @@ function calculateATR(bars: any[], period: number = 14) {
 }
 
 function detectSweep(bars: any[]) {
-  if (bars.length < 50) return { sweepHigh: false, sweepLow: false, displacementBullish: false, displacementBearish: false, volConfirm: false, low: 0, high: 0 };
+  if (bars.length < 10) return { sweepHigh: false, sweepLow: false, displacementBullish: false, displacementBearish: false, volConfirm: false, low: 0, high: 0 };
   
-  const current = bars[bars.length - 1];
-  const [,, h, l, c, v] = current;
-  const o = current[1];
-  const totalSize = h - l;
-  if (totalSize === 0) return { sweepHigh: false, sweepLow: false, displacementBullish: false, displacementBearish: false, volConfirm: false, low: l, high: h };
+  const sweepCandle = bars[bars.length - 2];
+  const confirmCandle = bars[bars.length - 1];
 
-  // 1. LIQUIDITY SWEEP ROLE (Lookback 20 - Phù hợp M5 hơn)
-  const lookbackPeriod = 20;
-  const lookbackBars = bars.slice(-(lookbackPeriod + 1), -1);
-  const lowestLowLevel = Math.min(...lookbackBars.map(b => b[3]));
-  const highestHighLevel = Math.max(...lookbackBars.map(b => b[2]));
-  const prevLow = bars[bars.length - 2][3];
-  const prevHigh = bars[bars.length - 2][2];
+  const [, sO, sH, sL, sC] = sweepCandle;
+  const [, cO, cH, cL, cC, cV] = confirmCandle;
 
-  const body = Math.abs(c - o);
-  const lowerWick = Math.min(o, c) - l;
-  const upperWick = h - Math.max(o, c);
+  const prev3Bars = bars.slice(bars.length - 5, bars.length - 2);
+  const localLow = Math.min(...prev3Bars.map(b => b[3]));
+  const localHigh = Math.max(...prev3Bars.map(b => b[2]));
 
-  const sweepLow = l < lowestLowLevel && c > prevLow && lowerWick > body * 0.8;
-  const sweepHigh = h > highestHighLevel && c < prevHigh && upperWick > body * 0.8;
+  const sweepLow = sL < localLow && sC > localLow;
+  const sweepHigh = sH > localHigh && sC < localHigh;
 
-  // 2. DISPLACEMENT ROLE
+  const body = Math.abs(cC - cO);
+  const totalSize = cH - cL || 1;
   const bodySizes = bars.slice(-16, -1).map(b => Math.abs(b[4] - b[1]));
   const avgBody = bodySizes.reduce((a, b) => a + b, 0) / bodySizes.length;
   
-  const displacementBullish = body > avgBody * 1.1 && (c - l) / (totalSize || 1) > 0.65;
-  const displacementBearish = body > avgBody * 1.1 && (h - c) / (totalSize || 1) > 0.65;
+  const displacementBullish = body > avgBody && (cC - cL) / totalSize > 0.7;
+  const displacementBearish = body > avgBody && (cH - cC) / totalSize > 0.7;
 
-  // 3. VOLUME ROLE
   const volumes = bars.slice(-21, -1).map(b => b[5]);
   const avgVol = volumes.reduce((a, b) => a + b, 0) / volumes.length;
-  const volConfirm = v > avgVol * 1.2;
+  const volConfirm = cV > avgVol * 1.05;
 
   return {
     sweepLow,
@@ -172,8 +164,8 @@ function detectSweep(bars: any[]) {
     displacementBullish,
     displacementBearish,
     volConfirm,
-    low: l,
-    high: h
+    low: sL,
+    high: sH
   };
 }
 
@@ -278,7 +270,7 @@ export async function runBacktest(onProgress?: (p: number) => void) {
     const window = allKlines.slice(0, i + 1);
     const currentPrice = allKlines[i][4];
     
-    // NEW LOGIC
+    // NEW LOGIC - Relaxed for M5
     const vwma = calculateVWMA(window, 20);
     const vwmaPrev = calculateVWMA(window.slice(0, -1), 20);
     const slope = vwma - vwmaPrev;
@@ -288,8 +280,8 @@ export async function runBacktest(onProgress?: (p: number) => void) {
     const sweep = detectSweep(window);
     const atr = calculateATR(window, 14);
 
-    let isLong = currentPrice > vwma && slope > 0 && distance < 0.006 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adx > 18;
-    let isShort = currentPrice < vwma && slope < 0 && distance < 0.006 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adx > 18;
+    let isLong = currentPrice > vwma && slope > 0 && distance < 0.01 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adx > 15;
+    let isShort = currentPrice < vwma && slope < 0 && distance < 0.01 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adx > 15;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
