@@ -539,8 +539,8 @@ async function traderLoop() {
           if (cL <= paperPosition.sl) { closed = true; status = "LOSS"; }
           else if (cH >= paperPosition.tp) { closed = true; status = "WIN"; }
         } else {
-          if (cL >= paperPosition.sl) { closed = true; status = "LOSS"; } // Fixed logic: SHORT SL is hit if price goes ABOVE sl
-          else if (cH <= paperPosition.tp) { closed = true; status = "WIN"; } // Fixed logic: SHORT TP is hit if price goes BELOW tp
+          if (cH >= paperPosition.sl) { closed = true; status = "LOSS"; }
+          else if (cL <= paperPosition.tp) { closed = true; status = "WIN"; }
         }
 
         if (closed) {

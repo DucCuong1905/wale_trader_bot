@@ -286,6 +286,7 @@ export async function runBacktest(
     totalTrades: 0, 
     wins: 0, 
     losses: 0, 
+    cancelledTrades: 0,
     totalPnL: 0, 
     finalBalance: INITIAL_BALANCE, 
     isLiquidated: false, 
@@ -343,8 +344,8 @@ export async function runBacktest(
           if (l <= sl) { exitPrice = sl; break; }
           if (h >= tp) { exitPrice = tp; status = "WIN"; break; }
         } else {
-          if (h >= sl) { exitPrice = sl; break; } // Fixed logic: SHORT SL is hit if price goes ABOVE sl
-          if (l <= tp) { exitPrice = tp; status = "WIN"; break; } // Fixed logic: SHORT TP is hit if price goes BELOW tp
+          if (h >= sl) { exitPrice = sl; break; }
+          if (l <= tp) { exitPrice = tp; status = "WIN"; break; }
         }
       }
 
@@ -372,7 +373,6 @@ export async function runBacktest(
       console.log(`[TRADE] ${status} | PnL: ${pnlR}R ($${dollarPnL.toFixed(2)}) | Balance: $${results.finalBalance.toFixed(2)}`);
       
       // Nhảy vòng lặp đến điểm nến hiện tại
-    }
     }
   }
 
