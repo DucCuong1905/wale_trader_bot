@@ -53,7 +53,7 @@ const SYMBOL_ID = "btcusdt"; // ID ký hiệu cho WebSocket
 const TIMEFRAME = "1m"; // Khung thời gian nến (1 phút)
 const IS_LIVE_TRADING_ENABLED = false; // Chế độ giao dịch thật (true = bật, false = test)
 const RISK_PER_TRADE = 0.01; // Rủi ro trên mỗi lệnh (1% tài khoản)
-const RR = 2.0; // Tỷ lệ Risk/Reward 1:2 theo yêu cầu
+const RR = 1.2; // Tỷ lệ Risk/Reward 1:1.2 theo yêu cầu
 const COOLDOWN_MS = 30000; // Thời gian chờ giữa các lệnh (30 giây)
 const MAX_DAILY_LOSS = 0.03; // Giới hạn lỗ tối đa trong ngày (3%)
 
@@ -830,12 +830,12 @@ async function startServer() {
     
     // Tự động chạy Backtest khi khởi động
     console.log("[INIT] Đang chạy Backtest tự động (01/03 - 01/04/2026)...");
-    runBacktest("2026-03-01T00:00:00Z", "2026-04-01T00:00:00Z", 2.0)
+    runBacktest("2026-03-01T00:00:00Z", "2026-04-01T00:00:00Z", 1.2)
       .then(async (r) => {
         const winRate = r.totalTrades > 0 ? (r.wins / r.totalTrades * 100).toFixed(1) : "0";
         const msg = `📊 **KẾT QUẢ BACKTEST TỰ ĐỘNG**\n` +
           `📅 Giai đoạn: 01/03 - 01/04/2026\n` +
-          `🎯 RR: 1:2\n\n` +
+          `🎯 RR: 1:1.2\n\n` +
           `✅ Lệnh khớp: ${r.totalTrades}\n` +
           `🚫 Lệnh chờ hủy: ${r.cancelledTrades || 0}\n` +
           `🏆 Tỉ lệ thắng: ${winRate}%\n` +
