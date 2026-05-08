@@ -693,10 +693,10 @@ async function traderLoop() {
     // 7. XỬ LÝ LỆNH (BỎ QUA AI CHECK ĐỂ TRÁNH DELAY)
     if (sig) {
       const confirmRange = sweep.confirmHigh - sweep.confirmLow;
-      // Vào lệnh tại điểm hồi (Retracement 40% của nến xác nhận)
+      // Vào lệnh tại điểm hồi (Retracement 10% của nến xác nhận)
       const entryPrice = sig === "LONG" 
-        ? sweep.confirmLow + confirmRange * 0.4 
-        : sweep.confirmHigh - confirmRange * 0.4;
+        ? sweep.confirmLow + confirmRange * 0.1 
+        : sweep.confirmHigh - confirmRange * 0.1;
       
       const e = entryPrice;
       // Stop Loss tại đáy/đỉnh râu quét +- một chút ATR
@@ -865,12 +865,12 @@ async function startServer() {
     await sendTelegram("🔄 **WHALE BOT ĐÃ RESTART**\nĐang khởi tạo các kết nối và tải dữ liệu nến...");
     
     // Tự động chạy Backtest khi khởi động
-    console.log("[INIT] Đang chạy Backtest tự động (01/01 - 31/03/2026)...");
-    runBacktest("2026-01-01T00:00:00Z", "2026-03-31T23:59:59Z", 1.0)
+    console.log("[INIT] Đang chạy Backtest tự động (01/03 - 01/04/2026)...");
+    runBacktest("2026-03-01T00:00:00Z", "2026-04-01T00:00:00Z", 1.0)
       .then(async (r) => {
         const winRate = r.totalTrades > 0 ? (r.wins / r.totalTrades * 100).toFixed(1) : "0";
         const msg = `📊 **KẾT QUẢ BACKTEST TỰ ĐỘNG**\n` +
-          `📅 Giai đoạn: 01/01 - 31/03/2026\n` +
+          `📅 Giai đoạn: 01/03 - 01/04/2026\n` +
           `🎯 RR: 1:1\n\n` +
           `✅ Lệnh khớp: ${r.totalTrades}\n` +
           `🚫 Lệnh chờ hủy: ${r.cancelledTrades || 0}\n` +

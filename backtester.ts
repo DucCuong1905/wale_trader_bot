@@ -24,8 +24,8 @@ const modelName = "gemini-2.0-flash";
 
 const PAIR = "BTC/USDT";
 const TIMEFRAME = "1m";
-const START_DATE = "2026-01-01T00:00:00Z"; 
-const END_DATE = "2026-03-31T23:59:59Z";
+const START_DATE = "2026-03-01T00:00:00Z"; 
+const END_DATE = "2026-04-01T00:00:00Z";
 const RR = 1.0; 
 const INITIAL_BALANCE = 5000;
 const RISK_PER_TRADE = 0.01; // 1%
@@ -326,8 +326,8 @@ export async function runBacktest(
       const type = isLong ? "LONG" : "SHORT";
       const confirmRange = sweep.confirmHigh - sweep.confirmLow;
       const entryPrice = type === "LONG" 
-        ? sweep.confirmLow + confirmRange * 0.4 
-        : sweep.confirmHigh - confirmRange * 0.4;
+        ? sweep.confirmLow + confirmRange * 0.1 
+        : sweep.confirmHigh - confirmRange * 0.1;
       
       const time = new Date(allKlines[i][0]).toISOString();
       const sl = type === "LONG" ? (sweep.low - atr * 0.2) : (sweep.high + atr * 0.2);
