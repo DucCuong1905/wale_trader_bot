@@ -214,13 +214,15 @@ HƯỚNG DẪN RA QUYẾT ĐỊNH CHUYÊN SÂU:
 
 Trả về duy nhất JSON với format: {"decision": "CONFIRM" hoặc "REJECT", "reason": "...", "confidence": 0-100}`;
 
-        const result = await ai.models.generateContent({
+        const response = await ai.models.generateContent({
           model: modelToUse,
           contents: prompt,
-          config: { responseMimeType: "application/json" }
+          config: { 
+            responseMimeType: "application/json" 
+          }
         });
 
-        const text = result.text;
+        const text = response.text;
         if (!text) throw new Error("AI không trả về nội dung.");
         const jsonMatch = text.match(/\{[\s\S]*\}/);
         const cleanText = jsonMatch ? jsonMatch[0] : text;
@@ -609,6 +611,7 @@ async function traderLoop() {
     if (!bars || bars.length < 50) { setTimeout(traderLoop, 10000); return; }
 
     // 4. TÍNH TOÁN CÁC CHỈ BÁO KỸ THUẬT
+    const atr = calculateATR(bars, 14);
     const adx = calcADX(bars, 14); botState.adx = adx.adx; botState.plusDI = adx.pDI; botState.minusDI = adx.mDI;
     const rsi = calculateRSI(bars.map(b => b[4]), 14);
     const vwma = calculateVWMA(bars, 20); // VWMA 20 phiên
@@ -647,7 +650,6 @@ async function traderLoop() {
     botState.lastProcessedCandleTime = lastCandleTime;
 
     const sweep = detectWhaleSweep(bars);
-    const atr = calculateATR(bars, 14);
 
     let sig: "LONG" | "SHORT" | null = null;
     
@@ -771,8 +773,7 @@ async function newsWatcherLoop() {
     const aiKey = getEnv("GEMINI_API_KEY");
     if (!aiKey) return;
 
-    const genAI = new GoogleGenAI({ apiKey: aiKey });
-    
+
     const prompt = `Bạn là một chuyên gia phân tích tài chính vĩ mô. 
     Hãy tìm kiếm tin tức thế giới mới nhất trong 1 giờ qua (kinh tế Mỹ, chính sách Fed, cá voi di chuyển, tin tức sàn giao dịch) có ảnh hưởng MẠNH đến Bitcoin.
     
@@ -782,18 +783,19 @@ async function newsWatcherLoop() {
     
     Chỉ trả về nội dung tóm tắt, không giải thích dài dòng.`;
 
-    const result = await genAI.models.generateContent({ 
+    const response = await ai.models.generateContent({ 
       model: "gemini-2.0-flash", 
       contents: prompt,
-      tools: [{ googleSearch: {} }],
-      toolConfig: { includeServerSideToolInvocations: true }
+      config: {
+        tools: [{ googleSearch: {} }] 
+      }
     });
 
-    const response = result.text.trim();
+    const text = response.text || "";
 
-    if (response !== "NONE" && response.length > 10) {
+    if (text !== "NONE" && text.length > 10) {
       console.log("[NEWS WATCHER] Tin tức quan trọng phát hiện.");
-      await sendTelegram(`📰 **AI MACRO WATCHER**\n\n${response}`);
+      await sendTelegram(`📰 **AI MACRO WATCHER**\n\n${text}`);
     } else {
       console.log("[NEWS WATCHER] Không có tin mới quan trọng.");
     }
