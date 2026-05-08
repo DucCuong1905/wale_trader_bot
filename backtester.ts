@@ -156,7 +156,7 @@ function detectSweep(bars: any[]) {
   const [, sO, sH, sL, sC] = sweepCandle;
   const [, cO, cH, cL, cC, cV] = confirmCandle;
 
-  const prevBars = bars.slice(-12, -2);
+  const prevBars = bars.slice(bars.length - 7, bars.length - 2);
   const localLow = Math.min(...prevBars.map(b => b[3]));
   const localHigh = Math.max(...prevBars.map(b => b[2]));
 

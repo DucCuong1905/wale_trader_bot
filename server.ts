@@ -268,8 +268,8 @@ function detectWhaleSweep(bars: any[]) {
   const [, sO, sH, sL, sC] = sweepCandle;
   const [, cO, cH, cL, cC, cV] = confirmCandle;
 
-  // 1. LOGIC QUÉT THANH KHOẢN (Local Swing Sweep - 10 nến trước nến quét)
-  const prevBars = bars.slice(-12, -2);
+  // 1. LOGIC QUÉT THANH KHOẢN (Local Swing Sweep - 5 nến trước nến quét)
+  const prevBars = bars.slice(bars.length - 7, bars.length - 2);
   const localLow = Math.min(...prevBars.map(b => b[3]));
   const localHigh = Math.max(...prevBars.map(b => b[2]));
 
