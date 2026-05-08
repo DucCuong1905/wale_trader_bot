@@ -57,6 +57,11 @@ const RR = 1.0; // Tỷ lệ Risk/Reward 1:1 theo yêu cầu
 const COOLDOWN_MS = 30000; // Thời gian chờ giữa các lệnh (30 giây)
 const MAX_DAILY_LOSS = 0.03; // Giới hạn lỗ tối đa trong ngày (3%)
 
+// CẤU HÌNH PHIÊN GIAO DỊCH (LONDON & NEW YORK)
+const ENABLE_SESSION_FILTER = true; // Bật/tắt lọc theo phiên
+const SESSION_START_GMT = 8;  // 08:00 GMT (Mở phiên Âu)
+const SESSION_END_GMT = 21;    // 21:00 GMT (Đóng phiên Mỹ)
+
 // --- QUẢN LÝ VỊ THẾ GIẢ LẬP (PAPER TRADING) ---
 let paperPosition: {
   type: "LONG" | "SHORT";
@@ -449,6 +454,21 @@ function calculateVWMA(bars: any[], period: number) {
   return v === 0 ? bars[bars.length - 1][4] : pv / v;
 }
 
+// Kiểm tra phiên giao dịch
+function isWithinTradingSessions(timestamp?: number): boolean {
+  if (!ENABLE_SESSION_FILTER) return true;
+  
+  const date = timestamp ? new Date(timestamp) : new Date();
+  const hoursGMT = date.getUTCHours();
+  
+  // Phiên Âu (8h GMT) -> Hết phiên Mỹ (21h GMT)
+  if (SESSION_START_GMT <= SESSION_END_GMT) {
+    return hoursGMT >= SESSION_START_GMT && hoursGMT < SESSION_END_GMT;
+  } else {
+    return hoursGMT >= SESSION_START_GMT || hoursGMT < SESSION_END_GMT;
+  }
+}
+
 // --- WS ---
 function startWS() {
   const streams = `${SYMBOL_ID}@aggtrade/${SYMBOL_ID}@trade/${SYMBOL_ID}@miniticker/${SYMBOL_ID}@depth20`;
@@ -578,47 +598,38 @@ async function traderLoop() {
 
     // 3. LẤY DỮ LIỆU NẾN (OHLCV)
     let bars: any[] = [];
-    let bars5m: any[] = [];
     try {
       bars = await ex.fetchOHLCV(PAIR, TIMEFRAME, undefined, 100);
-      // Lấy thêm nến 5m để lọc đa khung thời gian
-      bars5m = await ex.fetchOHLCV(PAIR, "5m", undefined, 50);
     } catch (ohlcvErr: any) {
       // Nếu lỗi do API Key (dù là lệnh public), thử lại sau 10s
       console.error("❌ Lỗi fetchOHLCV:", ohlcvErr.message);
       setTimeout(traderLoop, 10000);
       return;
     }
-    if (!bars || bars.length < 50 || !bars5m || bars5m.length < 25) { setTimeout(traderLoop, 10000); return; }
+    if (!bars || bars.length < 50) { setTimeout(traderLoop, 10000); return; }
 
     // 4. TÍNH TOÁN CÁC CHỈ BÁO KỸ THUẬT
     const adx = calcADX(bars, 14); botState.adx = adx.adx; botState.plusDI = adx.pDI; botState.minusDI = adx.mDI;
     const rsi = calculateRSI(bars.map(b => b[4]), 14);
-    const vwma = calculateVWMA(bars, 20); // VWMA 20 phiên (M1)
+    const vwma = calculateVWMA(bars, 20); // VWMA 20 phiên
     const vwmaPrev = calculateVWMA(bars.slice(0, -1), 20);
-    const slope = vwma - vwmaPrev; // Độ dốc của VWMA 1m
-
-    // TÍNH TOÁN KHUNG 5M (MTF Filter)
-    const vwma5m = calculateVWMA(bars5m, 20);
-    const vwma5mPrev = calculateVWMA(bars5m.slice(0, -1), 20);
-    const slope5m = vwma5m - vwma5mPrev;
+    const slope = vwma - vwmaPrev; // Độ dốc của VWMA
     
     const currentPrice = bars[bars.length - 1][4];
-    const distance = Math.abs(currentPrice - vwma) / vwma; // Khoảng cách giá đến VWMA 1m
+    const distance = Math.abs(currentPrice - vwma) / vwma; // Khoảng cách giá đến VWMA
 
     // THÔNG BÁO KHI SẴN SÀNG (CHỈ GỬI 1 LẦN KHI KHỞI ĐỘNG XONG)
     if (!botState.isInitNotified) {
       botState.isInitNotified = true;
       console.log("[INIT] Gửi thông báo khởi động...");
       const vnTime = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
-      await sendTelegram(`🤖 **WHALE BOT ĐÃ SẴN SÀNG (MTF 5m)!**\n\n` +
+      await sendTelegram(`🤖 **WHALE BOT ĐÃ SẴN SÀNG!**\n\n` +
         `✅ Kết nối sàn: Thành công\n` +
-        `✅ Dữ liệu nến: Đã tải ${bars.length} nến ${TIMEFRAME} & 5m\n` +
-        `📊 **Chỉ số hiện tại (M1):**\n` +
+        `✅ Dữ liệu nến: Đã tải ${bars.length} nến ${TIMEFRAME}\n` +
+        `📊 **Chỉ số hiện tại:**\n` +
         `• VWMA (20): ${vwma.toFixed(2)} (Slope: ${slope > 0 ? '↗️' : '↘️'})\n` +
         `• ADX: ${adx.adx.toFixed(1)} (+DI: ${adx.pDI.toFixed(1)} | -DI: ${adx.mDI.toFixed(1)})\n` +
-        `📊 **Chỉ số 5m:**\n` +
-        `• VWMA 5m: ${vwma5m.toFixed(2)} (Slope: ${slope5m > 0 ? '↗️' : '↘️'})\n\n` +
+        `• RSI: ${rsi.toFixed(1)}\n\n` +
         `✅ Vốn khởi điểm: ${botState.balance.toFixed(2)}$\n` +
         `🚀 Chế độ: ${IS_LIVE_TRADING_ENABLED ? "LIVE TRADING ⚡" : "PAPER TRADING 📝"}\n` +
         `⏰ Thời gian: ${vnTime}`);
@@ -643,10 +654,9 @@ async function traderLoop() {
     // 5. ĐIỀU KIỆN VÀO LỆNH LONG (MUA)
     // ========================================================
     if (
-      currentPrice > vwma &&             // 1. Giá nằm trên đường VWMA 20 (M1)
-      slope > 0 &&                       // 2. Xu hướng VWMA đang đi lên (M1)
-      currentPrice > vwma5m &&           // 9. MTF: Giá trên VWMA 5m
-      slope5m > 0 &&                     // 10. MTF: Trend 5m đang hồi phục/tăng
+      isWithinTradingSessions() &&       // 0. Kiểm tra phiên giao dịch
+      currentPrice > vwma &&             // 1. Giá nằm trên đường VWMA 20
+      slope > 0 &&                       // 2. Xu hướng VWMA đang đi lên (Slope dương)
       distance < 0.01 &&                 // 3. Giá không quá xa VWMA (tránh fomo)
       sweep.sweepLow &&                  // 4. Có tín hiệu quét râu ở đáy (Liquidity Sweep Low)
       sweep.displacementBullish &&       // 5. Có nến xác nhận tăng mạnh (Displacement)
@@ -661,10 +671,9 @@ async function traderLoop() {
     // 6. ĐIỀU KIỆN VÀO LỆNH SHORT (BÁN)
     // ========================================================
     if (
-      currentPrice < vwma &&             // 1. Giá nằm dưới đường VWMA 20 (M1)
-      slope < 0 &&                       // 2. Xu hướng VWMA đang đi xuống (M1)
-      currentPrice < vwma5m &&           // 9. MTF: Giá dưới VWMA 5m
-      slope5m < 0 &&                     // 10. MTF: Trend 5m đang giảm
+      isWithinTradingSessions() &&       // 0. Kiểm tra phiên giao dịch
+      currentPrice < vwma &&             // 1. Giá nằm dưới đường VWMA 20
+      slope < 0 &&                       // 2. Xu hướng VWMA đang đi xuống (Slope âm)
       distance < 0.01 &&                 // 3. Giá không quá xa VWMA
       sweep.sweepHigh &&                 // 4. Có tín hiệu quét râu ở đỉnh (Liquidity Sweep High)
       sweep.displacementBearish &&       // 5. Có nến xác nhận giảm mạnh (Displacement)
@@ -701,16 +710,14 @@ async function traderLoop() {
         botState.lastTradeTime = Date.now(); 
 
         const conditions = [
-          `1. Giá vs VWMA (1m): ${sig === 'LONG' ? (currentPrice > vwma ? '✅ Above' : '❌ Below') : (currentPrice < vwma ? '✅ Below' : '❌ Above')}`,
-          `2. Slope (1m): ${sig === 'LONG' ? (slope > 0 ? '✅ Positive' : '❌ Negative') : (slope < 0 ? '✅ Negative' : '❌ Positive')}`,
+          `1. Giá vs VWMA: ${sig === 'LONG' ? (currentPrice > vwma ? '✅ Above' : '❌ Below') : (currentPrice < vwma ? '✅ Below' : '❌ Above')}`,
+          `2. Slope: ${sig === 'LONG' ? (slope > 0 ? '✅ Positive' : '❌ Negative') : (slope < 0 ? '✅ Negative' : '❌ Positive')}`,
           `3. Distance: ${distance < 0.01 ? '✅ Safe' : '❌ Fomo'} (${(distance * 100).toFixed(2)}%)`,
           `4. Sweep: ${sig === 'LONG' ? (sweep.sweepLow ? '✅ Low Sweep' : '❌ No Sweep') : (sweep.sweepHigh ? '✅ High Sweep' : '❌ No Sweep')}`,
           `5. Displacement: ${sig === 'LONG' ? (sweep.displacementBullish ? '✅ Strong Bull' : '❌ Weak') : (sweep.displacementBearish ? '✅ Strong Bear' : '❌ Weak')}`,
           `6. Volume: ${sweep.volConfirm ? '✅ Confirmed' : '❌ Low'}`,
           `7. ADX (>=10): ${adx.adx >= 10 ? '✅' : '❌'} (${adx.adx.toFixed(1)})`,
-          `8. DI Power: ${sig === 'LONG' ? (adx.pDI > adx.mDI ? '✅ +DI > -DI' : '❌') : (adx.mDI > adx.pDI ? '✅ -DI > +DI' : '❌')}`,
-          `9. MTF 5m Price: ${sig === 'LONG' ? (currentPrice > vwma5m ? '✅ Above' : '❌ Below') : (currentPrice < vwma5m ? '✅ Below' : '❌ Above')}`,
-          `10. MTF 5m Slope: ${sig === 'LONG' ? (slope5m > 0 ? '✅ Positive' : '❌ Negative') : (slope5m < 0 ? '✅ Negative' : '❌ Positive')}`
+          `8. DI Power: ${sig === 'LONG' ? (adx.pDI > adx.mDI ? '✅ +DI > -DI' : '❌') : (adx.mDI > adx.pDI ? '✅ -DI > +DI' : '❌')}`
         ].join('\n');
 
         await sendTelegram(`🚀 [PAPER MARKET] **${sig}** Entered!\n\n` +
@@ -730,16 +737,14 @@ async function traderLoop() {
           
           const vnTime = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
           const conditions = [
-            `1. Giá vs VWMA (1m): ${sig === 'LONG' ? (currentPrice > vwma ? '✅ Above' : '❌ Below') : (currentPrice < vwma ? '✅ Below' : '❌ Above')}`,
-            `2. Slope (1m): ${sig === 'LONG' ? (slope > 0 ? '✅ Positive' : '❌ Negative') : (slope < 0 ? '✅ Negative' : '❌ Positive')}`,
+            `1. Giá vs VWMA: ${sig === 'LONG' ? (currentPrice > vwma ? '✅ Above' : '❌ Below') : (currentPrice < vwma ? '✅ Below' : '❌ Above')}`,
+            `2. Slope: ${sig === 'LONG' ? (slope > 0 ? '✅ Positive' : '❌ Negative') : (slope < 0 ? '✅ Negative' : '❌ Positive')}`,
             `3. Distance: ${distance < 0.01 ? '✅ Safe' : '❌ Fomo'} (${(distance * 100).toFixed(2)}%)`,
             `4. Sweep: ${sig === 'LONG' ? (sweep.sweepLow ? '✅ Low Sweep' : '❌ No Sweep') : (sweep.sweepHigh ? '✅ High Sweep' : '❌ No Sweep')}`,
             `5. Displacement: ${sig === 'LONG' ? (sweep.displacementBullish ? '✅ Strong Bull' : '❌ Weak') : (sweep.displacementBearish ? '✅ Strong Bear' : '❌ Weak')}`,
             `6. Volume: ${sweep.volConfirm ? '✅ Confirmed' : '❌ Low'}`,
             `7. ADX (>=10): ${adx.adx >= 10 ? '✅' : '❌'} (${adx.adx.toFixed(1)})`,
-            `8. DI Power: ${sig === 'LONG' ? (adx.pDI > adx.mDI ? '✅ +DI > -DI' : '❌') : (adx.mDI > adx.pDI ? '✅ -DI > +DI' : '❌')}`,
-            `9. MTF 5m Price: ${sig === 'LONG' ? (currentPrice > vwma5m ? '✅ Above' : '❌ Below') : (currentPrice < vwma5m ? '✅ Below' : '❌ Above')}`,
-            `10. MTF 5m Slope: ${sig === 'LONG' ? (slope5m > 0 ? '✅ Positive' : '❌ Negative') : (slope5m < 0 ? '✅ Negative' : '❌ Positive')}`
+            `8. DI Power: ${sig === 'LONG' ? (adx.pDI > adx.mDI ? '✅ +DI > -DI' : '❌') : (adx.mDI > adx.pDI ? '✅ -DI > +DI' : '❌')}`
           ].join('\n');
 
           await sendTelegram(`⚡ [LIVE ORDER] **${sig}** ${amt} BTC at ${e.toFixed(2)}\n\n` +
@@ -850,7 +855,7 @@ async function startServer() {
     runBacktest("2026-03-01T00:00:00Z", "2026-04-01T00:00:00Z", 1.0)
       .then(async (r) => {
         const winRate = r.totalTrades > 0 ? (r.wins / r.totalTrades * 100).toFixed(1) : "0";
-        const msg = `📊 **KẾT QUẢ BACKTEST TỰ ĐỘNG (MTF 5m)**\n` +
+        const msg = `📊 **KẾT QUẢ BACKTEST TỰ ĐỘNG**\n` +
           `📅 Giai đoạn: 01/03 - 01/04/2026\n` +
           `🎯 RR: 1:1\n\n` +
           `✅ Lệnh khớp: ${r.totalTrades}\n` +

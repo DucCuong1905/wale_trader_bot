@@ -30,6 +30,11 @@ const RR = 1.0;
 const INITIAL_BALANCE = 5000;
 const RISK_PER_TRADE = 0.01; // 1%
 
+// CẤU HÌNH PHIÊN GIAO DỊCH
+const ENABLE_SESSION_FILTER = true;
+const SESSION_START_GMT = 8;
+const SESSION_END_GMT = 21;
+
 interface BacktestResult {
   totalTrades: number;
   wins: number;
@@ -249,6 +254,17 @@ function calculateRSI(prices: number[], period: number) {
   return 100 - (100 / (1 + rs));
 }
 
+function isWithinTradingSessions(timestamp: number): boolean {
+  if (!ENABLE_SESSION_FILTER) return true;
+  const date = new Date(timestamp);
+  const hoursGMT = date.getUTCHours();
+  if (SESSION_START_GMT <= SESSION_END_GMT) {
+    return hoursGMT >= SESSION_START_GMT && hoursGMT < SESSION_END_GMT;
+  } else {
+    return hoursGMT >= SESSION_START_GMT || hoursGMT < SESSION_END_GMT;
+  }
+}
+
 async function getAIBacktestDecision(signal: string, lastPrice: number, bars: any[]) {
   // AI is disabled for backtest performance and stability
   return { decision: "CONFIRM", reason: "AI Check Disabled for Backtest" };
@@ -316,38 +332,14 @@ export async function runBacktest(
     const slope = vwma - vwmaPrev;
     const distance = Math.abs(currentPrice - vwma) / vwma;
     
-    // --- KHUNG 5M (MTF FILTER) ---
-    // Gộp nến 1m thành nến 5m
-    const bars5m: any[] = [];
-    for (let k = 0; k <= i - 4; k += 5) {
-      const slice = allKlines.slice(k, k + 5);
-      const open = slice[0][1];
-      const close = slice[4][4];
-      const high = Math.max(...slice.map(s => s[2]));
-      const low = Math.min(...slice.map(s => s[3]));
-      const volume = slice.reduce((sum, s) => sum + s[5], 0);
-      bars5m.push([slice[0][0], open, high, low, close, volume]);
-    }
-    
-    let vwma5m = 0;
-    let slope5m = 0;
-    if (bars5m.length >= 21) {
-      vwma5m = calculateVWMA(bars5m, 20);
-      const vwma5mPrev = calculateVWMA(bars5m.slice(0, -1), 20);
-      slope5m = vwma5m - vwma5mPrev;
-    }
-
     const adx = calcADX(window);
     const sweep = detectSweep(window);
     const atr = calculateATR(window, 14);
 
-    let isLong = currentPrice > vwma && slope > 0 && 
-                 (vwma5m > 0 ? (currentPrice > vwma5m && slope5m > 0) : true) && // MTF check if enough data
-                 distance < 0.01 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adx.adx >= 10 && adx.pDI > adx.mDI;
-                 
-    let isShort = currentPrice < vwma && slope < 0 && 
-                  (vwma5m > 0 ? (currentPrice < vwma5m && slope5m < 0) : true) && // MTF check if enough data
-                  distance < 0.01 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adx.adx >= 10 && adx.mDI > adx.pDI;
+    const isInSession = isWithinTradingSessions(allKlines[i][0]);
+
+    let isLong = isInSession && currentPrice > vwma && slope > 0 && distance < 0.01 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adx.adx >= 10 && adx.pDI > adx.mDI;
+    let isShort = isInSession && currentPrice < vwma && slope < 0 && distance < 0.01 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adx.adx >= 10 && adx.mDI > adx.pDI;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
