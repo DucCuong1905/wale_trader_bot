@@ -156,9 +156,9 @@ function detectSweep(bars: any[]) {
   const [, sO, sH, sL, sC] = sweepCandle;
   const [, cO, cH, cL, cC, cV] = confirmCandle;
 
-  const prev5Bars = bars.slice(bars.length - 7, bars.length - 2);
-  const localLow = Math.min(...prev5Bars.map(b => b[3]));
-  const localHigh = Math.max(...prev5Bars.map(b => b[2]));
+  const prevBars = bars.slice(-12, -2);
+  const localLow = Math.min(...prevBars.map(b => b[3]));
+  const localHigh = Math.max(...prevBars.map(b => b[2]));
 
   const sweepLow = sL <= localLow && sC >= localLow;
   const sweepHigh = sH >= localHigh && sC <= localHigh;
@@ -236,22 +236,6 @@ function calcADX(ohlcv: any[]) {
     pDI: pDIs[pDIs.length - 1],
     mDI: mDIs[mDIs.length - 1]
   };
-}
-
-function calculateRSI(prices: number[], period: number) {
-  if (prices.length < period + 1) return 50;
-  let gains = 0;
-  let losses = 0;
-
-  for (let i = 1; i <= period; i++) {
-    const diff = prices[prices.length - i] - prices[prices.length - i - 1];
-    if (diff >= 0) gains += diff;
-    else losses -= diff;
-  }
-
-  if (losses === 0) return 100;
-  const rs = (gains / period) / (losses / period);
-  return 100 - (100 / (1 + rs));
 }
 
 function isWithinTradingSessions(timestamp: number): boolean {
@@ -339,8 +323,7 @@ export async function runBacktest(
     const isInSession = isWithinTradingSessions(allKlines[i][0]);
 
     const vwmaDistance = Math.abs(currentPrice - vwma);
-    const multiplier = adx.adx > 25 ? 1.8 : 1.0;
-    const maxDistance = atr * multiplier;
+    const maxDistance = atr * 1.2;
 
     let isLong = isInSession && currentPrice > vwma && slope > 0 && vwmaDistance < maxDistance && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adx.adx >= 10 && adx.pDI > adx.mDI;
     let isShort = isInSession && currentPrice < vwma && slope < 0 && vwmaDistance < maxDistance && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adx.adx >= 10 && adx.mDI > adx.pDI;

@@ -370,20 +370,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* AI Analysis Section */}
-              <div className="mt-8 p-8 bg-blue-600/10 border border-blue-500/20 rounded-[2rem] glow-blue relative overflow-hidden group">
-                <div className="absolute top-0 right-0 w-64 h-64 bg-blue-600/5 blur-[80px] -mr-32 -mt-32 rounded-full group-hover:bg-blue-600/10 transition-all duration-1000" />
-                <div className="flex items-center gap-4 mb-4 relative z-10">
-                  <div className="p-2.5 bg-blue-600 rounded-xl shadow-[0_0_20px_rgba(37,99,235,0.4)]">
-                    <Brain className="w-6 h-6 text-white" />
-                  </div>
-                  <h3 className="font-black text-blue-50 uppercase tracking-widest text-lg">AI Phân Tích Bối Cảnh</h3>
-                </div>
-                <p className="text-blue-100/90 text-sm italic leading-relaxed relative z-10 font-medium">
-                  "{data?.ai_reasoning || 'Đang chờ tín hiệu tiếp theo để phân tích bối cảnh thị trường bằng Gemini AI...'}"
-                </p>
-              </div>
-
               {/* Win/Loss Statistics Chart */}
               <TradeStats trades={history} />
 
@@ -483,7 +469,6 @@ export default function App() {
                             {item.status === 'CLOSED' && (
                               <span className="text-blue-300 font-bold">Lãi/Lỗ ròng: $${item.pnl?.toFixed(2)}</span>
                             )}
-                            {item.status === 'AI_REJECTED' && <span className="opacity-60 italic text-red-300/70">AI: {item.reason}</span>}
                           </td>
                           <td className={cn(
                             "px-8 py-5 text-right font-mono text-[15px] font-black",
@@ -772,7 +757,7 @@ export default function App() {
 
                   <div className="lg:col-span-8 bg-[#12121c] rounded-[2rem] border border-white/5 overflow-hidden">
                      <div className="p-8 border-b border-white/5 flex items-center justify-between">
-                        <h3 className="text-lg font-black uppercase">Nhật Ký Backtest (AI Analysis)</h3>
+                        <h3 className="text-lg font-black uppercase">Nhật Ký Backtest</h3>
                         <div className="flex items-center gap-4 text-[10px] font-bold">
                            <span className="flex items-center gap-1.5"><div className="w-2 h-2 bg-green-500 rounded-full" /> WIN: {backtestStatus.lastResult.wins}</span>
                            <span className="flex items-center gap-1.5"><div className="w-2 h-2 bg-red-500 rounded-full" /> LOSS: {backtestStatus.lastResult.losses}</span>
@@ -784,7 +769,7 @@ export default function App() {
                               <tr>
                                  <th className="px-8 py-4">Thời Gian</th>
                                  <th className="px-8 py-4">Lệnh</th>
-                                 <th className="px-8 py-4">Lý Do AI (Gemini)</th>
+                                 <th className="px-8 py-4">Lý Do</th>
                                  <th className="px-8 py-4 text-right">PnL</th>
                               </tr>
                            </thead>
