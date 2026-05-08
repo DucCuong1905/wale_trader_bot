@@ -324,89 +324,55 @@ export async function runBacktest(
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
-      const confirmRange = sweep.confirmHigh - sweep.confirmLow;
-      const entryPrice = type === "LONG" 
-        ? sweep.confirmLow + confirmRange * 0.1 
-        : sweep.confirmHigh - confirmRange * 0.1;
+      const entryPrice = currentPrice; // Market Entry at Close
       
       const time = new Date(allKlines[i][0]).toISOString();
       const sl = type === "LONG" ? (sweep.low - atr * 0.2) : (sweep.high + atr * 0.2);
       const tp = entryPrice + (entryPrice - sl > 0 ? (entryPrice - sl) * rr : (sl - entryPrice) * -rr);
 
-      // --- LOGIC CHỜ KHỚP (PENDING) ---
-      let isFilled = false;
-      let cancelReason = "";
-      let filledAtCandle = i;
-
-      for (let j = i + 1; j < Math.min(i + 6, allKlines.length); j++) {
-        const [,, h, l] = allKlines[j];
-        
-        // 1. Kiểm tra khớp Entry
-        if (type === "LONG" && l <= entryPrice) { isFilled = true; filledAtCandle = j; break; }
-        if (type === "SHORT" && h >= entryPrice) { isFilled = true; filledAtCandle = j; break; }
-
-        // 2. Kiểm tra điều kiện Hủy
-        if (type === "LONG" && h >= tp) { cancelReason = "TP Reached Before Entry"; break; }
-        if (type === "SHORT" && l <= tp) { cancelReason = "TP Reached Before Entry"; break; }
-
-        const windowC = allKlines.slice(0, j + 1);
-        const vwmaC = calculateVWMA(windowC, 20);
-        const vwmaPrevC = calculateVWMA(windowC.slice(0, -1), 20);
-        const slopeC = vwmaC - vwmaPrevC;
-        if (type === "LONG" && slopeC < 0) { cancelReason = "Slope Reversed"; break; }
-        if (type === "SHORT" && slopeC > 0) { cancelReason = "Slope Reversed"; break; }
-
-        if (j === i + 5) { cancelReason = "Timed Out (5 Candles)"; break; }
-      }
-
-      if (isFilled) {
-        console.log(`[SIGNAL] ${type} Filled at ${time} ($${entryPrice.toFixed(2)})`);
-        
-        // Tìm kết quả trong các nến tiếp theo (sau khi đã khớp)
-        let exitPrice = 0;
-        let pnlR = 0;
-        let status = "LOSS";
-        
-        for (let j = filledAtCandle + 1; j < Math.min(filledAtCandle + 100, allKlines.length); j++) {
-          const [,, h, l, c] = allKlines[j];
-          if (type === "LONG") {
-            if (l <= sl) { exitPrice = sl; break; }
-            if (h >= tp) { exitPrice = tp; status = "WIN"; break; }
-          } else {
-            if (h >= sl) { exitPrice = sl; break; }
-            if (l <= tp) { exitPrice = tp; status = "WIN"; break; }
-          }
+      console.log(`[SIGNAL] ${type} Market Entry at ${time} ($${entryPrice.toFixed(2)})`);
+      
+      // Tìm kết quả trong các nến tiếp theo
+      let exitPrice = 0;
+      let pnlR = 0;
+      let status = "LOSS";
+      
+      for (let j = i + 1; j < Math.min(i + 100, allKlines.length); j++) {
+        const [,, h, l, c] = allKlines[j];
+        if (type === "LONG") {
+          if (l <= sl) { exitPrice = sl; break; }
+          if (h >= tp) { exitPrice = tp; status = "WIN"; break; }
+        } else {
+          if (h >= sl) { exitPrice = sl; break; } // Fixed logic: SHORT SL is hit if price goes ABOVE sl
+          if (l <= tp) { exitPrice = tp; status = "WIN"; break; } // Fixed logic: SHORT TP is hit if price goes BELOW tp
         }
-
-        if (exitPrice === 0) exitPrice = allKlines[Math.min(filledAtCandle + 99, allKlines.length - 1)][4];
-        pnlR = status === "WIN" ? rr : -1.0; 
-        
-        const dollarPnL = results.finalBalance * RISK_PER_TRADE * pnlR;
-        results.finalBalance += dollarPnL;
-
-        results.totalTrades++;
-        if (status === "WIN") results.wins++; else results.losses++;
-        results.totalPnL += pnlR;
-        results.trades.push({ 
-          time, 
-          type, 
-          entryPrice, 
-          exitPrice, 
-          status, 
-          pnlR, 
-          dollarPnL, 
-          currentBalance: results.finalBalance,
-          reason: "TA Signal Filled" 
-        });
-        
-        console.log(`[TRADE] ${status} | PnL: ${pnlR}R ($${dollarPnL.toFixed(2)}) | Balance: $${results.finalBalance.toFixed(2)}`);
-        
-        // Nhảy vòng lặp đến điểm nến thoát lệnh để tránh tín hiệu trùng
-        i = filledAtCandle; 
-      } else {
-        results.cancelledTrades++;
-        console.log(`[MISSED] ${type} Signal Cancelled: ${cancelReason}`);
       }
+
+      if (exitPrice === 0) exitPrice = allKlines[Math.min(i + 99, allKlines.length - 1)][4];
+      pnlR = status === "WIN" ? rr : -1.0; 
+      
+      const dollarPnL = results.finalBalance * RISK_PER_TRADE * pnlR;
+      results.finalBalance += dollarPnL;
+
+      results.totalTrades++;
+      if (status === "WIN") results.wins++; else results.losses++;
+      results.totalPnL += pnlR;
+      results.trades.push({ 
+        time, 
+        type, 
+        entryPrice, 
+        exitPrice, 
+        status, 
+        pnlR, 
+        dollarPnL, 
+        currentBalance: results.finalBalance,
+        reason: "TA Market Entry" 
+      });
+      
+      console.log(`[TRADE] ${status} | PnL: ${pnlR}R ($${dollarPnL.toFixed(2)}) | Balance: $${results.finalBalance.toFixed(2)}`);
+      
+      // Nhảy vòng lặp đến điểm nến hiện tại
+    }
     }
   }
 

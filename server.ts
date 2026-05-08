@@ -539,8 +539,8 @@ async function traderLoop() {
           if (cL <= paperPosition.sl) { closed = true; status = "LOSS"; }
           else if (cH >= paperPosition.tp) { closed = true; status = "WIN"; }
         } else {
-          if (cH <= paperPosition.tp) { closed = true; status = "WIN"; }
-          else if (cL >= paperPosition.sl) { closed = true; status = "LOSS"; }
+          if (cL >= paperPosition.sl) { closed = true; status = "LOSS"; } // Fixed logic: SHORT SL is hit if price goes ABOVE sl
+          else if (cH <= paperPosition.tp) { closed = true; status = "WIN"; } // Fixed logic: SHORT TP is hit if price goes BELOW tp
         }
 
         if (closed) {
@@ -559,52 +559,7 @@ async function traderLoop() {
           botState.lastTradeTime = Date.now();
         }
       } 
-      // PAPER PENDING ORDER TRACKING
-      else if (paperPendingOrder) {
-        let cancelReason = "";
-        
-        // 1. Kiểm tra khớp Entry
-        let filled = false;
-        if (paperPendingOrder.type === "LONG") {
-          if (cL <= paperPendingOrder.entry) filled = true;
-        } else {
-          if (cH >= paperPendingOrder.entry) filled = true;
-        }
-
-        if (filled) {
-          paperPosition = { ...paperPendingOrder };
-          paperPendingOrder = null;
-          await sendTelegram(`🔔 [PAPER FILLED] Đã khớp Entry tại ${paperPosition.entry.toFixed(2)}`);
-        } else {
-          // 2. Kiểm tra điều kiện Hủy
-          const barsForCancel = await ex.fetchOHLCV(PAIR, TIMEFRAME, undefined, 50);
-          const vwmaC = calculateVWMA(barsForCancel, 20);
-          const vwmaPrevC = calculateVWMA(barsForCancel.slice(0, -1), 20);
-          const slopeC = vwmaC - vwmaPrevC;
-          const adxC = calcADX(barsForCancel, 14);
-
-          // Hủy nếu chạm TP trước
-          if (paperPendingOrder.type === "LONG" && cH >= paperPendingOrder.tp) cancelReason = "Giá đã chạm TP trước khi khớp Entry";
-          else if (paperPendingOrder.type === "SHORT" && cL <= paperPendingOrder.tp) cancelReason = "Giá đã chạm TP trước khi khớp Entry";
-          
-          // Hủy nếu quá thời gian (5 nến)
-          const lastCandleTime = lastCandle[0];
-          if (lastCandleTime > botState.lastProcessedCandleTime) {
-            paperPendingOrder.candleCount++;
-          }
-          if (paperPendingOrder.candleCount >= 5) cancelReason = "Hủy lệnh do quá thời hạn 5 nến";
-
-          // Hủy nếu xu hướng đảo chiều (Slope)
-          if (paperPendingOrder.type === "LONG" && slopeC < 0) cancelReason = "Hủy lệnh do Slope VWMA đảo chiều GIẢM";
-          else if (paperPendingOrder.type === "SHORT" && slopeC > 0) cancelReason = "Hủy lệnh do Slope VWMA đảo chiều TĂNG";
-
-          if (cancelReason) {
-            await sendTelegram(`🚫 [CANCEL PENDING] **${paperPendingOrder.type}**\nLý do: ${cancelReason}`);
-            paperPendingOrder = null;
-          }
-        }
-      }
-      botState.inPosition = !!paperPosition || !!paperPendingOrder;
+      botState.inPosition = !!paperPosition;
     }
 
     if (botState.inPosition || Date.now() - botState.lastTradeTime < COOLDOWN_MS) { 
@@ -691,38 +646,30 @@ async function traderLoop() {
     }
 
     // 7. XỬ LÝ LỆNH (BỎ QUA AI CHECK ĐỂ TRÁNH DELAY)
+    // 7. XỬ LÝ LỆNH (MARKET ENTRY)
     if (sig) {
-      const confirmRange = sweep.confirmHigh - sweep.confirmLow;
-      // Vào lệnh tại điểm hồi (Retracement 10% của nến xác nhận)
-      const entryPrice = sig === "LONG" 
-        ? sweep.confirmLow + confirmRange * 0.1 
-        : sweep.confirmHigh - confirmRange * 0.1;
-      
-      const e = entryPrice;
-      // Stop Loss tại đáy/đỉnh râu quét +- một chút ATR
+      const e = currentPrice; // Market Entry at Close
       const sl = sig === "LONG" ? (sweep.low - atr * 0.2) : (sweep.high + atr * 0.2);
       const tp = e + (e - sl > 0 ? (e - sl) * RR : (sl - e) * -RR);
       
-      botState.aiReasoning = `Tín hiệu TA: ${sig} tại ${e.toFixed(2)} (Bỏ qua AI để tối ưu tốc độ)`;
+      botState.aiReasoning = `Tín hiệu TA: ${sig} tại ${e.toFixed(2)} (Market Entry)`;
       
       if (!IS_LIVE_TRADING_ENABLED) { 
-        // Đưa vào lệnh CHỜ (Pending) thay vì mở ngay lập tức
         const riskAmount = paperBalance * RISK_PER_TRADE;
         const positionSize = riskAmount; 
 
-        paperPendingOrder = {
+        paperPosition = {
           type: sig,
           entry: e,
           sl: sl,
           tp: tp,
           size: positionSize,
-          startTime: Date.now(),
-          candleCount: 0,
-          maxCandles: 5
+          startTime: Date.now()
         };
 
         const vnTime = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
-        
+        botState.lastTradeTime = Date.now(); 
+
         const conditions = [
           `1. Giá vs VWMA: ${sig === 'LONG' ? (currentPrice > vwma ? '✅ Above' : '❌ Below') : (currentPrice < vwma ? '✅ Below' : '❌ Above')}`,
           `2. Slope: ${sig === 'LONG' ? (slope > 0 ? '✅ Positive' : '❌ Negative') : (slope < 0 ? '✅ Negative' : '❌ Positive')}`,
@@ -734,11 +681,11 @@ async function traderLoop() {
           `8. DI Power: ${sig === 'LONG' ? (adx.pDI > adx.mDI ? '✅ +DI > -DI' : '❌') : (adx.mDI > adx.pDI ? '✅ -DI > +DI' : '❌')}`
         ].join('\n');
 
-        await sendTelegram(`⏳ [PAPER PENDING] **${sig}** Đang chờ hồi về Entry...\n\n` +
+        await sendTelegram(`🚀 [PAPER MARKET] **${sig}** Entered!\n\n` +
           `📊 **Thông số lệnh:**\n` +
           `🎯 Entry: ${e.toFixed(2)}\n` +
           `🛑 SL: ${sl.toFixed(2)} | 💎 TP: ${tp.toFixed(2)}\n` +
-          `🏦 Balance: ${paperBalance.toFixed(2)}$\n\n` +
+          `💰 Size: $${positionSize.toFixed(2)}\n\n` +
           `📝 **8 Điều kiện:**\n${conditions}\n\n` +
           `⏰ Giờ VN: ${vnTime}`); 
       } else {
