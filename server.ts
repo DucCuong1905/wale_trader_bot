@@ -45,7 +45,7 @@ const getEnv = (key: string) => {
 
 const aiKey = getEnv("GEMINI_API_KEY");
 const ai = new GoogleGenAI({ apiKey: aiKey });
-const modelName = "gemini-2.5-flash";
+const modelName = "gemini-2.0-flash"; 
 
 // --- CẤU HÌNH GIAO DỊCH ---
 const PAIR = "BTC/USDT:USDT"; // Cặp giao dịch (Futures)
@@ -66,6 +66,18 @@ let paperPosition: {
   size: number;
   startTime: number;
 } | null = null;
+
+let paperPendingOrder: {
+  type: "LONG" | "SHORT";
+  entry: number;
+  sl: number;
+  tp: number;
+  size: number;
+  startTime: number;
+  candleCount: number;
+  maxCandles: number;
+} | null = null;
+
 let paperBalance = 5000; // Vốn giả lập ban đầu 5000$
 
 // --- PERSISTENCE ---
@@ -509,16 +521,17 @@ async function traderLoop() {
       setTimeout(traderLoop, 15 * 60000); return;
     }
 
-    // 2. KIỂM TRA TRẠNG THÁI VỊ THẾ VÀ COOLDOWN
+    // 2. KIỂM TRA TRẠNG THÁI VỊ THẾ, LỆNH CHỜ VÀ COOLDOWN
     if (IS_LIVE_TRADING_ENABLED) {
       const pos = await ex.fetchPositions([PAIR]);
       botState.inPosition = pos.some(p => Math.abs(parseFloat(p.info.size || (p as any).contracts || 0)) > 0);
     } else {
       // PAPER POSITION TRACKING
+      const lastCandle = (await ex.fetchOHLCV(PAIR, TIMEFRAME, undefined, 1))[0];
+      const [, , cH, cL, cC] = lastCandle;
+      const currentPrice = cC;
+
       if (paperPosition) {
-        const lastCandle = (await ex.fetchOHLCV(PAIR, TIMEFRAME, undefined, 1))[0];
-        const [, , cH, cL, cC] = lastCandle;
-        const currentPrice = cC;
         let closed = false;
         let status: "WIN" | "LOSS" = "WIN";
 
@@ -545,8 +558,53 @@ async function traderLoop() {
           paperPosition = null;
           botState.lastTradeTime = Date.now();
         }
+      } 
+      // PAPER PENDING ORDER TRACKING
+      else if (paperPendingOrder) {
+        let cancelReason = "";
+        
+        // 1. Kiểm tra khớp Entry
+        let filled = false;
+        if (paperPendingOrder.type === "LONG") {
+          if (cL <= paperPendingOrder.entry) filled = true;
+        } else {
+          if (cH >= paperPendingOrder.entry) filled = true;
+        }
+
+        if (filled) {
+          paperPosition = { ...paperPendingOrder };
+          paperPendingOrder = null;
+          await sendTelegram(`🔔 [PAPER FILLED] Đã khớp Entry tại ${paperPosition.entry.toFixed(2)}`);
+        } else {
+          // 2. Kiểm tra điều kiện Hủy
+          const barsForCancel = await ex.fetchOHLCV(PAIR, TIMEFRAME, undefined, 50);
+          const vwmaC = calculateVWMA(barsForCancel, 20);
+          const vwmaPrevC = calculateVWMA(barsForCancel.slice(0, -1), 20);
+          const slopeC = vwmaC - vwmaPrevC;
+          const adxC = calcADX(barsForCancel, 14);
+
+          // Hủy nếu chạm TP trước
+          if (paperPendingOrder.type === "LONG" && cH >= paperPendingOrder.tp) cancelReason = "Giá đã chạm TP trước khi khớp Entry";
+          else if (paperPendingOrder.type === "SHORT" && cL <= paperPendingOrder.tp) cancelReason = "Giá đã chạm TP trước khi khớp Entry";
+          
+          // Hủy nếu quá thời gian (5 nến)
+          const lastCandleTime = lastCandle[0];
+          if (lastCandleTime > botState.lastProcessedCandleTime) {
+            paperPendingOrder.candleCount++;
+          }
+          if (paperPendingOrder.candleCount >= 5) cancelReason = "Hủy lệnh do quá thời hạn 5 nến";
+
+          // Hủy nếu xu hướng đảo chiều (Slope)
+          if (paperPendingOrder.type === "LONG" && slopeC < 0) cancelReason = "Hủy lệnh do Slope VWMA đảo chiều GIẢM";
+          else if (paperPendingOrder.type === "SHORT" && slopeC > 0) cancelReason = "Hủy lệnh do Slope VWMA đảo chiều TĂNG";
+
+          if (cancelReason) {
+            await sendTelegram(`🚫 [CANCEL PENDING] **${paperPendingOrder.type}**\nLý do: ${cancelReason}`);
+            paperPendingOrder = null;
+          }
+        }
       }
-      botState.inPosition = !!paperPosition;
+      botState.inPosition = !!paperPosition || !!paperPendingOrder;
     }
 
     if (botState.inPosition || Date.now() - botState.lastTradeTime < COOLDOWN_MS) { 
@@ -648,23 +706,23 @@ async function traderLoop() {
       botState.aiReasoning = `Tín hiệu TA: ${sig} tại ${e.toFixed(2)} (Bỏ qua AI để tối ưu tốc độ)`;
       
       if (!IS_LIVE_TRADING_ENABLED) { 
-        // Chế độ Trade thử nghiệm (Paper Trading) logic nâng cao
+        // Đưa vào lệnh CHỜ (Pending) thay vì mở ngay lập tức
         const riskAmount = paperBalance * RISK_PER_TRADE;
-        const stopLossDistance = Math.abs(e - sl);
-        const positionSize = riskAmount; // Đơn giản hóa: Size tính theo USD Risk
+        const positionSize = riskAmount; 
 
-        paperPosition = {
+        paperPendingOrder = {
           type: sig,
           entry: e,
           sl: sl,
           tp: tp,
           size: positionSize,
-          startTime: Date.now()
+          startTime: Date.now(),
+          candleCount: 0,
+          maxCandles: 5
         };
 
         const vnTime = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
-        botState.lastTradeTime = Date.now(); 
-
+        
         const conditions = [
           `1. Giá vs VWMA: ${sig === 'LONG' ? (currentPrice > vwma ? '✅ Above' : '❌ Below') : (currentPrice < vwma ? '✅ Below' : '❌ Above')}`,
           `2. Slope: ${sig === 'LONG' ? (slope > 0 ? '✅ Positive' : '❌ Negative') : (slope < 0 ? '✅ Negative' : '❌ Positive')}`,
@@ -676,16 +734,12 @@ async function traderLoop() {
           `8. DI Power: ${sig === 'LONG' ? (adx.pDI > adx.mDI ? '✅ +DI > -DI' : '❌') : (adx.mDI > adx.pDI ? '✅ -DI > +DI' : '❌')}`
         ].join('\n');
 
-        await sendTelegram(`🚀 [PAPER SIGNAL] **${sig}** Detected!\n\n` +
+        await sendTelegram(`⏳ [PAPER PENDING] **${sig}** Đang chờ hồi về Entry...\n\n` +
           `📊 **Thông số lệnh:**\n` +
           `🎯 Entry: ${e.toFixed(2)}\n` +
           `🛑 SL: ${sl.toFixed(2)} | 💎 TP: ${tp.toFixed(2)}\n` +
           `🏦 Balance: ${paperBalance.toFixed(2)}$\n\n` +
-          `📝 **8 Điều kiện vào lệnh:**\n${conditions}\n\n` +
-          `📈 **Chỉ số kỹ thuật:**\n` +
-          `• VWMA: ${vwma.toFixed(2)}\n` +
-          `• ADX: ${adx.adx.toFixed(1)} (+DI: ${adx.pDI.toFixed(1)} | -DI: ${adx.mDI.toFixed(1)})\n` +
-          `• RSI: ${rsi.toFixed(1)}\n` +
+          `📝 **8 Điều kiện:**\n${conditions}\n\n` +
           `⏰ Giờ VN: ${vnTime}`); 
       } else {
         // Chế độ Trade thật trên sàn
