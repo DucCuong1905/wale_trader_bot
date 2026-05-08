@@ -45,7 +45,7 @@ const getEnv = (key: string) => {
 
 const aiKey = getEnv("GEMINI_API_KEY");
 const ai = new GoogleGenAI({ apiKey: aiKey });
-const modelName = "gemini-2.0-flash"; 
+const modelName = "gemini-2.5-flash";
 
 // --- CẤU HÌNH GIAO DỊCH ---
 const PAIR = "BTC/USDT:USDT"; // Cặp giao dịch (Futures)
