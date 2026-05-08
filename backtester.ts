@@ -26,7 +26,7 @@ const PAIR = "BTC/USDT";
 const TIMEFRAME = "1m";
 const START_DATE = "2026-03-01T00:00:00Z"; 
 const END_DATE = "2026-04-01T00:00:00Z";
-const RR = 1.2; 
+const RR = 1.0; 
 const INITIAL_BALANCE = 5000;
 const RISK_PER_TRADE = 0.01; // 1%
 
@@ -296,7 +296,7 @@ export async function runBacktest(
     endTime: endDate
   };
 
-  for (let i = 25; i < allKlines.length; i++) {
+  for (let i = 100; i < allKlines.length; i++) {
     if (onProgress) onProgress(50 + ((i / allKlines.length) * 50));
     
     // Kiểm tra cháy tài khoản (dưới 10$)
@@ -310,18 +310,44 @@ export async function runBacktest(
     const window = allKlines.slice(0, i + 1);
     const currentPrice = allKlines[i][4];
     
-    // NEW LOGIC - Relaxed for M5
+    // --- KHUNG 1M ---
     const vwma = calculateVWMA(window, 20);
     const vwmaPrev = calculateVWMA(window.slice(0, -1), 20);
     const slope = vwma - vwmaPrev;
     const distance = Math.abs(currentPrice - vwma) / vwma;
     
+    // --- KHUNG 5M (MTF FILTER) ---
+    // Gộp nến 1m thành nến 5m
+    const bars5m: any[] = [];
+    for (let k = 0; k <= i - 4; k += 5) {
+      const slice = allKlines.slice(k, k + 5);
+      const open = slice[0][1];
+      const close = slice[4][4];
+      const high = Math.max(...slice.map(s => s[2]));
+      const low = Math.min(...slice.map(s => s[3]));
+      const volume = slice.reduce((sum, s) => sum + s[5], 0);
+      bars5m.push([slice[0][0], open, high, low, close, volume]);
+    }
+    
+    let vwma5m = 0;
+    let slope5m = 0;
+    if (bars5m.length >= 21) {
+      vwma5m = calculateVWMA(bars5m, 20);
+      const vwma5mPrev = calculateVWMA(bars5m.slice(0, -1), 20);
+      slope5m = vwma5m - vwma5mPrev;
+    }
+
     const adx = calcADX(window);
     const sweep = detectSweep(window);
     const atr = calculateATR(window, 14);
 
-    let isLong = currentPrice > vwma && slope > 0 && distance < 0.01 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adx.adx >= 10 && adx.pDI > adx.mDI;
-    let isShort = currentPrice < vwma && slope < 0 && distance < 0.01 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adx.adx >= 10 && adx.mDI > adx.pDI;
+    let isLong = currentPrice > vwma && slope > 0 && 
+                 (vwma5m > 0 ? (currentPrice > vwma5m && slope5m > 0) : true) && // MTF check if enough data
+                 distance < 0.01 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adx.adx >= 10 && adx.pDI > adx.mDI;
+                 
+    let isShort = currentPrice < vwma && slope < 0 && 
+                  (vwma5m > 0 ? (currentPrice < vwma5m && slope5m < 0) : true) && // MTF check if enough data
+                  distance < 0.01 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adx.adx >= 10 && adx.mDI > adx.pDI;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
