@@ -23,7 +23,7 @@ const ai = new GoogleGenAI({ apiKey: aiString });
 const modelName = "gemini-2.0-flash";
 
 const PAIR = "BTC/USDT";
-const TIMEFRAME = "1m";
+const TIMEFRAME = "1h";
 const START_DATE = "2026-01-01T00:00:00Z"; 
 const END_DATE = "2026-04-01T00:00:00Z";
 const RR = 1.0; 
@@ -339,7 +339,7 @@ export async function runBacktest(
       const entryPrice = currentPrice; // Market Entry at Close
       
       const time = new Date(allKlines[i][0]).toISOString();
-      const sl = type === "LONG" ? (sweep.low - atr * 0.5) : (sweep.high + atr * 0.5);
+      const sl = type === "LONG" ? (sweep.low - atr * 0.2) : (sweep.high + atr * 0.2);
       const tp = entryPrice + (entryPrice - sl > 0 ? (entryPrice - sl) * rr : (sl - entryPrice) * -rr);
 
       console.log(`[SIGNAL] ${type} Market Entry at ${time} ($${entryPrice.toFixed(2)})`);

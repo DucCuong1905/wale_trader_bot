@@ -17,7 +17,7 @@ const __dirname = path.dirname(__filename);
 // --- QUẢN LÝ VỊ THẾ GIẢ LẬP (PAPER TRADING) ---
 const PAIR = "BTC/USDT:USDT"; // Cặp giao dịch (Futures)
 const SYMBOL_ID = "btcusdt"; // ID ký hiệu cho WebSocket
-const TIMEFRAME = "1m"; // Khung thời gian nến (1 phút)
+const TIMEFRAME = "1h"; // Khung thời gian nến (1 giờ)
 const IS_LIVE_TRADING_ENABLED = false; // Chế độ giao dịch thật (true = bật, false = test)
 const RISK_PER_TRADE = 0.01; // Rủi ro trên mỗi lệnh (1% tài khoản)
 const RR = 1.0; // Tỷ lệ Risk/Reward 1:1 theo yêu cầu
@@ -573,7 +573,7 @@ async function traderLoop() {
     // 7. XỬ LÝ LỆNH (MARKET ENTRY)
     if (sig) {
       const e = currentPrice; // Market Entry at Close
-      const sl = sig === "LONG" ? (sweep.low - atr * 0.5) : (sweep.high + atr * 0.5);
+      const sl = sig === "LONG" ? (sweep.low - atr * 0.2) : (sweep.high + atr * 0.2);
       const tp = e + (e - sl > 0 ? (e - sl) * RR : (sl - e) * -RR);
       
       if (!IS_LIVE_TRADING_ENABLED) { 
