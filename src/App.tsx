@@ -708,6 +708,28 @@ export default function App() {
                           </p>
                        </div>
                     </div>
+
+                    <div className="bg-[#12121c] p-6 rounded-[2rem] border border-white/5 space-y-4">
+                      <div>
+                        <p className="text-[10px] text-slate-500 font-black uppercase mb-2">Phí & Trượt Giá (Ước Tính)</p>
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center">
+                            <span className="text-[11px] text-slate-400">Tổng Phí (0.05%):</span>
+                            <span className="text-sm font-mono text-red-400">-${(backtestStatus.lastResult.totalFees || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-[11px] text-slate-400">Trượt Giá (0.02%):</span>
+                            <span className="text-sm font-mono text-red-400">-${(backtestStatus.lastResult.totalSlippage || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })}</span>
+                          </div>
+                          <div className="h-px bg-white/5 my-2" />
+                          <div className="flex justify-between items-center">
+                            <span className="text-[11px] font-bold text-slate-300">Tổng Hao Hụt:</span>
+                            <span className="text-sm font-mono text-red-500 font-bold">-${((backtestStatus.lastResult.totalFees || 0) + (backtestStatus.lastResult.totalSlippage || 0)).toLocaleString(undefined, { maximumFractionDigits: 1 })}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
                     <div className={cn(
                         "bg-[#12121c] p-8 rounded-[2rem] border transition-all",
                         backtestStatus.lastResult.totalPnL >= 0 

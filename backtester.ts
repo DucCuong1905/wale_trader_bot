@@ -42,6 +42,8 @@ interface BacktestResult {
   cancelledTrades: number;
   totalPnL: number;
   finalBalance: number;
+  totalFees: number;
+  totalSlippage: number;
   isLiquidated: boolean;
   liquidationDate: string | null;
   trades: any[];
@@ -56,6 +58,8 @@ let results: BacktestResult = {
   cancelledTrades: 0,
   totalPnL: 0,
   finalBalance: INITIAL_BALANCE,
+  totalFees: 0,
+  totalSlippage: 0,
   isLiquidated: false,
   liquidationDate: null,
   trades: [],
@@ -289,6 +293,8 @@ export async function runBacktest(
     cancelledTrades: 0,
     totalPnL: 0, 
     finalBalance: INITIAL_BALANCE, 
+    totalFees: 0,
+    totalSlippage: 0,
     isLiquidated: false, 
     liquidationDate: null, 
     trades: [],
@@ -358,7 +364,21 @@ export async function runBacktest(
       pnlR = status === "WIN" ? rr : -1.0; 
       
       const dollarPnL = results.finalBalance * RISK_PER_TRADE * pnlR;
-      results.finalBalance += dollarPnL;
+      
+      // Tính phí và trượt giá dự kiến (Ước tính thực tế)
+      const feeRate = 0.0005; // 0.05% taker
+      const slippageRate = 0.0002; // 0.02% slippage
+      
+      const riskAmount = results.finalBalance * RISK_PER_TRADE;
+      const stopLossDistPct = Math.abs(entryPrice - sl) / entryPrice;
+      const positionNotional = stopLossDistPct > 0 ? riskAmount / stopLossDistPct : 0;
+      
+      const estimatedFee = positionNotional * feeRate * 2; // Entry + Exit
+      const estimatedSlippage = positionNotional * slippageRate * 2;
+      
+      results.totalFees += estimatedFee;
+      results.totalSlippage += estimatedSlippage;
+      results.finalBalance += (dollarPnL - estimatedFee - estimatedSlippage);
 
       results.totalTrades++;
       if (status === "WIN") results.wins++; else results.losses++;
@@ -371,6 +391,8 @@ export async function runBacktest(
         status, 
         pnlR, 
         dollarPnL, 
+        estimatedFee,
+        estimatedSlippage,
         currentBalance: results.finalBalance,
         reason: "TA Market Entry" 
       });
