@@ -49,6 +49,7 @@ export default function App() {
   const [startDate, setStartDate] = useState('2026-01-01');
   const [endDate, setEndDate] = useState('2026-03-31');
   const [backtestRR, setBacktestRR] = useState(1.2);
+  const [backtestTimeframe, setBacktestTimeframe] = useState('15m');
 
   useEffect(() => {
     let retryCount = 0;
@@ -130,7 +131,8 @@ export default function App() {
         body: JSON.stringify({ 
           startDate: `${startDate}T00:00:00Z`, 
           endDate: `${endDate}T23:59:59Z`, 
-          rr: backtestRR 
+          rr: backtestRR,
+          timeframe: backtestTimeframe
         })
       });
       setIsBacktestRunning(true);
@@ -620,6 +622,21 @@ export default function App() {
                           onChange={(e) => setEndDate(e.target.value)}
                           className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs font-mono focus:border-purple-500 transition-all outline-none"
                         />
+                      </div>
+                      <div className="space-y-2 col-span-2">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Khung thời gian</label>
+                        <select 
+                          value={backtestTimeframe}
+                          onChange={(e) => setBacktestTimeframe(e.target.value)}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs font-mono focus:border-purple-500 transition-all outline-none appearance-none"
+                        >
+                          <option value="1m">1 MINUTE (Scaping)</option>
+                          <option value="5m">5 MINUTES (Scalp/Intraday)</option>
+                          <option value="15m">15 MINUTES (Intraday)</option>
+                          <option value="1h">1 HOUR (Swing)</option>
+                          <option value="4h">4 HOURS (Swing)</option>
+                          <option value="1d">1 DAY (Position)</option>
+                        </select>
                       </div>
                       <div className="space-y-2 col-span-2">
                         <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Risk/Reward Ratio (1 : X)</label>

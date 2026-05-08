@@ -23,7 +23,6 @@ const ai = new GoogleGenAI({ apiKey: aiString });
 const modelName = "gemini-2.0-flash";
 
 const PAIR = "BTC/USDT";
-const TIMEFRAME = "1h";
 const START_DATE = "2026-01-01T00:00:00Z"; 
 const END_DATE = "2026-04-01T00:00:00Z";
 const RR = 1.0; 
@@ -264,9 +263,10 @@ export async function runBacktest(
   startDate: string = START_DATE,
   endDate: string = END_DATE,
   rr: number = RR,
+  timeframe: string = "15m",
   onProgress?: (p: number) => void
 ) {
-  console.log(`[BACKTEST] Start ${PAIR} from ${startDate} to ${endDate} (RR: ${rr})`);
+  console.log(`[BACKTEST] Start ${PAIR} from ${startDate} to ${endDate} (RR: ${rr}, TF: ${timeframe})`);
   const exchange = new ccxt.binance({ options: { defaultType: 'future' } });
   
   let allKlines: any[] = [];
@@ -274,7 +274,7 @@ export async function runBacktest(
   const endTs = exchange.parse8601(endDate);
 
   while (since < endTs) {
-    const klines = await exchange.fetchOHLCV(PAIR, TIMEFRAME, since, 1000);
+    const klines = await exchange.fetchOHLCV(PAIR, timeframe, since, 1000);
     if (!klines.length) break;
     allKlines.push(...klines);
     since = klines[klines.length - 1][0] + 1;

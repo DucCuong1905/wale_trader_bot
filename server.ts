@@ -17,7 +17,7 @@ const __dirname = path.dirname(__filename);
 // --- QUẢN LÝ VỊ THẾ GIẢ LẬP (PAPER TRADING) ---
 const PAIR = "BTC/USDT:USDT"; // Cặp giao dịch (Futures)
 const SYMBOL_ID = "btcusdt"; // ID ký hiệu cho WebSocket
-const TIMEFRAME = "1h"; // Khung thời gian nến (1 giờ)
+const TIMEFRAME = "15m"; // Khung thời gian nến (15 phút)
 const IS_LIVE_TRADING_ENABLED = false; // Chế độ giao dịch thật (true = bật, false = test)
 const RISK_PER_TRADE = 0.01; // Rủi ro trên mỗi lệnh (1% tài khoản)
 const RR = 1.0; // Tỷ lệ Risk/Reward 1:1 theo yêu cầu
@@ -651,9 +651,9 @@ async function startServer() {
   app.get("/api/health", (req, res) => res.json({ status: "ok" }));
   app.post("/api/backtest/run", async (req, res) => {
     if (backtestStatus.isRunning) return res.status(400).json({ error: "Running" });
-    const { startDate, endDate, rr } = req.body;
+    const { startDate, endDate, rr, timeframe } = req.body;
     backtestStatus.isRunning = true;
-    runBacktest(startDate, endDate, rr, p => { 
+    runBacktest(startDate, endDate, rr, timeframe, p => { 
       backtestStatus.progress = p; 
     }).then(r => { 
       backtestStatus.isRunning = false; 
