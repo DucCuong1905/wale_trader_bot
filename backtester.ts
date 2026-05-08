@@ -34,6 +34,7 @@ interface BacktestResult {
   totalTrades: number;
   wins: number;
   losses: number;
+  cancelledTrades: number;
   totalPnL: number;
   finalBalance: number;
   isLiquidated: boolean;
@@ -47,6 +48,7 @@ let results: BacktestResult = {
   totalTrades: 0,
   wins: 0,
   losses: 0,
+  cancelledTrades: 0,
   totalPnL: 0,
   finalBalance: INITIAL_BALANCE,
   isLiquidated: false,
@@ -402,6 +404,7 @@ export async function runBacktest(
         // Nhảy vòng lặp đến điểm nến thoát lệnh để tránh tín hiệu trùng
         i = filledAtCandle; 
       } else {
+        results.cancelledTrades++;
         console.log(`[MISSED] ${type} Signal Cancelled: ${cancelReason}`);
       }
     }
