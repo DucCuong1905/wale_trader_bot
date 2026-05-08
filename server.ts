@@ -58,7 +58,7 @@ const COOLDOWN_MS = 30000; // Thời gian chờ giữa các lệnh (30 giây)
 const MAX_DAILY_LOSS = 0.03; // Giới hạn lỗ tối đa trong ngày (3%)
 
 // CẤU HÌNH PHIÊN GIAO DỊCH (LONDON & NEW YORK)
-const ENABLE_SESSION_FILTER = false; // Bật/tắt lọc theo phiên
+let ENABLE_SESSION_FILTER = false; 
 const SESSION_START_GMT = 8;  // 08:00 GMT (Mở phiên Âu)
 const SESSION_END_GMT = 21;    // 21:00 GMT (Đóng phiên Mỹ)
 
@@ -620,7 +620,8 @@ async function traderLoop() {
     
     const currentPrice = bars[bars.length - 1][4];
     const vwmaDistance = Math.abs(currentPrice - vwma);
-    const maxDistance = atr * 1.2;
+    const multiplier = adx.adx > 25 ? 1.8 : 1.0;
+    const maxDistance = atr * multiplier;
 
     // THÔNG BÁO KHI SẴN SÀNG (CHỈ GỬI 1 LẦN KHI KHỞI ĐỘNG XONG)
     if (!botState.isInitNotified) {
@@ -833,8 +834,14 @@ async function startServer() {
     res.json({
       symbol: PAIR, last_price: botState.lastPrice, bid_ratio: botState.obRatioEMA.toFixed(2), in_position: botState.inPosition,
       signals: botState.signals.slice(0, 10), balance: botState.balance, ai_reasoning: botState.aiReasoning,
-      adx: botState.adx.toFixed(1), whale_trades: { buy: b.toFixed(0), sell: s.toFixed(0), count: botState.recentWhaleTrades.length }
+      adx: botState.adx.toFixed(1), whale_trades: { buy: b.toFixed(0), sell: s.toFixed(0), count: botState.recentWhaleTrades.length },
+      enable_session_filter: ENABLE_SESSION_FILTER,
+      is_ws_connected: botState.isWsConnected
     });
+  });
+  app.post("/api/trading/toggle-session", (req, res) => {
+    ENABLE_SESSION_FILTER = !ENABLE_SESSION_FILTER;
+    res.json({ success: true, enabled: ENABLE_SESSION_FILTER });
   });
   app.get("/api/trading/history", (req, res) => res.json(botState.trades));
 
@@ -853,23 +860,7 @@ async function startServer() {
     // Gửi test Telegram ngay lập tức
     await sendTelegram("🔄 **WHALE BOT ĐÃ RESTART**\nĐang khởi tạo các kết nối và tải dữ liệu nến...");
     
-    // Tự động chạy Backtest khi khởi động
-    console.log("[INIT] Đang chạy Backtest tự động (01/01 - 01/04/2026)...");
-    runBacktest("2026-01-01T00:00:00Z", "2026-04-01T00:00:00Z", 1.0)
-      .then(async (r) => {
-        const winRate = r.totalTrades > 0 ? (r.wins / r.totalTrades * 100).toFixed(1) : "0";
-        const msg = `📊 **KẾT QUẢ BACKTEST TỰ ĐỘNG**\n` +
-          `📅 Giai đoạn: 01/01 - 01/04/2026\n` +
-          `🎯 RR: 1:1\n\n` +
-          `✅ Lệnh khớp: ${r.totalTrades}\n` +
-          `🚫 Lệnh chờ hủy: ${r.cancelledTrades || 0}\n` +
-          `🏆 Tỉ lệ thắng: ${winRate}%\n` +
-          `💰 Lợi nhuận: ${r.totalPnL.toFixed(1)}R\n` +
-          `💵 Số dư cuối: ${r.finalBalance.toFixed(2)}$\n` +
-          `📝 Trạng thái: ${r.isLiquidated ? "CHÁY TÀI KHOẢN! 🔥" : "Hoàn tất ✅"}`;
-        await sendTelegram(msg);
-      })
-      .catch(err => console.error("[INIT] Backtest Error:", err));
+    console.log("[INIT] Hệ thống đã sẵn sàng.");
 
     startWS(); 
     traderLoop(); 

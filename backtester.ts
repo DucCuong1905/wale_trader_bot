@@ -339,7 +339,8 @@ export async function runBacktest(
     const isInSession = isWithinTradingSessions(allKlines[i][0]);
 
     const vwmaDistance = Math.abs(currentPrice - vwma);
-    const maxDistance = atr * 1.2;
+    const multiplier = adx.adx > 25 ? 1.8 : 1.0;
+    const maxDistance = atr * multiplier;
 
     let isLong = isInSession && currentPrice > vwma && slope > 0 && vwmaDistance < maxDistance && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adx.adx >= 10 && adx.pDI > adx.mDI;
     let isShort = isInSession && currentPrice < vwma && slope < 0 && vwmaDistance < maxDistance && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adx.adx >= 10 && adx.mDI > adx.pDI;
