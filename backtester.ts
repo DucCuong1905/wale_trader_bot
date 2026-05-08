@@ -24,14 +24,14 @@ const modelName = "gemini-2.0-flash";
 
 const PAIR = "BTC/USDT";
 const TIMEFRAME = "1m";
-const START_DATE = "2026-03-01T00:00:00Z"; 
+const START_DATE = "2026-01-01T00:00:00Z"; 
 const END_DATE = "2026-04-01T00:00:00Z";
 const RR = 1.0; 
 const INITIAL_BALANCE = 5000;
 const RISK_PER_TRADE = 0.01; // 1%
 
 // CẤU HÌNH PHIÊN GIAO DỊCH
-const ENABLE_SESSION_FILTER = true;
+const ENABLE_SESSION_FILTER = false;
 const SESSION_START_GMT = 8;
 const SESSION_END_GMT = 21;
 
@@ -338,8 +338,11 @@ export async function runBacktest(
 
     const isInSession = isWithinTradingSessions(allKlines[i][0]);
 
-    let isLong = isInSession && currentPrice > vwma && slope > 0 && distance < 0.01 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adx.adx >= 10 && adx.pDI > adx.mDI;
-    let isShort = isInSession && currentPrice < vwma && slope < 0 && distance < 0.01 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adx.adx >= 10 && adx.mDI > adx.pDI;
+    const vwmaDistance = Math.abs(currentPrice - vwma);
+    const maxDistance = atr * 1.2;
+
+    let isLong = isInSession && currentPrice > vwma && slope > 0 && vwmaDistance < maxDistance && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adx.adx >= 10 && adx.pDI > adx.mDI;
+    let isShort = isInSession && currentPrice < vwma && slope < 0 && vwmaDistance < maxDistance && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adx.adx >= 10 && adx.mDI > adx.pDI;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";

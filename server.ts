@@ -58,7 +58,7 @@ const COOLDOWN_MS = 30000; // Thời gian chờ giữa các lệnh (30 giây)
 const MAX_DAILY_LOSS = 0.03; // Giới hạn lỗ tối đa trong ngày (3%)
 
 // CẤU HÌNH PHIÊN GIAO DỊCH (LONDON & NEW YORK)
-const ENABLE_SESSION_FILTER = true; // Bật/tắt lọc theo phiên
+const ENABLE_SESSION_FILTER = false; // Bật/tắt lọc theo phiên
 const SESSION_START_GMT = 8;  // 08:00 GMT (Mở phiên Âu)
 const SESSION_END_GMT = 21;    // 21:00 GMT (Đóng phiên Mỹ)
 
@@ -616,7 +616,8 @@ async function traderLoop() {
     const slope = vwma - vwmaPrev; // Độ dốc của VWMA
     
     const currentPrice = bars[bars.length - 1][4];
-    const distance = Math.abs(currentPrice - vwma) / vwma; // Khoảng cách giá đến VWMA
+    const vwmaDistance = Math.abs(currentPrice - vwma);
+    const maxDistance = atr * 1.2;
 
     // THÔNG BÁO KHI SẴN SÀNG (CHỈ GỬI 1 LẦN KHI KHỞI ĐỘNG XONG)
     if (!botState.isInitNotified) {
@@ -657,7 +658,7 @@ async function traderLoop() {
       isWithinTradingSessions() &&       // 0. Kiểm tra phiên giao dịch
       currentPrice > vwma &&             // 1. Giá nằm trên đường VWMA 20
       slope > 0 &&                       // 2. Xu hướng VWMA đang đi lên (Slope dương)
-      distance < 0.01 &&                 // 3. Giá không quá xa VWMA (tránh fomo)
+      vwmaDistance < maxDistance &&      // 3. Giá không quá xa VWMA (tránh fomo)
       sweep.sweepLow &&                  // 4. Có tín hiệu quét râu ở đáy (Liquidity Sweep Low)
       sweep.displacementBullish &&       // 5. Có nến xác nhận tăng mạnh (Displacement)
       sweep.volConfirm &&                // 6. Khối lượng nến xác nhận đủ lớn
@@ -674,7 +675,7 @@ async function traderLoop() {
       isWithinTradingSessions() &&       // 0. Kiểm tra phiên giao dịch
       currentPrice < vwma &&             // 1. Giá nằm dưới đường VWMA 20
       slope < 0 &&                       // 2. Xu hướng VWMA đang đi xuống (Slope âm)
-      distance < 0.01 &&                 // 3. Giá không quá xa VWMA
+      vwmaDistance < maxDistance &&      // 3. Giá không quá xa VWMA
       sweep.sweepHigh &&                 // 4. Có tín hiệu quét râu ở đỉnh (Liquidity Sweep High)
       sweep.displacementBearish &&       // 5. Có nến xác nhận giảm mạnh (Displacement)
       sweep.volConfirm &&                // 6. Khối lượng nến xác nhận đủ lớn
@@ -712,7 +713,7 @@ async function traderLoop() {
         const conditions = [
           `1. Giá vs VWMA: ${sig === 'LONG' ? (currentPrice > vwma ? '✅ Above' : '❌ Below') : (currentPrice < vwma ? '✅ Below' : '❌ Above')}`,
           `2. Slope: ${sig === 'LONG' ? (slope > 0 ? '✅ Positive' : '❌ Negative') : (slope < 0 ? '✅ Negative' : '❌ Positive')}`,
-          `3. Distance: ${distance < 0.01 ? '✅ Safe' : '❌ Fomo'} (${(distance * 100).toFixed(2)}%)`,
+          `3. Distance: ${vwmaDistance < maxDistance ? '✅ Safe' : '❌ Fomo'} (${vwmaDistance.toFixed(2)} vs ${maxDistance.toFixed(2)})`,
           `4. Sweep: ${sig === 'LONG' ? (sweep.sweepLow ? '✅ Low Sweep' : '❌ No Sweep') : (sweep.sweepHigh ? '✅ High Sweep' : '❌ No Sweep')}`,
           `5. Displacement: ${sig === 'LONG' ? (sweep.displacementBullish ? '✅ Strong Bull' : '❌ Weak') : (sweep.displacementBearish ? '✅ Strong Bear' : '❌ Weak')}`,
           `6. Volume: ${sweep.volConfirm ? '✅ Confirmed' : '❌ Low'}`,
@@ -739,7 +740,7 @@ async function traderLoop() {
           const conditions = [
             `1. Giá vs VWMA: ${sig === 'LONG' ? (currentPrice > vwma ? '✅ Above' : '❌ Below') : (currentPrice < vwma ? '✅ Below' : '❌ Above')}`,
             `2. Slope: ${sig === 'LONG' ? (slope > 0 ? '✅ Positive' : '❌ Negative') : (slope < 0 ? '✅ Negative' : '❌ Positive')}`,
-            `3. Distance: ${distance < 0.01 ? '✅ Safe' : '❌ Fomo'} (${(distance * 100).toFixed(2)}%)`,
+            `3. Distance: ${vwmaDistance < maxDistance ? '✅ Safe' : '❌ Fomo'} (${vwmaDistance.toFixed(2)} vs ${maxDistance.toFixed(2)})`,
             `4. Sweep: ${sig === 'LONG' ? (sweep.sweepLow ? '✅ Low Sweep' : '❌ No Sweep') : (sweep.sweepHigh ? '✅ High Sweep' : '❌ No Sweep')}`,
             `5. Displacement: ${sig === 'LONG' ? (sweep.displacementBullish ? '✅ Strong Bull' : '❌ Weak') : (sweep.displacementBearish ? '✅ Strong Bear' : '❌ Weak')}`,
             `6. Volume: ${sweep.volConfirm ? '✅ Confirmed' : '❌ Low'}`,
@@ -851,12 +852,12 @@ async function startServer() {
     await sendTelegram("🔄 **WHALE BOT ĐÃ RESTART**\nĐang khởi tạo các kết nối và tải dữ liệu nến...");
     
     // Tự động chạy Backtest khi khởi động
-    console.log("[INIT] Đang chạy Backtest tự động (01/03 - 01/04/2026)...");
-    runBacktest("2026-03-01T00:00:00Z", "2026-04-01T00:00:00Z", 1.0)
+    console.log("[INIT] Đang chạy Backtest tự động (01/01 - 01/04/2026)...");
+    runBacktest("2026-01-01T00:00:00Z", "2026-04-01T00:00:00Z", 1.0)
       .then(async (r) => {
         const winRate = r.totalTrades > 0 ? (r.wins / r.totalTrades * 100).toFixed(1) : "0";
         const msg = `📊 **KẾT QUẢ BACKTEST TỰ ĐỘNG**\n` +
-          `📅 Giai đoạn: 01/03 - 01/04/2026\n` +
+          `📅 Giai đoạn: 01/01 - 01/04/2026\n` +
           `🎯 RR: 1:1\n\n` +
           `✅ Lệnh khớp: ${r.totalTrades}\n` +
           `🚫 Lệnh chờ hủy: ${r.cancelledTrades || 0}\n` +
