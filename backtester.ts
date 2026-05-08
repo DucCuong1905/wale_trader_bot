@@ -155,8 +155,8 @@ function detectSweep(bars: any[]) {
   const localLow = Math.min(...prev5Bars.map(b => b[3]));
   const localHigh = Math.max(...prev5Bars.map(b => b[2]));
 
-  const sweepLow = sL < localLow && sC > localLow;
-  const sweepHigh = sH > localHigh && sC < localHigh;
+  const sweepLow = sL <= localLow && sC >= localLow;
+  const sweepHigh = sH >= localHigh && sC <= localHigh;
 
   const body = Math.abs(cC - cO);
   const totalSize = cH - cL || 1;
@@ -320,8 +320,8 @@ export async function runBacktest(
     const sweep = detectSweep(window);
     const atr = calculateATR(window, 14);
 
-    let isLong = currentPrice > vwma && slope > 0 && distance < 0.01 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adx.adx > 15 && adx.pDI > adx.mDI;
-    let isShort = currentPrice < vwma && slope < 0 && distance < 0.01 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adx.adx > 15 && adx.mDI > adx.pDI;
+    let isLong = currentPrice > vwma && slope > 0 && distance < 0.01 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adx.adx >= 10 && adx.pDI > adx.mDI;
+    let isShort = currentPrice < vwma && slope < 0 && distance < 0.01 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adx.adx >= 10 && adx.mDI > adx.pDI;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";

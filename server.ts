@@ -371,10 +371,10 @@ function detectWhaleSweep(bars: any[]) {
   const localLow = Math.min(...prev5Bars.map(b => b[3]));
   const localHigh = Math.max(...prev5Bars.map(b => b[2]));
 
-  // Quét đáy: Râu nến quét thấp hơn đáy cũ nhưng đóng cửa trên đáy cũ
-  const sweepLow = sL < localLow && sC > localLow;
-  // Quét đỉnh: Râu nến quét cao hơn đỉnh cũ nhưng đóng cửa dưới đỉnh cũ
-  const sweepHigh = sH > localHigh && sC < localHigh;
+  // Quét đáy: Râu nến quét chạm hoặc thấp hơn đáy cũ nhưng đóng cửa bằng hoặc trên đáy cũ
+  const sweepLow = sL <= localLow && sC >= localLow;
+  // Quét đỉnh: Râu nến quét chạm hoặc cao hơn đỉnh cũ nhưng đóng cửa bằng hoặc dưới đỉnh cũ
+  const sweepHigh = sH >= localHigh && sC <= localHigh;
 
   // 2. VAI TRÒ XÁC NHẬN (Displacement - Thể hiện lực đẩy mạnh)
   const body = Math.abs(cC - cO);
@@ -523,8 +523,17 @@ async function traderLoop() {
 
     // 2. KIỂM TRA TRẠNG THÁI VỊ THẾ, LỆNH CHỜ VÀ COOLDOWN
     if (IS_LIVE_TRADING_ENABLED) {
-      const pos = await ex.fetchPositions([PAIR]);
-      botState.inPosition = pos.some(p => Math.abs(parseFloat(p.info.size || (p as any).contracts || 0)) > 0);
+      try {
+        const pos = await ex.fetchPositions([PAIR]);
+        botState.inPosition = pos.some(p => Math.abs(parseFloat(p.info.size || (p as any).contracts || 0)) > 0);
+      } catch (authErr: any) {
+        if (authErr.message.includes("-2015") || authErr.name === "AuthenticationError") {
+          console.error("❌ LỖI BINANCE POSITIONS: API Key không hợp lệ hoặc thiếu quyền!");
+          botState.inPosition = false; // Mặc định false nếu không check được
+        } else {
+          throw authErr;
+        }
+      }
     } else {
       // PAPER POSITION TRACKING
       const lastCandle = (await ex.fetchOHLCV(PAIR, TIMEFRAME, undefined, 1))[0];
@@ -568,7 +577,15 @@ async function traderLoop() {
     }
 
     // 3. LẤY DỮ LIỆU NẾN (OHLCV)
-    const bars = await ex.fetchOHLCV(PAIR, TIMEFRAME, undefined, 100);
+    let bars: any[] = [];
+    try {
+      bars = await ex.fetchOHLCV(PAIR, TIMEFRAME, undefined, 100);
+    } catch (ohlcvErr: any) {
+      // Nếu lỗi do API Key (dù là lệnh public), thử lại sau 10s
+      console.error("❌ Lỗi fetchOHLCV:", ohlcvErr.message);
+      setTimeout(traderLoop, 10000);
+      return;
+    }
     if (!bars || bars.length < 50) { setTimeout(traderLoop, 10000); return; }
 
     // 4. TÍNH TOÁN CÁC CHỈ BÁO KỸ THUẬT (Tính trước để dùng cho thông báo hoặc phân tích)
@@ -623,7 +640,7 @@ async function traderLoop() {
       sweep.sweepLow &&                  // 4. Có tín hiệu quét râu ở đáy (Liquidity Sweep Low)
       sweep.displacementBullish &&       // 5. Có nến xác nhận tăng mạnh (Displacement)
       sweep.volConfirm &&                // 6. Khối lượng nến xác nhận đủ lớn
-      adx.adx > 15 &&                    // 7. Độ mạnh xu hướng ADX > 15
+      adx.adx >= 10 &&                   // 7. Độ mạnh xu hướng ADX >= 10
       adx.pDI > adx.mDI                  // 8. Phe mua mạnh hơn phe bán (+DI > -DI)
     ) {
       sig = "LONG";
@@ -639,7 +656,7 @@ async function traderLoop() {
       sweep.sweepHigh &&                 // 4. Có tín hiệu quét râu ở đỉnh (Liquidity Sweep High)
       sweep.displacementBearish &&       // 5. Có nến xác nhận giảm mạnh (Displacement)
       sweep.volConfirm &&                // 6. Khối lượng nến xác nhận đủ lớn
-      adx.adx > 15 &&                    // 7. Độ mạnh xu hướng ADX > 15
+      adx.adx >= 10 &&                   // 7. Độ mạnh xu hướng ADX >= 10
       adx.mDI > adx.pDI                  // 8. Phe bán mạnh hơn phe mua (-DI > +DI)
     ) {
       sig = "SHORT";
@@ -677,7 +694,7 @@ async function traderLoop() {
           `4. Sweep: ${sig === 'LONG' ? (sweep.sweepLow ? '✅ Low Sweep' : '❌ No Sweep') : (sweep.sweepHigh ? '✅ High Sweep' : '❌ No Sweep')}`,
           `5. Displacement: ${sig === 'LONG' ? (sweep.displacementBullish ? '✅ Strong Bull' : '❌ Weak') : (sweep.displacementBearish ? '✅ Strong Bear' : '❌ Weak')}`,
           `6. Volume: ${sweep.volConfirm ? '✅ Confirmed' : '❌ Low'}`,
-          `7. ADX (>15): ${adx.adx > 15 ? '✅' : '❌'} (${adx.adx.toFixed(1)})`,
+          `7. ADX (>=10): ${adx.adx >= 10 ? '✅' : '❌'} (${adx.adx.toFixed(1)})`,
           `8. DI Power: ${sig === 'LONG' ? (adx.pDI > adx.mDI ? '✅ +DI > -DI' : '❌') : (adx.mDI > adx.pDI ? '✅ -DI > +DI' : '❌')}`
         ].join('\n');
 
@@ -704,7 +721,7 @@ async function traderLoop() {
             `4. Sweep: ${sig === 'LONG' ? (sweep.sweepLow ? '✅ Low Sweep' : '❌ No Sweep') : (sweep.sweepHigh ? '✅ High Sweep' : '❌ No Sweep')}`,
             `5. Displacement: ${sig === 'LONG' ? (sweep.displacementBullish ? '✅ Strong Bull' : '❌ Weak') : (sweep.displacementBearish ? '✅ Strong Bear' : '❌ Weak')}`,
             `6. Volume: ${sweep.volConfirm ? '✅ Confirmed' : '❌ Low'}`,
-            `7. ADX (>15): ${adx.adx > 15 ? '✅' : '❌'} (${adx.adx.toFixed(1)})`,
+            `7. ADX (>=10): ${adx.adx >= 10 ? '✅' : '❌'} (${adx.adx.toFixed(1)})`,
             `8. DI Power: ${sig === 'LONG' ? (adx.pDI > adx.mDI ? '✅ +DI > -DI' : '❌') : (adx.mDI > adx.pDI ? '✅ -DI > +DI' : '❌')}`
           ].join('\n');
 
