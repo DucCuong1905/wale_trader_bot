@@ -339,7 +339,7 @@ export async function runBacktest(
       const entryPrice = currentPrice; // Market Entry at Close
       
       const time = new Date(allKlines[i][0]).toISOString();
-      const sl = type === "LONG" ? (sweep.low - atr * 0.2) : (sweep.high + atr * 0.2);
+      const sl = type === "LONG" ? (sweep.low - atr * 0.5) : (sweep.high + atr * 0.5);
       const tp = entryPrice + (entryPrice - sl > 0 ? (entryPrice - sl) * rr : (sl - entryPrice) * -rr);
 
       console.log(`[SIGNAL] ${type} Market Entry at ${time} ($${entryPrice.toFixed(2)})`);

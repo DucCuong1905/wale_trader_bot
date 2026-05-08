@@ -573,7 +573,7 @@ async function traderLoop() {
     // 7. XỬ LÝ LỆNH (MARKET ENTRY)
     if (sig) {
       const e = currentPrice; // Market Entry at Close
-      const sl = sig === "LONG" ? (sweep.low - atr * 0.2) : (sweep.high + atr * 0.2);
+      const sl = sig === "LONG" ? (sweep.low - atr * 0.5) : (sweep.high + atr * 0.5);
       const tp = e + (e - sl > 0 ? (e - sl) * RR : (sl - e) * -RR);
       
       if (!IS_LIVE_TRADING_ENABLED) { 
