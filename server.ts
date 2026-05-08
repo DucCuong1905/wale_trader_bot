@@ -9,45 +9,12 @@ import WebSocket from "ws";
 import cors from "cors";
 import { runBacktest } from "./backtester.ts";
 
-import { GoogleGenAI } from "@google/genai";
-
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// --- AI CONFIG ---
-const getEnv = (key: string) => {
-  try {
-    const envPath = path.join(process.cwd(), ".env");
-    if (fs.existsSync(envPath)) {
-      const envContent = fs.readFileSync(envPath, "utf-8");
-      const lines = envContent.split("\n");
-      for (const line of lines) {
-        if (line.trim().startsWith(`${key}=`)) {
-          let val = line.split("=").slice(1).join("=").trim();
-          val = val.replace(/^["']|["']$/g, "").trim();
-          if (val) return val;
-        }
-      }
-    }
-  } catch (e) {
-    console.warn(`[WARN] Error reading .env directly for ${key}:`, e);
-  }
-
-  const val = process.env[key];
-  if (!val) return "";
-  
-  let cleaned = val.trim();
-  cleaned = cleaned.replace(/^["']|["']$/g, '').trim();
-  return cleaned;
-};
-
-const aiKey = getEnv("GEMINI_API_KEY");
-const ai = new GoogleGenAI({ apiKey: aiKey });
-const modelName = "gemini-1.5-flash"; 
-
-// --- CẤU HÌNH GIAO DỊCH ---
+// --- QUẢN LÝ VỊ THẾ GIẢ LẬP (PAPER TRADING) ---
 const PAIR = "BTC/USDT:USDT"; // Cặp giao dịch (Futures)
 const SYMBOL_ID = "btcusdt"; // ID ký hiệu cho WebSocket
 const TIMEFRAME = "1m"; // Khung thời gian nến (1 phút)
@@ -155,7 +122,7 @@ let botState = {
   adx: 0,
   plusDI: 0,
   minusDI: 0,
-  aiReasoning: "Đang chờ phân tích...",
+  aiReasoning: "TA Only Mode (AI Disabled)",
   isWsConnected: false,
   isInitNotified: false, // Thêm cờ thông báo khởi động
   apiError: "",
@@ -165,85 +132,13 @@ let botState = {
   latestSweepCandle: -1,
 };
 
-/**
- * Hàm lấy phân tích từ AI Gemini để xác nhận tín hiệu giao dịch.
- * @param signal Loại tín hiệu (LONG/SHORT)
- * @param lastPrice Giá hiện tại
- * @param obRatio Tỷ lệ Orderbook (Mua/Bán)
- * @param bars Dữ liệu nến gần đây
- * @param touches Số lần chạm vùng thanh khoản
- */
-async function getAIAnalysis(signal: string, lastPrice: number, obRatio: number, bars: any[], touches?: number) {
-  const maxRetriesPerModel = 2;
-  const modelsToTry = ["gemini-1.5-flash", "gemini-2.0-flash-exp"]; 
-
-  for (let modelToUse of modelsToTry) {
-    for (let i = 0; i < maxRetriesPerModel; i++) {
-      try {
-        const context = bars.slice(-20).map((b: any) => {
-          const time = new Date(b[0]).toLocaleTimeString();
-          return `[${time}] O:${b[1]} H:${b[2]} L:${b[3]} C:${b[4]} V:${b[5]}`;
-        }).join("\n");
-
-        const fiveMinsAgo = Date.now() - 300000;
-        const whales30k = botState.recentWhaleTrades.filter(t => t.amount >= 30000 && t.time >= fiveMinsAgo);
-        const aggressiveBuy = whales30k.filter(t => t.side === 'buy').reduce((sum, t) => sum + t.amount, 0);
-        const aggressiveSell = whales30k.filter(t => t.side === 'sell').reduce((sum, t) => sum + t.amount, 0);
-        const totalWhaleBuy = botState.recentWhaleTrades.filter(t => t.side === 'buy').reduce((sum, t) => sum + t.amount, 0);
-        const totalWhaleSell = botState.recentWhaleTrades.filter(t => t.side === 'sell').reduce((sum, t) => sum + t.amount, 0);
-
-        const whaleSummary = `
-- TỔNG DÒNG TIỀN (5m): Buy $${(totalWhaleBuy/1000000).toFixed(2)}M / Sell $${(totalWhaleSell/1000000).toFixed(2)}M.
-- ÁP LỰC CUỐI NẾN (5p): Buy $${(aggressiveBuy/1000000).toFixed(2)}M / Sell $${(aggressiveSell/1000000).toFixed(2)}M.`;
-
-        const prompt = `Bạn là một nhà giao dịch cá voi chuyên nghiệp tại Binance Futures. Bạn phân tích hợp lưu giữa Tường lệnh (Orderbook) và dòng tiền thực tế của cá voi (Whale Trades) trong nến 5 phút.
-TÍN HIỆU CẦN ĐÁNH GIÁ: ${signal}
-GIÁ HIỆN TẠI: $${lastPrice.toLocaleString()}
-ORDERBOOK RATIO (EMA): ${obRatio.toFixed(2)} (Bid/Ask)
-LỰC CÁ VOI (Whale Context): ${whaleSummary}
-SỐ LẦN CHẠM VÙNG THANH KHOẢN: ${touches || 1}
-
-BỐI CẢNH THỊ TRƯỜNG (20 nến):
-${context}
-
-HƯỚNG DẪN RA QUYẾT ĐỊNH CHUYÊN SÂU:
-1. Xác định "Bẫy Orderbook" (Hidden Pressure): Nếu Orderbook nghiêng hẳn về một bên (ví dụ Bid/Ask > 1.5) nhưng "ÁP LỰC CUỐI NẾN" (Whale Trades) lại đang ép ngược lại, đó là dấu hiệu của tường ảo để dụ gà. Hãy REJECT.
-2. Xác nhận "Aggressive Money": Whale thật thường đẩy giá dồn dập vào 5 phút cuối nến để tạo nến đẹp. Nếu "ÁP LỰC CUỐI NẾN" đồng thuận với tín hiệu, hãy CONFIRM mạnh tay.
-3. Độ mạnh vùng thanh khoản: Tín hiệu xảy ra tại vùng có >= 2 lần chạm (Touches) có xác suất đảo chiều cao hơn.
-4. Quản trị rủi ro: Nếu Áp lực 5p cuối và Tổng quan trái ngược nhau hoàn toàn, hãy REJECT.
-
-Trả về duy nhất JSON với format: {"decision": "CONFIRM" hoặc "REJECT", "reason": "...", "confidence": 0-100}`;
-
-        const response = await ai.models.generateContent({
-          model: modelToUse,
-          contents: prompt,
-          config: { 
-            responseMimeType: "application/json" 
-          }
-        });
-
-        const text = response.text;
-        if (!text) throw new Error("AI không trả về nội dung.");
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        const cleanText = jsonMatch ? jsonMatch[0] : text;
-        const parsed = JSON.parse(cleanText);
-        console.log(`[AI SUCCESS] ${parsed.decision} (${parsed.confidence}%) dùng ${modelToUse}`);
-        return parsed;
-      } catch (e: any) {
-        console.warn(`[AI RETRY] ${modelToUse} failed: ${e.message}`);
-      }
-    }
-  }
-  return { decision: "REJECT", reason: "AI Service Unavailable", confidence: 0 };
-}
-
 // --- HELPERS ---
 /**
  * Gửi thông báo qua Telegram.
  */
 async function sendTelegram(msg: string) {
-  const token = getEnv("TELEGRAM_BOT_TOKEN");
-  const chatId = getEnv("TELEGRAM_CHAT_ID");
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
   if (!token || !chatId) {
     console.error("[TELEGRAM] Thiếu TOKEN hoặc CHAT_ID trong .env");
     return;
@@ -271,8 +166,8 @@ let exchange: ccxt.binance | null = null;
  * Khởi tạo hoặc lấy đối tượng kết nối với sàn Binance.
  */
 function getExchange() {
-  const apiKey = getEnv("BINANCE_API_KEY");
-  const secret = getEnv("BINANCE_API_SECRET");
+  const apiKey = process.env.BINANCE_API_KEY;
+  const secret = process.env.BINANCE_API_SECRET;
 
   if (!apiKey || !secret) {
     if (!botState.apiError) {
@@ -765,48 +660,6 @@ async function traderLoop() {
   setTimeout(traderLoop, 5000);
 }
 
-/**
- * AI News Watcher: Quét tin tức thế giới ảnh hưởng đến BTC mỗi giờ.
- * Sử dụng Google Search Grounding để lấy thông tin thực tế.
- */
-async function newsWatcherLoop() {
-  try {
-    const aiKey = getEnv("GEMINI_API_KEY");
-    if (!aiKey) return;
-
-
-    const prompt = `Bạn là một chuyên gia phân tích tài chính vĩ mô. 
-    Hãy tìm kiếm tin tức thế giới mới nhất trong 1 giờ qua (kinh tế Mỹ, chính sách Fed, cá voi di chuyển, tin tức sàn giao dịch) có ảnh hưởng MẠNH đến Bitcoin.
-    
-    YÊU CẦU:
-    1. Nếu KHÔNG có tin gì đặc biệt quan trọng có khả năng thay đổi xu hướng, hãy trả về kết quả duy nhất là từ: "NONE".
-    2. Nếu CÓ tin quan trọng, hãy tóm tắt bằng TIẾNG VIỆT: Tên tin, Tác động (Xấu/Tốt), và mức độ ảnh hưởng (1-10).
-    
-    Chỉ trả về nội dung tóm tắt, không giải thích dài dòng.`;
-
-    const response = await ai.models.generateContent({ 
-      model: "gemini-1.5-flash", 
-      contents: prompt,
-      config: {
-        tools: [{ googleSearch: {} }] 
-      }
-    });
-
-    const text = response.text || "";
-
-    if (text !== "NONE" && text.length > 10) {
-      console.log("[NEWS WATCHER] Tin tức quan trọng phát hiện.");
-      await sendTelegram(`📰 **AI MACRO WATCHER**\n\n${text}`);
-    } else {
-      console.log("[NEWS WATCHER] Không có tin mới quan trọng.");
-    }
-  } catch (err) {
-    console.error("News Watcher Error:", err);
-  }
-  // Chạy lại sau 1 giờ
-  setTimeout(newsWatcherLoop, 3600000);
-}
-
 async function startServer() {
   const app = express();
   app.use(cors()); app.use(express.json());
@@ -864,7 +717,6 @@ async function startServer() {
 
     startWS(); 
     traderLoop(); 
-    newsWatcherLoop();
   });
 }
 
