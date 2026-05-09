@@ -149,6 +149,14 @@ export default function App() {
     }
   };
 
+  const handleStopBacktest = async () => {
+    try {
+      await fetch('/api/backtest/stop', { method: 'POST' });
+    } catch (err) {
+      console.error("Không thể dừng backtest:", err);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0c0c14] text-white flex items-center justify-center font-sans tracking-[0.2em] uppercase">
@@ -662,9 +670,17 @@ export default function App() {
                   <div className="flex flex-col items-center lg:items-end justify-center">
                     {isBacktestRunning ? (
                       <div className="flex flex-col items-end gap-3 w-full max-w-xs">
-                         <div className="flex items-center gap-3">
-                            <div className="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
-                            <span className="text-xs font-black text-purple-400 uppercase tracking-widest animate-pulse">Đang Phân Tích Dòng Tiền ({Math.round(backtestStatus?.progress || 0)}%)</span>
+                         <div className="flex items-center justify-between w-full">
+                            <div className="flex items-center gap-3">
+                               <div className="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+                               <span className="text-xs font-black text-purple-400 uppercase tracking-widest animate-pulse">Running ({Math.round(backtestStatus?.progress || 0)}%)</span>
+                            </div>
+                            <button 
+                              onClick={handleStopBacktest}
+                              className="px-4 py-1.5 bg-red-600/20 hover:bg-red-600 border border-red-500/30 text-red-500 hover:text-white text-[9px] font-black uppercase tracking-widest rounded-lg transition-all active:scale-95 shadow-lg shadow-red-500/10"
+                            >
+                              Dừng Backtest
+                            </button>
                          </div>
                          <div className="w-full h-3 bg-white/5 rounded-full overflow-hidden p-0.5 border border-white/10">
                             <motion.div 

@@ -178,11 +178,6 @@ function detectSweep(bars: any[]) {
   const sweepLow = sL <= localLow && sC >= localLow;
   const sweepHigh = sH >= localHigh && sC <= localHigh;
 
-  // BOS Mini: High/Low của 1 nến ngay trước nến quét
-  const prevOneCandle = bars[bars.length - 3];
-  const pL = prevOneCandle[3];
-  const pH = prevOneCandle[2];
-
   const body = Math.abs(cC - cO);
   const totalSize = cH - cL || 1;
   const bodySizes = bars.slice(-21, -1).map(b => Math.abs(b[4] - b[1]));
@@ -198,8 +193,8 @@ function detectSweep(bars: any[]) {
 
   const strongSweepCloseBull = sBody > avgBody * 1.5 && (sC - sL) / sRange > 0.75;
   const strongSweepCloseBear = sBody > avgBody * 1.5 && (sH - sC) / sRange > 0.75;
-  const bullishBOSOnSweep = sC > pH;
-  const bearishBOSOnSweep = sC < pL;
+  const bullishBOSOnSweep = sC > localHigh;
+  const bearishBOSOnSweep = sC < localLow;
 
   const extremelyStrongBullish = sweepLow && strongSweepCloseBull && bullishBOSOnSweep && sVolRatio >= 1.3;
   const extremelyStrongBearish = sweepHigh && strongSweepCloseBear && bearishBOSOnSweep && sVolRatio >= 1.3;
@@ -291,6 +286,12 @@ async function getAIBacktestDecision(signal: string, lastPrice: number, bars: an
 
 // --- MAIN RUNNER ---
 
+let shouldStopBacktest = false;
+
+export function stopBacktestExecution() {
+  shouldStopBacktest = true;
+}
+
 export async function runBacktest(
   startDate: string = START_DATE,
   endDate: string = END_DATE,
@@ -298,6 +299,7 @@ export async function runBacktest(
   timeframe: string = "15m",
   onProgress?: (p: number) => void
 ) {
+  shouldStopBacktest = false;
   console.log(`[BACKTEST] Start ${PAIR} from ${startDate} to ${endDate} (RR: ${rr}, TF: ${timeframe})`);
   const exchange = new ccxt.binance({ 
     timeout: 30000,
@@ -306,6 +308,7 @@ export async function runBacktest(
 
   async function fetchOHLCVWithRetry(ex: ccxt.Exchange, symbol: string, tf: string, sinceVal: number, limit: number, retries: number = 3) {
     for (let i = 0; i < retries; i++) {
+      if (shouldStopBacktest) return [];
       try {
         return await ex.fetchOHLCV(symbol, tf, sinceVal, limit);
       } catch (e: any) {
@@ -323,6 +326,7 @@ export async function runBacktest(
   const endTs = exchange.parse8601(endDate);
 
   while (since < endTs) {
+    if (shouldStopBacktest) break;
     try {
       const klines = await fetchOHLCVWithRetry(exchange, PAIR, timeframe, since, 1000);
       if (!klines.length) break;
@@ -362,6 +366,7 @@ export async function runBacktest(
   };
 
   for (let i = 100; i < allKlines.length; i++) {
+    if (shouldStopBacktest) break;
     if (onProgress) onProgress(50 + ((i / allKlines.length) * 50));
     
     // Kiểm tra cháy tài khoản (dưới 10$)

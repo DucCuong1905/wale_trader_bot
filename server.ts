@@ -277,11 +277,6 @@ function detectWhaleSweep(bars: any[]) {
   const sweepLow = sL <= localLow && sC >= localLow;
   const sweepHigh = sH >= localHigh && sC <= localHigh;
 
-  // 1.5 BOS Mini: Lấy high/low của 1 nến ngay trước nến quét
-  const prevOneCandle = bars[bars.length - 3];
-  const pL = prevOneCandle[3];
-  const pH = prevOneCandle[2];
-
   // 2. DISPLACEMENT & BODY SIZE
   const body = Math.abs(cC - cO);
   const totalSize = cH - cL || 1;
@@ -296,11 +291,11 @@ function detectWhaleSweep(bars: any[]) {
   const sRange = sH - sL || 1;
   const sVolRatio = sV / (bars.slice(-21, -2).reduce((a, b) => a + b[5], 0) / 19 || 1);
 
-  // Điều kiện nến Sweep cực mạnh: Thân nến > 1.5 avg, Rút râu > 75% nến, BOS mini (vượt nến trước) ngay lập tức, Vol > 1.3
+  // Điều kiện nến Sweep cực mạnh: Thân nến > 1.5 avg, Rút râu > 75% nến, BOS mini ngay lập tức, Vol > 1.3
   const strongSweepCloseBull = sBody > avgBody * 1.5 && (sC - sL) / sRange > 0.75;
   const strongSweepCloseBear = sBody > avgBody * 1.5 && (sH - sC) / sRange > 0.75;
-  const bullishBOSOnSweep = sC > pH;
-  const bearishBOSOnSweep = sC < pL;
+  const bullishBOSOnSweep = sC > localHigh;
+  const bearishBOSOnSweep = sC < localLow;
 
   const extremelyStrongBullish = sweepLow && strongSweepCloseBull && bullishBOSOnSweep && sVolRatio >= 1.3;
   const extremelyStrongBearish = sweepHigh && strongSweepCloseBear && bearishBOSOnSweep && sVolRatio >= 1.3;
@@ -717,6 +712,12 @@ async function startServer() {
     });
     res.json({ message: "Started" });
   });
+  app.post("/api/backtest/stop", (req, res) => {
+    const { stopBacktestExecution } = require("./backtester");
+    stopBacktestExecution();
+    res.json({ status: "Stopping" });
+  });
+
   app.get("/api/backtest/status", (req, res) => res.json(backtestStatus));
   app.get("/api/trading/status", (req, res) => {
     const b = botState.recentWhaleTrades.filter(t => t.side === 'buy').reduce((s, t) => s + t.amount, 0);
