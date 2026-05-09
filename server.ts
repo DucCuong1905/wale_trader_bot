@@ -290,8 +290,7 @@ function detectWhaleSweep(bars: any[]) {
   // 4. VOLUME CONFIRM (Standard)
   const volumes = bars.slice(-21, -1).map(b => b[5]);
   const avgVol = volumes.reduce((a, b) => a + b, 0) / volumes.length;
-  // Khối lượng nến xác nhận phải cao hơn 1.2 lần trung bình
-  const volConfirm = cV > avgVol * 1.2;
+  const volConfirm = cV > avgVol;
 
   return {
     sweepLow,
