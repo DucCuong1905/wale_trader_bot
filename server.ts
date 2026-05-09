@@ -22,7 +22,7 @@ const IS_LIVE_TRADING_ENABLED = false; // Chế độ giao dịch thật (true =
 const RISK_PER_TRADE = 0.01; // Rủi ro trên mỗi lệnh (1% tài khoản)
 const RR = 1.0; // Tỷ lệ Risk/Reward 1:1 theo yêu cầu
 const COOLDOWN_MS = 30000; // Thời gian chờ giữa các lệnh (30 giây)
-const MAX_DAILY_LOSS = 0.03; // Giới hạn lỗ tối đa trong ngày (3%)
+const MAX_DAILY_LOSS = 0.06; // Giới hạn lỗ tối đa trong ngày (6%)
 
 // CẤU HÌNH PHIÊN GIAO DỊCH (LONDON & NEW YORK)
 let ENABLE_SESSION_FILTER = false; 
@@ -290,7 +290,8 @@ function detectWhaleSweep(bars: any[]) {
   // 4. VOLUME CONFIRM (Standard)
   const volumes = bars.slice(-21, -1).map(b => b[5]);
   const avgVol = volumes.reduce((a, b) => a + b, 0) / volumes.length;
-  const volConfirm = cV > avgVol;
+  // Khối lượng nến xác nhận phải cao hơn 1.2 lần trung bình
+  const volConfirm = cV > avgVol * 1.2;
 
   return {
     sweepLow,

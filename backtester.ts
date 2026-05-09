@@ -182,7 +182,7 @@ function detectSweep(bars: any[]) {
 
   const volumes = bars.slice(-21, -1).map(b => b[5]);
   const avgVol = volumes.reduce((a, b) => a + b, 0) / volumes.length;
-  const volConfirm = cV > avgVol;
+  const volConfirm = cV > avgVol * 1.2;
 
   return {
     sweepLow,
