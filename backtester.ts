@@ -25,7 +25,7 @@ const modelName = "gemini-2.0-flash";
 const PAIR = "BTC/USDT";
 const START_DATE = "2026-01-01T00:00:00Z"; 
 const END_DATE = "2026-04-01T00:00:00Z";
-const RR = 1.0; 
+const RR = 1.1; 
 const INITIAL_BALANCE = 5000;
 const RISK_PER_TRADE = 0.01; // 1%
 
@@ -275,7 +275,7 @@ export async function runBacktest(
   startDate: string = START_DATE,
   endDate: string = END_DATE,
   rr: number = RR,
-  timeframe: string = "15m",
+  timeframe: string = "1m",
   enableSessionFilter: boolean = false,
   vwmaPeriod: number = 20, // Thêm tham số vwmaPeriod
   onProgress?: (p: number) => void
@@ -383,7 +383,7 @@ export async function runBacktest(
     const vwmaDistance = Math.abs(currentPrice - vwma);
     const maxDistance = atr * 1.2;
 
-    const baseCandleConditions = adx.adx >= 10 && isInSession && vwmaDistance < maxDistance;
+    const baseCandleConditions = adx.adx >= 18 && isInSession && vwmaDistance < maxDistance;
     
     let isLong = baseCandleConditions && currentPrice > vwma && slope > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adx.pDI > adx.mDI;
     let isShort = baseCandleConditions && currentPrice < vwma && slope < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adx.mDI > adx.pDI;

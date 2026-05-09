@@ -48,8 +48,8 @@ export default function App() {
   const [isBacktestRunning, setIsBacktestRunning] = useState(false);
   const [startDate, setStartDate] = useState('2026-01-01');
   const [endDate, setEndDate] = useState('2026-03-31');
-  const [backtestRR, setBacktestRR] = useState(1.2);
-  const [backtestTimeframe, setBacktestTimeframe] = useState('15m');
+  const [backtestRR, setBacktestRR] = useState(1.1);
+  const [backtestTimeframe, setBacktestTimeframe] = useState('1m');
   const [backtestSessionFilter, setBacktestSessionFilter] = useState(false);
   const [vwmaPeriod, setVwmaPeriod] = useState(20);
 
@@ -218,8 +218,8 @@ export default function App() {
               <Zap className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="font-black text-2xl tracking-tighter leading-none uppercase italic text-white">WhaleBot <span className="text-blue-500 not-italic">5M Edition</span></h1>
-              <span className="text-[10px] text-blue-400 font-mono tracking-[0.3em] uppercase opacity-90 font-black">Hệ Thống Phân Tích Cá Voi - KHUNG 5P</span>
+              <h1 className="font-black text-2xl tracking-tighter leading-none uppercase italic text-white">WhaleBot <span className="text-blue-500 not-italic">1M Edition</span></h1>
+              <span className="text-[10px] text-blue-400 font-mono tracking-[0.3em] uppercase opacity-90 font-black">Hệ Thống Phân Tích Cá Voi - KHUNG 1P</span>
             </div>
           </div>
 
@@ -235,27 +235,6 @@ export default function App() {
               >
                 SESSION: {data?.enable_session_filter ? "ON" : "OFF"}
               </button>
-
-              <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 items-center">
-                 <button 
-                    onClick={() => setBotVwma(20)}
-                    className={cn(
-                       "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all",
-                       data?.vwma_period === 20 ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20" : "text-slate-500 hover:text-slate-300"
-                    )}
-                 >
-                    VWMA 20
-                 </button>
-                 <button 
-                    onClick={() => setBotVwma(50)}
-                    className={cn(
-                       "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all",
-                       data?.vwma_period === 50 ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20" : "text-slate-500 hover:text-slate-300"
-                    )}
-                 >
-                    VWMA 50
-                 </button>
-              </div>
 
               <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10">
                 <button 
@@ -724,32 +703,6 @@ export default function App() {
                          </button>
                       </div>
 
-                      <div className="space-y-2 col-span-2 flex items-center gap-4 bg-white/5 p-4 rounded-xl border border-white/10 mt-1">
-                         <div className="flex-1">
-                            <label className="text-[10px] font-black text-slate-300 uppercase tracking-widest block mb-1">VWMA Period</label>
-                            <p className="text-[9px] text-slate-500 font-bold uppercase">Chọn chu kỳ đường trung bình (20 hoặc 50)</p>
-                         </div>
-                         <div className="flex bg-black/40 rounded-lg p-1 border border-white/5">
-                            <button 
-                               onClick={() => setVwmaPeriod(20)}
-                               className={cn(
-                                  "px-3 py-1 rounded-md text-[9px] font-black tracking-widest transition-all",
-                                  vwmaPeriod === 20 ? "bg-purple-600 text-white" : "text-slate-500 hover:text-slate-300"
-                               )}
-                            >
-                               20
-                            </button>
-                            <button 
-                               onClick={() => setVwmaPeriod(50)}
-                               className={cn(
-                                  "px-3 py-1 rounded-md text-[9px] font-black tracking-widest transition-all",
-                                  vwmaPeriod === 50 ? "bg-purple-600 text-white" : "text-slate-500 hover:text-slate-300"
-                               )}
-                            >
-                               50
-                            </button>
-                         </div>
-                      </div>
                     </div>
                     <p className="text-slate-500 text-[10px] uppercase tracking-widest font-bold">
                        Hệ thống sẽ fetch dữ liệu trực tiếp từ Binance Futures (M5).

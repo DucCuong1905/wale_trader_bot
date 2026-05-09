@@ -17,16 +17,16 @@ const __dirname = path.dirname(__filename);
 // --- QUẢN LÝ VỊ THẾ GIẢ LẬP (PAPER TRADING) ---
 const PAIR = "BTC/USDT:USDT"; // Cặp giao dịch (Futures)
 const SYMBOL_ID = "btcusdt"; // ID ký hiệu cho WebSocket
-const TIMEFRAME = "15m"; // Khung thời gian nến (15 phút)
+const TIMEFRAME = "1m"; // Khung thời gian nến (1 phút)
 const IS_LIVE_TRADING_ENABLED = false; // Chế độ giao dịch thật (true = bật, false = test)
 const RISK_PER_TRADE = 0.01; // Rủi ro trên mỗi lệnh (1% tài khoản)
-const RR = 1.0; // Tỷ lệ Risk/Reward 1:1 theo yêu cầu
+const RR = 1.1; // Tỷ lệ Risk/Reward 1.1 theo yêu cầu
 const COOLDOWN_MS = 30000; // Thời gian chờ giữa các lệnh (30 giây)
 const MAX_DAILY_LOSS = 0.06; // Giới hạn lỗ tối đa trong ngày (6%)
 
 // CẤU HÌNH PHIÊN GIAO DỊCH (LONDON & NEW YORK)
 let ENABLE_SESSION_FILTER = false; 
-let VWMA_PERIOD = 20; // Thêm biến cấu hình VWMA
+const VWMA_PERIOD = 20; // Cố định VWMA 20
 const SESSION_START_GMT = 8;  // 08:00 GMT (Mở phiên Âu)
 const SESSION_END_GMT = 21;    // 21:00 GMT (Đóng phiên Mỹ)
 
@@ -563,7 +563,7 @@ async function traderLoop() {
       currentPrice > vwma &&             // 1. Giá nằm trên đường VWMA 20
       slope > 0 &&                       // 2. Xu hướng VWMA đang đi lên
       vwmaDistance < maxDistance &&      // 3. Giá không quá xa VWMA
-      adx.adx >= 10 &&                   // 7. ADX >= 10
+      adx.adx >= 18 &&                   // 7. ADX >= 18 (Cập nhật từ 10)
       adx.pDI > adx.mDI                  // 8. +DI > -DI
     ) {
       if (sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm) {
@@ -579,7 +579,7 @@ async function traderLoop() {
       currentPrice < vwma &&
       slope < 0 &&
       vwmaDistance < maxDistance &&
-      adx.adx >= 10 &&
+      adx.adx >= 18 &&
       adx.mDI > adx.pDI
     ) {
       if (sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm) {
@@ -667,10 +667,10 @@ async function startServer() {
   app.get("/api/health", (req, res) => res.json({ status: "ok" }));
   app.post("/api/backtest/run", async (req, res) => {
     if (backtestStatus.isRunning) return res.status(400).json({ error: "Running" });
-    const { startDate, endDate, rr, timeframe, enableSessionFilter, vwmaPeriod } = req.body;
-    console.log(`[SERVER] Received backtest request: sessionFilter=${enableSessionFilter}, vwma=${vwmaPeriod}`);
+    const { startDate, endDate, rr, timeframe, enableSessionFilter } = req.body;
+    console.log(`[SERVER] Received backtest request: sessionFilter=${enableSessionFilter}`);
     backtestStatus.isRunning = true;
-    runBacktest(startDate, endDate, rr, timeframe, enableSessionFilter, vwmaPeriod, p => { 
+    runBacktest(startDate, endDate, rr, timeframe, enableSessionFilter, 20, p => { 
       backtestStatus.progress = p; 
     }).then(r => { 
       backtestStatus.isRunning = false; 
@@ -702,15 +702,6 @@ async function startServer() {
   app.post("/api/trading/toggle-session", (req, res) => {
     ENABLE_SESSION_FILTER = !ENABLE_SESSION_FILTER;
     res.json({ success: true, enabled: ENABLE_SESSION_FILTER });
-  });
-  app.post("/api/trading/set-vwma", (req, res) => {
-    const { period } = req.body;
-    if (period === 20 || period === 50) {
-      VWMA_PERIOD = period;
-      res.json({ success: true, period: VWMA_PERIOD });
-    } else {
-      res.status(400).json({ error: "Invalid period" });
-    }
   });
   app.get("/api/trading/history", (req, res) => res.json(botState.trades));
 
