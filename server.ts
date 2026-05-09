@@ -7,7 +7,7 @@ import dotenv from "dotenv";
 import * as ccxt from "ccxt";
 import WebSocket from "ws";
 import cors from "cors";
-import { runBacktest } from "./backtester.ts";
+import { runBacktest, stopBacktestExecution } from "./backtester.ts";
 
 dotenv.config();
 
@@ -699,6 +699,7 @@ async function startServer() {
   app.post("/api/backtest/run", async (req, res) => {
     if (backtestStatus.isRunning) return res.status(400).json({ error: "Running" });
     const { startDate, endDate, rr, timeframe, enableSessionFilter } = req.body;
+    console.log(`[SERVER] Received backtest request: enableSessionFilter=${enableSessionFilter}`);
     backtestStatus.isRunning = true;
     runBacktest(startDate, endDate, rr, timeframe, enableSessionFilter, p => { 
       backtestStatus.progress = p; 
@@ -713,7 +714,6 @@ async function startServer() {
     res.json({ message: "Started" });
   });
   app.post("/api/backtest/stop", (req, res) => {
-    const { stopBacktestExecution } = require("./backtester");
     stopBacktestExecution();
     res.json({ status: "Stopping" });
   });

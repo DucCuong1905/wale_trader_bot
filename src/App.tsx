@@ -126,7 +126,7 @@ export default function App() {
 
   const startBacktest = async () => {
     try {
-      await fetch('/api/backtest/run', { 
+      const response = await fetch('/api/backtest/run', { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -137,9 +137,14 @@ export default function App() {
           enableSessionFilter: backtestSessionFilter
         })
       });
-      setIsBacktestRunning(true);
+      if (response.ok) {
+        setIsBacktestRunning(true);
+      } else {
+        const err = await response.json();
+        alert(`Không thể bắt đầu: ${err.error || 'Server đang bận'}`);
+      }
     } catch (e) {
-      alert("Không thể khởi động Backtest");
+      alert("Lỗi kết nối khi khởi động Backtest");
     }
   };
 
@@ -153,6 +158,7 @@ export default function App() {
 
   const handleStopBacktest = async () => {
     try {
+      setIsBacktestRunning(false); // Cập nhật ngay lập tức trên UI
       await fetch('/api/backtest/stop', { method: 'POST' });
     } catch (err) {
       console.error("Không thể dừng backtest:", err);
