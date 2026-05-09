@@ -182,6 +182,7 @@ function getExchange() {
       apiKey, 
       secret, 
       enableRateLimit: true, 
+      timeout: 30000, // Increase timeout to 30s
       options: { defaultType: 'future', adjustForTimeDifference: true } 
     });
     
@@ -260,12 +261,12 @@ function calculateATR(bars: any[], period: number = 14) {
  * Sử dụng logic 2 nến: Nến quét (n-2) và nến xác nhận (n-1).
  */
 function detectWhaleSweep(bars: any[]) {
-  if (bars.length < 15) return { sweepLow: false, sweepHigh: false };
+  if (bars.length < 20) return { sweepLow: false, sweepHigh: false };
   
   const sweepCandle = bars[bars.length - 2]; // Nến quét thanh khoản
   const confirmCandle = bars[bars.length - 1]; // Nến xác nhận (Displacement)
 
-  const [, sO, sH, sL, sC] = sweepCandle;
+  const [, sO, sH, sL, sC, sV] = sweepCandle;
   const [, cO, cH, cL, cC, cV] = confirmCandle;
 
   // 1. LOGIC QUÉT THANH KHOẢN (Local Swing Sweep - 5 nến trước nến quét)
@@ -273,25 +274,35 @@ function detectWhaleSweep(bars: any[]) {
   const localLow = Math.min(...prevBars.map(b => b[3]));
   const localHigh = Math.max(...prevBars.map(b => b[2]));
 
-  // Quét đáy: Râu nến quét chạm hoặc thấp hơn đáy cũ nhưng đóng cửa bằng hoặc trên đáy cũ
   const sweepLow = sL <= localLow && sC >= localLow;
-  // Quét đỉnh: Râu nến quét chạm hoặc cao hơn đỉnh cũ nhưng đóng cửa bằng hoặc dưới đỉnh cũ
   const sweepHigh = sH >= localHigh && sC <= localHigh;
 
-  // 2. VAI TRÒ XÁC NHẬN (Displacement - Thể hiện lực đẩy mạnh)
+  // 2. DISPLACEMENT & BODY SIZE
   const body = Math.abs(cC - cO);
   const totalSize = cH - cL || 1;
-  const bodySizes = bars.slice(-16, -1).map(b => Math.abs(b[4] - b[1]));
+  const bodySizes = bars.slice(-21, -1).map(b => Math.abs(b[4] - b[1]));
   const avgBody = bodySizes.reduce((a, b) => a + b, 0) / bodySizes.length;
   
-  // Nến xác nhận phải có thân nến lớn (body > 1.2 lần trung bình) và chiếm phần lớn cây nến (> 70%)
   const displacementBullish = body > avgBody * 1.2 && (cC - cL) / totalSize > 0.7;
   const displacementBearish = body > avgBody * 1.2 && (cH - cC) / totalSize > 0.7;
 
-  // 3. VAI TRÒ KHỐI LƯỢNG (Volume)
+  // 3. EXTREMELY STRONG SWEEP CANDLE (OR CONDITION)
+  const sBody = Math.abs(sC - sO);
+  const sRange = sH - sL || 1;
+  const sVolRatio = sV / (bars.slice(-21, -2).reduce((a, b) => a + b[5], 0) / 19 || 1);
+
+  // Điều kiện nến Sweep cực mạnh: Thân nến > 1.5 avg, Rút râu > 75% nến, BOS mini ngay lập tức, Vol > 1.3
+  const strongSweepCloseBull = sBody > avgBody * 1.5 && (sC - sL) / sRange > 0.75;
+  const strongSweepCloseBear = sBody > avgBody * 1.5 && (sH - sC) / sRange > 0.75;
+  const bullishBOSOnSweep = sC > localHigh;
+  const bearishBOSOnSweep = sC < localLow;
+
+  const extremelyStrongBullish = sweepLow && strongSweepCloseBull && bullishBOSOnSweep && sVolRatio >= 1.3;
+  const extremelyStrongBearish = sweepHigh && strongSweepCloseBear && bearishBOSOnSweep && sVolRatio >= 1.3;
+
+  // 4. VOLUME CONFIRM (Standard)
   const volumes = bars.slice(-21, -1).map(b => b[5]);
   const avgVol = volumes.reduce((a, b) => a + b, 0) / volumes.length;
-  // Khối lượng của nến xác nhận phải cao hơn trung bình (cV > avgVol)
   const volConfirm = cV > avgVol;
 
   return {
@@ -299,6 +310,8 @@ function detectWhaleSweep(bars: any[]) {
     sweepHigh,
     displacementBullish,
     displacementBearish,
+    extremelyStrongBullish,
+    extremelyStrongBearish,
     volConfirm,
     low: sL,
     high: sH,
@@ -384,6 +397,20 @@ function startWS() {
   ws.on('close', () => { botState.isWsConnected = false; setTimeout(startWS, 5000); });
 }
 
+async function fetchOHLCVWithRetry(ex: ccxt.Exchange, symbol: string, timeframe: string, since: number | undefined, limit: number, retries: number = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await ex.fetchOHLCV(symbol, timeframe, since, limit);
+    } catch (e: any) {
+      if (i === retries - 1) throw e;
+      const delay = Math.pow(2, i) * 1000;
+      console.warn(`[CCXT] Fetch failed (attempt ${i + 1}/${retries}). Retrying in ${delay}ms... Error: ${e.message}`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  return [];
+}
+
 /**
  * Vòng lặp chính của Bot: Kiểm tra nến, tín hiệu và thực hiện giao dịch.
  */
@@ -442,7 +469,15 @@ async function traderLoop() {
       }
     } else {
       // PAPER POSITION TRACKING
-      const lastCandle = (await ex.fetchOHLCV(PAIR, TIMEFRAME, undefined, 1))[0];
+      let lastCandleSet;
+      try {
+        lastCandleSet = await fetchOHLCVWithRetry(ex, PAIR, TIMEFRAME, undefined, 1);
+      } catch (e: any) {
+        console.error("❌ Lỗi lấy nến cuối (paper):", e.message);
+        setTimeout(traderLoop, 10000);
+        return;
+      }
+      const lastCandle = lastCandleSet[0];
       const [, , cH, cL, cC] = lastCandle;
       const currentPrice = cC;
 
@@ -485,10 +520,9 @@ async function traderLoop() {
     // 3. LẤY DỮ LIỆU NẾN (OHLCV)
     let bars: any[] = [];
     try {
-      bars = await ex.fetchOHLCV(PAIR, TIMEFRAME, undefined, 100);
+      bars = await fetchOHLCVWithRetry(ex, PAIR, TIMEFRAME, undefined, 100);
     } catch (ohlcvErr: any) {
-      // Nếu lỗi do API Key (dù là lệnh public), thử lại sau 10s
-      console.error("❌ Lỗi fetchOHLCV:", ohlcvErr.message);
+      console.error("❌ Lỗi fetchOHLCV (sau khi retry):", ohlcvErr.message);
       setTimeout(traderLoop, 10000);
       return;
     }
@@ -535,6 +569,7 @@ async function traderLoop() {
     const sweep = detectWhaleSweep(bars);
 
     let sig: "LONG" | "SHORT" | null = null;
+    let entryType: "Standard" | "ExtremelyStrong" = "Standard";
     
     // ========================================================
     // 5. ĐIỀU KIỆN VÀO LỆNH LONG (MUA)
@@ -542,32 +577,44 @@ async function traderLoop() {
     if (
       isWithinTradingSessions() &&       // 0. Kiểm tra phiên giao dịch
       currentPrice > vwma &&             // 1. Giá nằm trên đường VWMA 20
-      slope > 0 &&                       // 2. Xu hướng VWMA đang đi lên (Slope dương)
-      vwmaDistance < maxDistance &&      // 3. Giá không quá xa VWMA (tránh fomo)
-      sweep.sweepLow &&                  // 4. Có tín hiệu quét râu ở đáy (Liquidity Sweep Low)
-      sweep.displacementBullish &&       // 5. Có nến xác nhận tăng mạnh (Displacement)
-      sweep.volConfirm &&                // 6. Khối lượng nến xác nhận đủ lớn
-      adx.adx >= 10 &&                   // 7. Độ mạnh xu hướng ADX >= 10
-      adx.pDI > adx.mDI                  // 8. Phe mua mạnh hơn phe bán (+DI > -DI)
+      slope > 0 &&                       // 2. Xu hướng VWMA đang đi lên
+      vwmaDistance < maxDistance &&      // 3. Giá không quá xa VWMA
+      adx.adx >= 10 &&                   // 7. ADX >= 10
+      adx.pDI > adx.mDI                  // 8. +DI > -DI
     ) {
-      sig = "LONG";
+      // HOẶC 1: Tín hiệu xác nhận chuẩn
+      if (sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm) {
+        sig = "LONG";
+        entryType = "Standard";
+      } 
+      // HOẶC 2: Tín hiệu cực mạnh từ nến Sweep
+      else if (sweep.extremelyStrongBullish) {
+        sig = "LONG";
+        entryType = "ExtremelyStrong";
+      }
     }
 
     // ========================================================
     // 6. ĐIỀU KIỆN VÀO LỆNH SHORT (BÁN)
     // ========================================================
     if (
-      isWithinTradingSessions() &&       // 0. Kiểm tra phiên giao dịch
-      currentPrice < vwma &&             // 1. Giá nằm dưới đường VWMA 20
-      slope < 0 &&                       // 2. Xu hướng VWMA đang đi xuống (Slope âm)
-      vwmaDistance < maxDistance &&      // 3. Giá không quá xa VWMA
-      sweep.sweepHigh &&                 // 4. Có tín hiệu quét râu ở đỉnh (Liquidity Sweep High)
-      sweep.displacementBearish &&       // 5. Có nến xác nhận giảm mạnh (Displacement)
-      sweep.volConfirm &&                // 6. Khối lượng nến xác nhận đủ lớn
-      adx.adx >= 10 &&                   // 7. Độ mạnh xu hướng ADX >= 10
-      adx.mDI > adx.pDI                  // 8. Phe bán mạnh hơn phe mua (-DI > +DI)
+      isWithinTradingSessions() &&
+      currentPrice < vwma &&
+      slope < 0 &&
+      vwmaDistance < maxDistance &&
+      adx.adx >= 10 &&
+      adx.mDI > adx.pDI
     ) {
-      sig = "SHORT";
+      // HOẶC 1: Tín hiệu xác nhận chuẩn
+      if (sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm) {
+        sig = "SHORT";
+        entryType = "Standard";
+      }
+      // HOẶC 2: Tín hiệu cực mạnh từ nến Sweep
+      else if (sweep.extremelyStrongBearish) {
+        sig = "SHORT";
+        entryType = "ExtremelyStrong";
+      }
     }
 
     // 7. XỬ LÝ LỆNH (MARKET ENTRY)
@@ -593,22 +640,22 @@ async function traderLoop() {
         botState.lastTradeTime = Date.now(); 
 
         const conditions = [
+          `Type: ${entryType}`,
           `1. Giá vs VWMA: ${sig === 'LONG' ? (currentPrice > vwma ? '✅ Above' : '❌ Below') : (currentPrice < vwma ? '✅ Below' : '❌ Above')}`,
           `2. Slope: ${sig === 'LONG' ? (slope > 0 ? '✅ Positive' : '❌ Negative') : (slope < 0 ? '✅ Negative' : '❌ Positive')}`,
           `3. Distance: ${vwmaDistance < maxDistance ? '✅ Safe' : '❌ Fomo'} (${vwmaDistance.toFixed(2)} vs ${maxDistance.toFixed(2)}, ${vwmaDistancePct.toFixed(2)}%)`,
-          `4. Sweep: ${sig === 'LONG' ? (sweep.sweepLow ? '✅ Low Sweep' : '❌ No Sweep') : (sweep.sweepHigh ? '✅ High Sweep' : '❌ No Sweep')}`,
-          `5. Displacement: ${sig === 'LONG' ? (sweep.displacementBullish ? '✅ Strong Bull' : '❌ Weak') : (sweep.displacementBearish ? '✅ Strong Bear' : '❌ Weak')}`,
-          `6. Volume: ${sweep.volConfirm ? '✅ Confirmed' : '❌ Low'}`,
+          `4. Sweep: ${sig === 'LONG' ? (sweep.extremelyStrongBullish ? '🔥 EXTREME' : (sweep.sweepLow ? '✅ Low Sweep' : '❌ No Sweep')) : (sweep.extremelyStrongBearish ? '🔥 EXTREME' : (sweep.sweepHigh ? '✅ High Sweep' : '❌ No Sweep'))}`,
+          `5. Displacement/BOS: ${entryType === 'ExtremelyStrong' ? '✅ BOS on Sweep' : (sig === 'LONG' ? (sweep.displacementBullish ? '✅ Strong Bull' : '❌ Weak') : (sweep.displacementBearish ? '✅ Strong Bear' : '❌ Weak'))}`,
           `7. ADX (>=10): ${adx.adx >= 10 ? '✅' : '❌'} (${adx.adx.toFixed(1)})`,
           `8. DI Power: ${sig === 'LONG' ? (adx.pDI > adx.mDI ? '✅ +DI > -DI' : '❌') : (adx.mDI > adx.pDI ? '✅ -DI > +DI' : '❌')}`
         ].join('\n');
 
-        await sendTelegram(`🚀 [SIGNAL] **${sig}** Market Entry!\n\n` +
+        await sendTelegram(`🚀 [SIGNAL] **${sig}** Market Entry! (${entryType})\n\n` +
           `📊 **Thông số lệnh:**\n` +
           `🎯 Entry: ${e.toFixed(2)}\n` +
           `🛑 SL: ${sl.toFixed(2)} | 💎 TP: ${tp.toFixed(2)}\n` +
           `💰 Distance to VWMA: ${vwmaDistancePct.toFixed(2)}%\n\n` +
-          `📝 **8 Điều kiện:**\n${conditions}\n\n` +
+          `📝 **Điều kiện:**\n${conditions}\n\n` +
           `⏰ Giờ VN: ${vnTime}`); 
       } else {
         // Chế độ Trade thật trên sàn

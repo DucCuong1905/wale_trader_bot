@@ -48,6 +48,11 @@ interface BacktestResult {
   trades: any[];
   startTime: string;
   endTime: string;
+  extStrongTrades: number;
+  extStrongWins: number;
+  displaceTrades: number;
+  displaceWins: number;
+  totalProfitR: number;
 }
 
 let results: BacktestResult = {
@@ -63,7 +68,12 @@ let results: BacktestResult = {
   liquidationDate: null,
   trades: [],
   startTime: START_DATE,
-  endTime: END_DATE
+  endTime: END_DATE,
+  extStrongTrades: 0,
+  extStrongWins: 0,
+  displaceTrades: 0,
+  displaceWins: 0,
+  totalProfitR: 0
 };
 
 // --- LOGIC FUNCTIONS (COPIED & ADAPTED FROM SERVER.TS) ---
@@ -141,11 +151,13 @@ function calculateATR(bars: any[], period: number = 14) {
 }
 
 function detectSweep(bars: any[]) {
-  if (bars.length < 15) return { 
+  if (bars.length < 20) return { 
     sweepHigh: false, 
     sweepLow: false, 
     displacementBullish: false, 
     displacementBearish: false, 
+    extremelyStrongBullish: false,
+    extremelyStrongBearish: false,
     volConfirm: false, 
     low: 0, 
     high: 0, 
@@ -156,7 +168,7 @@ function detectSweep(bars: any[]) {
   const sweepCandle = bars[bars.length - 2];
   const confirmCandle = bars[bars.length - 1];
 
-  const [, sO, sH, sL, sC] = sweepCandle;
+  const [, sO, sH, sL, sC, sV] = sweepCandle;
   const [, cO, cH, cL, cC, cV] = confirmCandle;
 
   const prevBars = bars.slice(bars.length - 7, bars.length - 2);
@@ -168,11 +180,24 @@ function detectSweep(bars: any[]) {
 
   const body = Math.abs(cC - cO);
   const totalSize = cH - cL || 1;
-  const bodySizes = bars.slice(-16, -1).map(b => Math.abs(b[4] - b[1]));
+  const bodySizes = bars.slice(-21, -1).map(b => Math.abs(b[4] - b[1]));
   const avgBody = bodySizes.reduce((a, b) => a + b, 0) / bodySizes.length;
   
   const displacementBullish = body > avgBody * 1.2 && (cC - cL) / totalSize > 0.7;
   const displacementBearish = body > avgBody * 1.2 && (cH - cC) / totalSize > 0.7;
+
+  // EXTREMELY STRONG SWEEP (OR CONDITION)
+  const sBody = Math.abs(sC - sO);
+  const sRange = sH - sL || 1;
+  const sVolRatio = sV / (bars.slice(-21, -2).reduce((a, b) => a + b[5], 0) / 19 || 1);
+
+  const strongSweepCloseBull = sBody > avgBody * 1.5 && (sC - sL) / sRange > 0.75;
+  const strongSweepCloseBear = sBody > avgBody * 1.5 && (sH - sC) / sRange > 0.75;
+  const bullishBOSOnSweep = sC > localHigh;
+  const bearishBOSOnSweep = sC < localLow;
+
+  const extremelyStrongBullish = sweepLow && strongSweepCloseBull && bullishBOSOnSweep && sVolRatio >= 1.3;
+  const extremelyStrongBearish = sweepHigh && strongSweepCloseBear && bearishBOSOnSweep && sVolRatio >= 1.3;
 
   const volumes = bars.slice(-21, -1).map(b => b[5]);
   const avgVol = volumes.reduce((a, b) => a + b, 0) / volumes.length;
@@ -183,6 +208,8 @@ function detectSweep(bars: any[]) {
     sweepHigh,
     displacementBullish,
     displacementBearish,
+    extremelyStrongBullish,
+    extremelyStrongBearish,
     volConfirm,
     low: sL,
     high: sH,
@@ -267,19 +294,41 @@ export async function runBacktest(
   onProgress?: (p: number) => void
 ) {
   console.log(`[BACKTEST] Start ${PAIR} from ${startDate} to ${endDate} (RR: ${rr}, TF: ${timeframe})`);
-  const exchange = new ccxt.binance({ options: { defaultType: 'future' } });
+  const exchange = new ccxt.binance({ 
+    timeout: 30000,
+    options: { defaultType: 'future' } 
+  });
+
+  async function fetchOHLCVWithRetry(ex: ccxt.Exchange, symbol: string, tf: string, sinceVal: number, limit: number, retries: number = 3) {
+    for (let i = 0; i < retries; i++) {
+      try {
+        return await ex.fetchOHLCV(symbol, tf, sinceVal, limit);
+      } catch (e: any) {
+        if (i === retries - 1) throw e;
+        const delay = Math.pow(2, i) * 2000;
+        console.warn(`[CCXT BACKTEST] Fetch failed (attempt ${i + 1}/${retries}). Retrying in ${delay}ms... Error: ${e.message}`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+    return [];
+  }
   
   let allKlines: any[] = [];
   let since = exchange.parse8601(startDate);
   const endTs = exchange.parse8601(endDate);
 
   while (since < endTs) {
-    const klines = await exchange.fetchOHLCV(PAIR, timeframe, since, 1000);
-    if (!klines.length) break;
-    allKlines.push(...klines);
-    since = klines[klines.length - 1][0] + 1;
-    console.log(`Fetched ${allKlines.length} klines...`);
-    if (onProgress) onProgress(Math.min(50, (allKlines.length / 3000) * 50));
+    try {
+      const klines = await fetchOHLCVWithRetry(exchange, PAIR, timeframe, since, 1000);
+      if (!klines.length) break;
+      allKlines.push(...klines);
+      since = klines[klines.length - 1][0] + 1;
+      console.log(`Fetched ${allKlines.length} klines...`);
+      if (onProgress) onProgress(Math.min(50, (allKlines.length / 3000) * 50));
+    } catch (err: any) {
+      console.error("❌ Lỗi nghiêm trọng khi tải dữ liệu backtest:", err.message);
+      throw new Error(`Không thể kết nối với sàn Binance để tải dữ liệu: ${err.message}`);
+    }
   }
 
   allKlines = allKlines.filter(k => k[0] <= endTs);
@@ -299,7 +348,12 @@ export async function runBacktest(
     liquidationDate: null, 
     trades: [],
     startTime: startDate,
-    endTime: endDate
+    endTime: endDate,
+    extStrongTrades: 0,
+    extStrongWins: 0,
+    displaceTrades: 0,
+    displaceWins: 0,
+    totalProfitR: 0
   };
 
   for (let i = 100; i < allKlines.length; i++) {
@@ -331,8 +385,17 @@ export async function runBacktest(
     const vwmaDistance = Math.abs(currentPrice - vwma);
     const maxDistance = atr * 1.2;
 
-    let isLong = isInSession && currentPrice > vwma && slope > 0 && vwmaDistance < maxDistance && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adx.adx >= 10 && adx.pDI > adx.mDI;
-    let isShort = isInSession && currentPrice < vwma && slope < 0 && vwmaDistance < maxDistance && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adx.adx >= 10 && adx.mDI > adx.pDI;
+    const baseCandleConditions = adx.adx >= 10 && isInSession && vwmaDistance < maxDistance;
+    
+    let isLongExt = baseCandleConditions && currentPrice > vwma && slope > 0 && sweep.extremelyStrongBullish && adx.pDI > adx.mDI;
+    let isLongStd = baseCandleConditions && currentPrice > vwma && slope > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adx.pDI > adx.mDI;
+    
+    let isShortExt = baseCandleConditions && currentPrice < vwma && slope < 0 && sweep.extremelyStrongBearish && adx.mDI > adx.pDI;
+    let isShortStd = baseCandleConditions && currentPrice < vwma && slope < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adx.mDI > adx.pDI;
+
+    const isLong = isLongExt || isLongStd;
+    const isShort = isShortExt || isShortStd;
+    const entryType = (isLongExt || isShortExt) ? "ExtremelyStrong" : "Standard";
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
@@ -342,7 +405,7 @@ export async function runBacktest(
       const sl = type === "LONG" ? (sweep.low - atr * 0.2) : (sweep.high + atr * 0.2);
       const tp = entryPrice + (entryPrice - sl > 0 ? (entryPrice - sl) * rr : (sl - entryPrice) * -rr);
 
-      console.log(`[SIGNAL] ${type} Market Entry at ${time} ($${entryPrice.toFixed(2)})`);
+      console.log(`[SIGNAL] ${type} (${entryType}) Market Entry at ${time} ($${entryPrice.toFixed(2)})`);
       
       // Tìm kết quả trong các nến tiếp theo
       let exitPrice = 0;
@@ -365,7 +428,7 @@ export async function runBacktest(
       
       const dollarPnL = results.finalBalance * RISK_PER_TRADE * pnlR;
       
-      // Tính phí và trượt giá dự kiến (Ước tính thực tế)
+      // Tính phí và trượt giá dự kiến (Để thống kê, ko trừ túi)
       const feeRate = 0.0005; // 0.05% taker
       const slippageRate = 0.0002; // 0.02% slippage
       
@@ -373,19 +436,30 @@ export async function runBacktest(
       const stopLossDistPct = Math.abs(entryPrice - sl) / entryPrice;
       const positionNotional = stopLossDistPct > 0 ? riskAmount / stopLossDistPct : 0;
       
-      const estimatedFee = positionNotional * feeRate * 2; // Entry + Exit
+      const estimatedFee = positionNotional * feeRate * 2; 
       const estimatedSlippage = positionNotional * slippageRate * 2;
       
       results.totalFees += estimatedFee;
       results.totalSlippage += estimatedSlippage;
-      results.finalBalance += (dollarPnL - estimatedFee - estimatedSlippage);
+      results.finalBalance += dollarPnL; 
 
       results.totalTrades++;
-      if (status === "WIN") results.wins++; else results.losses++;
+      if (status === "WIN") {
+        results.wins++;
+        if (entryType === "ExtremelyStrong") results.extStrongWins++; else results.displaceWins++;
+      } else {
+        results.losses++;
+      }
+      
+      if (entryType === "ExtremelyStrong") results.extStrongTrades++; else results.displaceTrades++;
+      
       results.totalPnL += pnlR;
+      results.totalProfitR += pnlR;
+
       results.trades.push({ 
         time, 
         type, 
+        entryType,
         entryPrice, 
         exitPrice, 
         status, 
@@ -394,10 +468,10 @@ export async function runBacktest(
         estimatedFee,
         estimatedSlippage,
         currentBalance: results.finalBalance,
-        reason: "TA Market Entry" 
+        reason: `TA ${entryType} Entry`
       });
       
-      console.log(`[TRADE] ${status} | PnL: ${pnlR}R ($${dollarPnL.toFixed(2)}) | Balance: $${results.finalBalance.toFixed(2)}`);
+      console.log(`[TRADE] ${status} | Type: ${entryType} | PnL: ${pnlR}R ($${dollarPnL.toFixed(2)}) | Balance: $${results.finalBalance.toFixed(2)}`);
       
       // Nhảy vòng lặp đến điểm nến hiện tại
     }

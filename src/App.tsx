@@ -711,40 +711,37 @@ export default function App() {
                     </div>
                   )}
                   <div className="lg:col-span-4 space-y-6">
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                        <div className="bg-[#12121c] p-6 rounded-[2rem] border border-white/5">
                           <p className="text-[10px] text-slate-500 font-black uppercase mb-2">Tổng Giao Dịch</p>
-                          <p className="text-4xl font-mono font-black">{backtestStatus.lastResult.totalTrades}</p>
+                          <p className="text-3xl font-mono font-black">{backtestStatus.lastResult.totalTrades}</p>
                        </div>
                        <div className="bg-[#12121c] p-6 rounded-[2rem] border border-white/5">
                           <p className="text-[10px] text-slate-500 font-black uppercase mb-2">Tỷ Lệ Thắng</p>
-                          <p className="text-4xl font-mono font-black text-green-400">
+                          <p className="text-3xl font-mono font-black text-green-400">
                              {backtestStatus.lastResult.totalTrades > 0 
                                ? Math.round((backtestStatus.lastResult.wins / backtestStatus.lastResult.totalTrades) * 100) 
                                : 0}%
                           </p>
                        </div>
-                    </div>
-
-                    <div className="bg-[#12121c] p-6 rounded-[2rem] border border-white/5 space-y-4">
-                      <div>
-                        <p className="text-[10px] text-slate-500 font-black uppercase mb-2">Phí & Trượt Giá (Ước Tính)</p>
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-center">
-                            <span className="text-[11px] text-slate-400">Tổng Phí (0.05%):</span>
-                            <span className="text-sm font-mono text-red-400">-${(backtestStatus.lastResult.totalFees || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })}</span>
-                          </div>
-                          <div className="flex justify-between items-center">
-                            <span className="text-[11px] text-slate-400">Trượt Giá (0.02%):</span>
-                            <span className="text-sm font-mono text-red-400">-${(backtestStatus.lastResult.totalSlippage || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })}</span>
-                          </div>
-                          <div className="h-px bg-white/5 my-2" />
-                          <div className="flex justify-between items-center">
-                            <span className="text-[11px] font-bold text-slate-300">Tổng Hao Hụt:</span>
-                            <span className="text-sm font-mono text-red-500 font-bold">-${((backtestStatus.lastResult.totalFees || 0) + (backtestStatus.lastResult.totalSlippage || 0)).toLocaleString(undefined, { maximumFractionDigits: 1 })}</span>
-                          </div>
-                        </div>
-                      </div>
+                       <div className="bg-[#12121c] p-6 rounded-[2rem] border border-white/5">
+                          <p className="text-[10px] text-slate-500 font-black uppercase mb-2">Ext. Strong Sweep</p>
+                          <p className="text-3xl font-mono font-black text-purple-400">
+                             {backtestStatus.lastResult.extStrongTrades > 0 
+                               ? Math.round((backtestStatus.lastResult.extStrongWins / backtestStatus.lastResult.extStrongTrades) * 100) 
+                               : 0}%
+                          </p>
+                          <p className="text-[9px] text-slate-600 font-bold mt-1 uppercase">Win: {backtestStatus.lastResult.extStrongWins}/{backtestStatus.lastResult.extStrongTrades}</p>
+                       </div>
+                       <div className="bg-[#12121c] p-6 rounded-[2rem] border border-white/5">
+                          <p className="text-[10px] text-slate-500 font-black uppercase mb-2">Sweep + Displace</p>
+                          <p className="text-3xl font-mono font-black text-blue-400">
+                             {backtestStatus.lastResult.displaceTrades > 0 
+                               ? Math.round((backtestStatus.lastResult.displaceWins / backtestStatus.lastResult.displaceTrades) * 100) 
+                               : 0}%
+                          </p>
+                          <p className="text-[9px] text-slate-600 font-bold mt-1 uppercase">Win: {backtestStatus.lastResult.displaceWins}/{backtestStatus.lastResult.displaceTrades}</p>
+                       </div>
                     </div>
 
                     <div className={cn(
@@ -756,16 +753,12 @@ export default function App() {
                        <p className={cn(
                           "text-[10px] font-black uppercase mb-4 tracking-widest",
                           backtestStatus.lastResult.totalPnL >= 0 ? "text-emerald-500" : "text-red-500"
-                       )}>Tổng Lợi Nhuận (R)</p>
+                       )}>Tổng Tỷ Lệ Lợi Nhuận: {(backtestStatus.lastResult.totalPnL || 0).toFixed(1)}R</p>
                        <div className="flex items-end gap-3">
                           <p className={cn(
                             "text-6xl font-mono font-black",
                             backtestStatus.lastResult.totalPnL >= 0 ? "text-emerald-400" : "text-red-400"
-                          )}>{backtestStatus.lastResult.totalPnL > 0 ? '+' : ''}{backtestStatus.lastResult.totalPnL.toFixed(1)}</p>
-                          <p className={cn(
-                            "text-sm font-bold mb-2 uppercase",
-                            backtestStatus.lastResult.totalPnL >= 0 ? "text-emerald-600" : "text-red-600"
-                          )}>Risk units</p>
+                          )}>{backtestStatus.lastResult.totalPnL > 0 ? '+' : ''}{backtestStatus.lastResult.totalPnL.toFixed(1)}R</p>
                        </div>
                     </div>
 
