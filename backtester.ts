@@ -297,11 +297,12 @@ export async function runBacktest(
   endDate: string = END_DATE,
   rr: number = RR,
   timeframe: string = "15m",
-  enableSessionFilter: boolean = false, // Thêm tham số này
+  enableSessionFilter: boolean = false,
+  vwmaPeriod: number = 20, // Thêm tham số vwmaPeriod
   onProgress?: (p: number) => void
 ) {
   shouldStopBacktest = false;
-  console.log(`[BACKTEST] Start ${PAIR} from ${startDate} to ${endDate} (RR: ${rr}, TF: ${timeframe}, SessionFilter: ${enableSessionFilter})`);
+  console.log(`[BACKTEST] Start ${PAIR} from ${startDate} to ${endDate} (RR: ${rr}, TF: ${timeframe}, SessionFilter: ${enableSessionFilter}, VWMA: ${vwmaPeriod})`);
   const exchange = new ccxt.binance({ 
     timeout: 30000,
     options: { defaultType: 'future' } 
@@ -392,8 +393,8 @@ export async function runBacktest(
     const currentPrice = allKlines[i][4];
     
     // --- KHUNG 1M ---
-    const vwma = calculateVWMA(window, 20);
-    const vwmaPrev = calculateVWMA(window.slice(0, -1), 20);
+    const vwma = calculateVWMA(window, vwmaPeriod);
+    const vwmaPrev = calculateVWMA(window.slice(0, -1), vwmaPeriod);
     const slope = vwma - vwmaPrev;
     
     const adx = calcADX(window);

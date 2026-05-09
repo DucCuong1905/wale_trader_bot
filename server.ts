@@ -26,6 +26,7 @@ const MAX_DAILY_LOSS = 0.03; // Giới hạn lỗ tối đa trong ngày (3%)
 
 // CẤU HÌNH PHIÊN GIAO DỊCH (LONDON & NEW YORK)
 let ENABLE_SESSION_FILTER = false; 
+let VWMA_PERIOD = 20; // Thêm biến cấu hình VWMA
 const SESSION_START_GMT = 8;  // 08:00 GMT (Mở phiên Âu)
 const SESSION_END_GMT = 21;    // 21:00 GMT (Đóng phiên Mỹ)
 
@@ -531,8 +532,8 @@ async function traderLoop() {
     // 4. TÍNH TOÁN CÁC CHỈ BÁO KỸ THUẬT
     const atr = calculateATR(bars, 14);
     const adx = calcADX(bars, 14); botState.adx = adx.adx; botState.plusDI = adx.pDI; botState.minusDI = adx.mDI;
-    const vwma = calculateVWMA(bars, 20); // VWMA 20 phiên
-    const vwmaPrev = calculateVWMA(bars.slice(0, -1), 20);
+    const vwma = calculateVWMA(bars, VWMA_PERIOD); 
+    const vwmaPrev = calculateVWMA(bars.slice(0, -1), VWMA_PERIOD);
     const slope = vwma - vwmaPrev; // Độ dốc của VWMA
     
     const currentPrice = bars[bars.length - 1][4];
@@ -549,7 +550,7 @@ async function traderLoop() {
         `✅ Kết nối sàn: Thành công\n` +
         `✅ Dữ liệu nến: Đã tải ${bars.length} nến ${TIMEFRAME}\n` +
         `📊 **Chỉ số hiện tại:**\n` +
-        `• VWMA (20): ${vwma.toFixed(2)} (Slope: ${slope > 0 ? '↗️' : '↘️'})\n` +
+        `• VWMA (${VWMA_PERIOD}): ${vwma.toFixed(2)} (Slope: ${slope > 0 ? '↗️' : '↘️'})\n` +
         `• ADX: ${adx.adx.toFixed(1)} (+DI: ${adx.pDI.toFixed(1)} | -DI: ${adx.mDI.toFixed(1)})\n\n` +
         `✅ Vốn khởi điểm: ${botState.balance.toFixed(2)}$\n` +
         `🚀 Chế độ: ${IS_LIVE_TRADING_ENABLED ? "LIVE TRADING ⚡" : "PAPER TRADING 📝"}\n` +
@@ -646,15 +647,15 @@ async function traderLoop() {
           `3. Distance: ${vwmaDistance < maxDistance ? '✅ Safe' : '❌ Fomo'} (${vwmaDistance.toFixed(2)} vs ${maxDistance.toFixed(2)}, ${vwmaDistancePct.toFixed(2)}%)`,
           `4. Sweep: ${sig === 'LONG' ? (sweep.extremelyStrongBullish ? '🔥 EXTREME' : (sweep.sweepLow ? '✅ Low Sweep' : '❌ No Sweep')) : (sweep.extremelyStrongBearish ? '🔥 EXTREME' : (sweep.sweepHigh ? '✅ High Sweep' : '❌ No Sweep'))}`,
           `5. Displacement/BOS: ${entryType === 'ExtremelyStrong' ? '✅ BOS on Sweep' : (sig === 'LONG' ? (sweep.displacementBullish ? '✅ Strong Bull' : '❌ Weak') : (sweep.displacementBearish ? '✅ Strong Bear' : '❌ Weak'))}`,
-          `7. ADX (>=10): ${adx.adx >= 10 ? '✅' : '❌'} (${adx.adx.toFixed(1)})`,
-          `8. DI Power: ${sig === 'LONG' ? (adx.pDI > adx.mDI ? '✅ +DI > -DI' : '❌') : (adx.mDI > adx.pDI ? '✅ -DI > +DI' : '❌')}`
+          `6. ADX (>=10): ${adx.adx >= 10 ? '✅' : '❌'} (${adx.adx.toFixed(1)})`,
+          `7. DI Power: ${sig === 'LONG' ? (adx.pDI > adx.mDI ? '✅ +DI > -DI' : '❌') : (adx.mDI > adx.pDI ? '✅ -DI > +DI' : '❌')}`
         ].join('\n');
 
         await sendTelegram(`🚀 [SIGNAL] **${sig}** Market Entry! (${entryType})\n\n` +
           `📊 **Thông số lệnh:**\n` +
           `🎯 Entry: ${e.toFixed(2)}\n` +
           `🛑 SL: ${sl.toFixed(2)} | 💎 TP: ${tp.toFixed(2)}\n` +
-          `💰 Distance to VWMA: ${vwmaDistancePct.toFixed(2)}%\n\n` +
+          `💰 VWMA: ${VWMA_PERIOD} | Distance: ${vwmaDistancePct.toFixed(2)}%\n\n` +
           `📝 **Điều kiện:**\n${conditions}\n\n` +
           `⏰ Giờ VN: ${vnTime}`); 
       } else {
@@ -698,10 +699,10 @@ async function startServer() {
   app.get("/api/health", (req, res) => res.json({ status: "ok" }));
   app.post("/api/backtest/run", async (req, res) => {
     if (backtestStatus.isRunning) return res.status(400).json({ error: "Running" });
-    const { startDate, endDate, rr, timeframe, enableSessionFilter } = req.body;
-    console.log(`[SERVER] Received backtest request: enableSessionFilter=${enableSessionFilter}`);
+    const { startDate, endDate, rr, timeframe, enableSessionFilter, vwmaPeriod } = req.body;
+    console.log(`[SERVER] Received backtest request: sessionFilter=${enableSessionFilter}, vwma=${vwmaPeriod}`);
     backtestStatus.isRunning = true;
-    runBacktest(startDate, endDate, rr, timeframe, enableSessionFilter, p => { 
+    runBacktest(startDate, endDate, rr, timeframe, enableSessionFilter, vwmaPeriod, p => { 
       backtestStatus.progress = p; 
     }).then(r => { 
       backtestStatus.isRunning = false; 
@@ -726,13 +727,22 @@ async function startServer() {
       symbol: PAIR, last_price: botState.lastPrice, bid_ratio: botState.obRatioEMA.toFixed(2), in_position: botState.inPosition,
       signals: botState.signals.slice(0, 10), balance: botState.balance, ai_reasoning: botState.aiReasoning,
       adx: botState.adx.toFixed(1), whale_trades: { buy: b.toFixed(0), sell: s.toFixed(0), count: botState.recentWhaleTrades.length },
-      enable_session_filter: ENABLE_SESSION_FILTER,
+      enable_session_filter: ENABLE_SESSION_FILTER, vwma_period: VWMA_PERIOD,
       is_ws_connected: botState.isWsConnected
     });
   });
   app.post("/api/trading/toggle-session", (req, res) => {
     ENABLE_SESSION_FILTER = !ENABLE_SESSION_FILTER;
     res.json({ success: true, enabled: ENABLE_SESSION_FILTER });
+  });
+  app.post("/api/trading/set-vwma", (req, res) => {
+    const { period } = req.body;
+    if (period === 20 || period === 50) {
+      VWMA_PERIOD = period;
+      res.json({ success: true, period: VWMA_PERIOD });
+    } else {
+      res.status(400).json({ error: "Invalid period" });
+    }
   });
   app.get("/api/trading/history", (req, res) => res.json(botState.trades));
 

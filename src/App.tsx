@@ -51,6 +51,7 @@ export default function App() {
   const [backtestRR, setBacktestRR] = useState(1.2);
   const [backtestTimeframe, setBacktestTimeframe] = useState('15m');
   const [backtestSessionFilter, setBacktestSessionFilter] = useState(false);
+  const [vwmaPeriod, setVwmaPeriod] = useState(20);
 
   useEffect(() => {
     let retryCount = 0;
@@ -134,7 +135,8 @@ export default function App() {
           endDate: `${endDate}T23:59:59Z`, 
           rr: backtestRR,
           timeframe: backtestTimeframe,
-          enableSessionFilter: backtestSessionFilter
+          enableSessionFilter: backtestSessionFilter,
+          vwmaPeriod: vwmaPeriod
         })
       });
       if (response.ok) {
@@ -153,6 +155,18 @@ export default function App() {
       await fetch('/api/trading/toggle-session', { method: 'POST' });
     } catch (e) {
       console.error("Lỗi khi chuyển đổi phiên:", e);
+    }
+  };
+
+  const setBotVwma = async (period: number) => {
+    try {
+      await fetch('/api/trading/set-vwma', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ period })
+      });
+    } catch (e) {
+      console.error("Lỗi khi đặt VWMA:", e);
     }
   };
 
@@ -219,8 +233,30 @@ export default function App() {
                     : "bg-white/5 border-white/10 text-slate-400 hover:text-slate-200"
                 )}
               >
-                SESSION FILTER: {data?.enable_session_filter ? "ON" : "OFF"}
+                SESSION: {data?.enable_session_filter ? "ON" : "OFF"}
               </button>
+
+              <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 items-center">
+                 <button 
+                    onClick={() => setBotVwma(20)}
+                    className={cn(
+                       "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all",
+                       data?.vwma_period === 20 ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20" : "text-slate-500 hover:text-slate-300"
+                    )}
+                 >
+                    VWMA 20
+                 </button>
+                 <button 
+                    onClick={() => setBotVwma(50)}
+                    className={cn(
+                       "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all",
+                       data?.vwma_period === 50 ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20" : "text-slate-500 hover:text-slate-300"
+                    )}
+                 >
+                    VWMA 50
+                 </button>
+              </div>
+
               <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10">
                 <button 
                   onClick={() => setActiveTab('live')}
@@ -686,6 +722,33 @@ export default function App() {
                                backtestSessionFilter ? "translate-x-6" : "translate-x-0"
                             )} />
                          </button>
+                      </div>
+
+                      <div className="space-y-2 col-span-2 flex items-center gap-4 bg-white/5 p-4 rounded-xl border border-white/10 mt-1">
+                         <div className="flex-1">
+                            <label className="text-[10px] font-black text-slate-300 uppercase tracking-widest block mb-1">VWMA Period</label>
+                            <p className="text-[9px] text-slate-500 font-bold uppercase">Chọn chu kỳ đường trung bình (20 hoặc 50)</p>
+                         </div>
+                         <div className="flex bg-black/40 rounded-lg p-1 border border-white/5">
+                            <button 
+                               onClick={() => setVwmaPeriod(20)}
+                               className={cn(
+                                  "px-3 py-1 rounded-md text-[9px] font-black tracking-widest transition-all",
+                                  vwmaPeriod === 20 ? "bg-purple-600 text-white" : "text-slate-500 hover:text-slate-300"
+                               )}
+                            >
+                               20
+                            </button>
+                            <button 
+                               onClick={() => setVwmaPeriod(50)}
+                               className={cn(
+                                  "px-3 py-1 rounded-md text-[9px] font-black tracking-widest transition-all",
+                                  vwmaPeriod === 50 ? "bg-purple-600 text-white" : "text-slate-500 hover:text-slate-300"
+                               )}
+                            >
+                               50
+                            </button>
+                         </div>
                       </div>
                     </div>
                     <p className="text-slate-500 text-[10px] uppercase tracking-widest font-bold">
