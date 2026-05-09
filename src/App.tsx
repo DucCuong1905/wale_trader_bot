@@ -830,22 +830,12 @@ export default function App() {
                           </p>
                        </div>
                        <div className="bg-[#12121c] p-6 rounded-[2rem] border border-white/5">
-                          <p className="text-[10px] text-slate-500 font-black uppercase mb-2">Ext. Strong Sweep</p>
-                          <p className="text-3xl font-mono font-black text-purple-400">
-                             {backtestStatus.lastResult.extStrongTrades > 0 
-                               ? Math.round((backtestStatus.lastResult.extStrongWins / backtestStatus.lastResult.extStrongTrades) * 100) 
-                               : 0}%
-                          </p>
-                          <p className="text-[9px] text-slate-600 font-bold mt-1 uppercase">Win: {backtestStatus.lastResult.extStrongWins}/{backtestStatus.lastResult.extStrongTrades}</p>
-                       </div>
-                       <div className="bg-[#12121c] p-6 rounded-[2rem] border border-white/5">
-                          <p className="text-[10px] text-slate-500 font-black uppercase mb-2">Sweep + Displace</p>
+                          <p className="text-[10px] text-slate-500 font-black uppercase mb-2">Trung Bình PnL</p>
                           <p className="text-3xl font-mono font-black text-blue-400">
-                             {backtestStatus.lastResult.displaceTrades > 0 
-                               ? Math.round((backtestStatus.lastResult.displaceWins / backtestStatus.lastResult.displaceTrades) * 100) 
-                               : 0}%
+                             {backtestStatus.lastResult.totalTrades > 0 
+                               ? (backtestStatus.lastResult.totalPnL / backtestStatus.lastResult.totalTrades).toFixed(2) 
+                               : 0}R
                           </p>
-                          <p className="text-[9px] text-slate-600 font-bold mt-1 uppercase">Win: {backtestStatus.lastResult.displaceWins}/{backtestStatus.lastResult.displaceTrades}</p>
                        </div>
                     </div>
 

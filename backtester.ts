@@ -48,8 +48,6 @@ interface BacktestResult {
   trades: any[];
   startTime: string;
   endTime: string;
-  extStrongTrades: number;
-  extStrongWins: number;
   displaceTrades: number;
   displaceWins: number;
   totalProfitR: number;
@@ -69,8 +67,6 @@ let results: BacktestResult = {
   trades: [],
   startTime: START_DATE,
   endTime: END_DATE,
-  extStrongTrades: 0,
-  extStrongWins: 0,
   displaceTrades: 0,
   displaceWins: 0,
   totalProfitR: 0
@@ -156,8 +152,6 @@ function detectSweep(bars: any[]) {
     sweepLow: false, 
     displacementBullish: false, 
     displacementBearish: false, 
-    extremelyStrongBullish: false,
-    extremelyStrongBearish: false,
     volConfirm: false, 
     low: 0, 
     high: 0, 
@@ -186,19 +180,6 @@ function detectSweep(bars: any[]) {
   const displacementBullish = body > avgBody * 1.2 && (cC - cL) / totalSize > 0.7;
   const displacementBearish = body > avgBody * 1.2 && (cH - cC) / totalSize > 0.7;
 
-  // EXTREMELY STRONG SWEEP (OR CONDITION)
-  const sBody = Math.abs(sC - sO);
-  const sRange = sH - sL || 1;
-  const sVolRatio = sV / (bars.slice(-21, -2).reduce((a, b) => a + b[5], 0) / 19 || 1);
-
-  const strongSweepCloseBull = sBody > avgBody * 1.5 && (sC - sL) / sRange > 0.75;
-  const strongSweepCloseBear = sBody > avgBody * 1.5 && (sH - sC) / sRange > 0.75;
-  const bullishBOSOnSweep = sC > localHigh;
-  const bearishBOSOnSweep = sC < localLow;
-
-  const extremelyStrongBullish = sweepLow && strongSweepCloseBull && bullishBOSOnSweep && sVolRatio >= 1.3;
-  const extremelyStrongBearish = sweepHigh && strongSweepCloseBear && bearishBOSOnSweep && sVolRatio >= 1.3;
-
   const volumes = bars.slice(-21, -1).map(b => b[5]);
   const avgVol = volumes.reduce((a, b) => a + b, 0) / volumes.length;
   const volConfirm = cV > avgVol;
@@ -208,8 +189,6 @@ function detectSweep(bars: any[]) {
     sweepHigh,
     displacementBullish,
     displacementBearish,
-    extremelyStrongBullish,
-    extremelyStrongBearish,
     volConfirm,
     low: sL,
     high: sH,
@@ -360,8 +339,6 @@ export async function runBacktest(
     trades: [],
     startTime: startDate,
     endTime: endDate,
-    extStrongTrades: 0,
-    extStrongWins: 0,
     displaceTrades: 0,
     displaceWins: 0,
     totalProfitR: 0
@@ -408,15 +385,8 @@ export async function runBacktest(
 
     const baseCandleConditions = adx.adx >= 10 && isInSession && vwmaDistance < maxDistance;
     
-    let isLongExt = baseCandleConditions && currentPrice > vwma && slope > 0 && sweep.extremelyStrongBullish && adx.pDI > adx.mDI;
-    let isLongStd = baseCandleConditions && currentPrice > vwma && slope > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adx.pDI > adx.mDI;
-    
-    let isShortExt = baseCandleConditions && currentPrice < vwma && slope < 0 && sweep.extremelyStrongBearish && adx.mDI > adx.pDI;
-    let isShortStd = baseCandleConditions && currentPrice < vwma && slope < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adx.mDI > adx.pDI;
-
-    const isLong = isLongExt || isLongStd;
-    const isShort = isShortExt || isShortStd;
-    const entryType = (isLongExt || isShortExt) ? "ExtremelyStrong" : "Standard";
+    let isLong = baseCandleConditions && currentPrice > vwma && slope > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adx.pDI > adx.mDI;
+    let isShort = baseCandleConditions && currentPrice < vwma && slope < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adx.mDI > adx.pDI;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
@@ -426,7 +396,7 @@ export async function runBacktest(
       const sl = type === "LONG" ? (sweep.low - atr * 0.2) : (sweep.high + atr * 0.2);
       const tp = entryPrice + (entryPrice - sl > 0 ? (entryPrice - sl) * rr : (sl - entryPrice) * -rr);
 
-      console.log(`[SIGNAL] ${type} (${entryType}) Market Entry at ${time} ($${entryPrice.toFixed(2)})`);
+      console.log(`[SIGNAL] ${type} Market Entry at ${time} ($${entryPrice.toFixed(2)})`);
       
       // Tìm kết quả trong các nến tiếp theo
       let exitPrice = 0;
@@ -467,12 +437,12 @@ export async function runBacktest(
       results.totalTrades++;
       if (status === "WIN") {
         results.wins++;
-        if (entryType === "ExtremelyStrong") results.extStrongWins++; else results.displaceWins++;
+        results.displaceWins++;
       } else {
         results.losses++;
       }
       
-      if (entryType === "ExtremelyStrong") results.extStrongTrades++; else results.displaceTrades++;
+      results.displaceTrades++;
       
       results.totalPnL += pnlR;
       results.totalProfitR += pnlR;
@@ -480,7 +450,6 @@ export async function runBacktest(
       results.trades.push({ 
         time, 
         type, 
-        entryType,
         entryPrice, 
         exitPrice, 
         status, 
@@ -489,10 +458,10 @@ export async function runBacktest(
         estimatedFee,
         estimatedSlippage,
         currentBalance: results.finalBalance,
-        reason: `TA ${entryType} Entry`
+        reason: `TA Entry`
       });
       
-      console.log(`[TRADE] ${status} | Type: ${entryType} | PnL: ${pnlR}R ($${dollarPnL.toFixed(2)}) | Balance: $${results.finalBalance.toFixed(2)}`);
+      console.log(`[TRADE] ${status} | PnL: ${pnlR}R ($${dollarPnL.toFixed(2)}) | Balance: $${results.finalBalance.toFixed(2)}`);
       
       // Nhảy vòng lặp đến điểm nến hiện tại
     }

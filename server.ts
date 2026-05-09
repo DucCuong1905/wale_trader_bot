@@ -287,20 +287,6 @@ function detectWhaleSweep(bars: any[]) {
   const displacementBullish = body > avgBody * 1.2 && (cC - cL) / totalSize > 0.7;
   const displacementBearish = body > avgBody * 1.2 && (cH - cC) / totalSize > 0.7;
 
-  // 3. EXTREMELY STRONG SWEEP CANDLE (OR CONDITION)
-  const sBody = Math.abs(sC - sO);
-  const sRange = sH - sL || 1;
-  const sVolRatio = sV / (bars.slice(-21, -2).reduce((a, b) => a + b[5], 0) / 19 || 1);
-
-  // Điều kiện nến Sweep cực mạnh: Thân nến > 1.5 avg, Rút râu > 75% nến, BOS mini ngay lập tức, Vol > 1.3
-  const strongSweepCloseBull = sBody > avgBody * 1.5 && (sC - sL) / sRange > 0.75;
-  const strongSweepCloseBear = sBody > avgBody * 1.5 && (sH - sC) / sRange > 0.75;
-  const bullishBOSOnSweep = sC > localHigh;
-  const bearishBOSOnSweep = sC < localLow;
-
-  const extremelyStrongBullish = sweepLow && strongSweepCloseBull && bullishBOSOnSweep && sVolRatio >= 1.3;
-  const extremelyStrongBearish = sweepHigh && strongSweepCloseBear && bearishBOSOnSweep && sVolRatio >= 1.3;
-
   // 4. VOLUME CONFIRM (Standard)
   const volumes = bars.slice(-21, -1).map(b => b[5]);
   const avgVol = volumes.reduce((a, b) => a + b, 0) / volumes.length;
@@ -311,8 +297,6 @@ function detectWhaleSweep(bars: any[]) {
     sweepHigh,
     displacementBullish,
     displacementBearish,
-    extremelyStrongBullish,
-    extremelyStrongBearish,
     volConfirm,
     low: sL,
     high: sH,
@@ -570,7 +554,6 @@ async function traderLoop() {
     const sweep = detectWhaleSweep(bars);
 
     let sig: "LONG" | "SHORT" | null = null;
-    let entryType: "Standard" | "ExtremelyStrong" = "Standard";
     
     // ========================================================
     // 5. ĐIỀU KIỆN VÀO LỆNH LONG (MUA)
@@ -583,16 +566,9 @@ async function traderLoop() {
       adx.adx >= 10 &&                   // 7. ADX >= 10
       adx.pDI > adx.mDI                  // 8. +DI > -DI
     ) {
-      // HOẶC 1: Tín hiệu xác nhận chuẩn
       if (sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm) {
         sig = "LONG";
-        entryType = "Standard";
       } 
-      // HOẶC 2: Tín hiệu cực mạnh từ nến Sweep
-      else if (sweep.extremelyStrongBullish) {
-        sig = "LONG";
-        entryType = "ExtremelyStrong";
-      }
     }
 
     // ========================================================
@@ -606,15 +582,8 @@ async function traderLoop() {
       adx.adx >= 10 &&
       adx.mDI > adx.pDI
     ) {
-      // HOẶC 1: Tín hiệu xác nhận chuẩn
       if (sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm) {
         sig = "SHORT";
-        entryType = "Standard";
-      }
-      // HOẶC 2: Tín hiệu cực mạnh từ nến Sweep
-      else if (sweep.extremelyStrongBearish) {
-        sig = "SHORT";
-        entryType = "ExtremelyStrong";
       }
     }
 
@@ -641,17 +610,16 @@ async function traderLoop() {
         botState.lastTradeTime = Date.now(); 
 
         const conditions = [
-          `Type: ${entryType}`,
           `1. Giá vs VWMA: ${sig === 'LONG' ? (currentPrice > vwma ? '✅ Above' : '❌ Below') : (currentPrice < vwma ? '✅ Below' : '❌ Above')}`,
           `2. Slope: ${sig === 'LONG' ? (slope > 0 ? '✅ Positive' : '❌ Negative') : (slope < 0 ? '✅ Negative' : '❌ Positive')}`,
           `3. Distance: ${vwmaDistance < maxDistance ? '✅ Safe' : '❌ Fomo'} (${vwmaDistance.toFixed(2)} vs ${maxDistance.toFixed(2)}, ${vwmaDistancePct.toFixed(2)}%)`,
-          `4. Sweep: ${sig === 'LONG' ? (sweep.extremelyStrongBullish ? '🔥 EXTREME' : (sweep.sweepLow ? '✅ Low Sweep' : '❌ No Sweep')) : (sweep.extremelyStrongBearish ? '🔥 EXTREME' : (sweep.sweepHigh ? '✅ High Sweep' : '❌ No Sweep'))}`,
-          `5. Displacement/BOS: ${entryType === 'ExtremelyStrong' ? '✅ BOS on Sweep' : (sig === 'LONG' ? (sweep.displacementBullish ? '✅ Strong Bull' : '❌ Weak') : (sweep.displacementBearish ? '✅ Strong Bear' : '❌ Weak'))}`,
+          `4. Sweep: ${sig === 'LONG' ? (sweep.sweepLow ? '✅ Low Sweep' : '❌ No Sweep') : (sweep.sweepHigh ? '✅ High Sweep' : '❌ No Sweep')}`,
+          `5. Displacement/BOS: ${sig === 'LONG' ? (sweep.displacementBullish ? '✅ Strong Bull' : '❌ Weak') : (sweep.displacementBearish ? '✅ Strong Bear' : '❌ Weak')}`,
           `6. ADX (>=10): ${adx.adx >= 10 ? '✅' : '❌'} (${adx.adx.toFixed(1)})`,
           `7. DI Power: ${sig === 'LONG' ? (adx.pDI > adx.mDI ? '✅ +DI > -DI' : '❌') : (adx.mDI > adx.pDI ? '✅ -DI > +DI' : '❌')}`
         ].join('\n');
 
-        await sendTelegram(`🚀 [SIGNAL] **${sig}** Market Entry! (${entryType})\n\n` +
+        await sendTelegram(`🚀 [SIGNAL] **${sig}** Market Entry!\n\n` +
           `📊 **Thông số lệnh:**\n` +
           `🎯 Entry: ${e.toFixed(2)}\n` +
           `🛑 SL: ${sl.toFixed(2)} | 💎 TP: ${tp.toFixed(2)}\n` +
