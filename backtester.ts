@@ -297,10 +297,11 @@ export async function runBacktest(
   endDate: string = END_DATE,
   rr: number = RR,
   timeframe: string = "15m",
+  enableSessionFilter: boolean = false, // Thêm tham số này
   onProgress?: (p: number) => void
 ) {
   shouldStopBacktest = false;
-  console.log(`[BACKTEST] Start ${PAIR} from ${startDate} to ${endDate} (RR: ${rr}, TF: ${timeframe})`);
+  console.log(`[BACKTEST] Start ${PAIR} from ${startDate} to ${endDate} (RR: ${rr}, TF: ${timeframe}, SessionFilter: ${enableSessionFilter})`);
   const exchange = new ccxt.binance({ 
     timeout: 30000,
     options: { defaultType: 'future' } 
@@ -365,6 +366,16 @@ export async function runBacktest(
     totalProfitR: 0
   };
 
+  let sessionSkippedCount = 0;
+  const isWithinSessions = (ts: number) => {
+    if (!enableSessionFilter) return true;
+    const date = new Date(ts);
+    const hour = date.getUTCHours();
+    const result = hour >= SESSION_START_GMT && hour < SESSION_END_GMT;
+    if (!result) sessionSkippedCount++;
+    return result;
+  };
+
   for (let i = 100; i < allKlines.length; i++) {
     if (shouldStopBacktest) break;
     if (onProgress) onProgress(50 + ((i / allKlines.length) * 50));
@@ -384,13 +395,12 @@ export async function runBacktest(
     const vwma = calculateVWMA(window, 20);
     const vwmaPrev = calculateVWMA(window.slice(0, -1), 20);
     const slope = vwma - vwmaPrev;
-    const distance = Math.abs(currentPrice - vwma) / vwma;
     
     const adx = calcADX(window);
     const sweep = detectSweep(window);
     const atr = calculateATR(window, 14);
 
-    const isInSession = isWithinTradingSessions(allKlines[i][0]);
+    const isInSession = isWithinSessions(allKlines[i][0]);
 
     const vwmaDistance = Math.abs(currentPrice - vwma);
     const maxDistance = atr * 1.2;
@@ -489,5 +499,8 @@ export async function runBacktest(
 
   fs.writeFileSync(RESULTS_FILE, JSON.stringify(results, null, 2));
   console.log(`[DONE] Backtest complete. Results: ${RESULTS_FILE}`);
+  if (enableSessionFilter) {
+    console.log(`[SESSION] Filtered out ${sessionSkippedCount} candles outside of 08:00 - 21:00 UTC.`);
+  }
   return results;
 }

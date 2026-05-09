@@ -698,9 +698,9 @@ async function startServer() {
   app.get("/api/health", (req, res) => res.json({ status: "ok" }));
   app.post("/api/backtest/run", async (req, res) => {
     if (backtestStatus.isRunning) return res.status(400).json({ error: "Running" });
-    const { startDate, endDate, rr, timeframe } = req.body;
+    const { startDate, endDate, rr, timeframe, enableSessionFilter } = req.body;
     backtestStatus.isRunning = true;
-    runBacktest(startDate, endDate, rr, timeframe, p => { 
+    runBacktest(startDate, endDate, rr, timeframe, enableSessionFilter, p => { 
       backtestStatus.progress = p; 
     }).then(r => { 
       backtestStatus.isRunning = false; 

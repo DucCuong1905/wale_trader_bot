@@ -50,6 +50,7 @@ export default function App() {
   const [endDate, setEndDate] = useState('2026-03-31');
   const [backtestRR, setBacktestRR] = useState(1.2);
   const [backtestTimeframe, setBacktestTimeframe] = useState('15m');
+  const [backtestSessionFilter, setBacktestSessionFilter] = useState(false);
 
   useEffect(() => {
     let retryCount = 0;
@@ -132,7 +133,8 @@ export default function App() {
           startDate: `${startDate}T00:00:00Z`, 
           endDate: `${endDate}T23:59:59Z`, 
           rr: backtestRR,
-          timeframe: backtestTimeframe
+          timeframe: backtestTimeframe,
+          enableSessionFilter: backtestSessionFilter
         })
       });
       setIsBacktestRunning(true);
@@ -647,7 +649,7 @@ export default function App() {
                         </select>
                       </div>
                       <div className="space-y-2 col-span-2">
-                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Risk/Reward Ratio (1 : X)</label>
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Risk/Reward Ratio (1 : {backtestRR})</label>
                         <div className="flex items-center gap-4">
                           <input 
                             type="range" 
@@ -660,6 +662,24 @@ export default function App() {
                           />
                           <span className="w-16 text-center font-mono font-black text-purple-400 bg-purple-500/10 rounded-lg py-1 border border-purple-500/30">1 : {backtestRR}</span>
                         </div>
+                      </div>
+                      <div className="space-y-2 col-span-2 flex items-center gap-4 bg-white/5 p-4 rounded-xl border border-white/10 mt-2">
+                         <div className="flex-1">
+                            <label className="text-[10px] font-black text-slate-300 uppercase tracking-widest block mb-1">Session Filter (London/NY)</label>
+                            <p className="text-[9px] text-slate-500 font-bold uppercase">Chỉ vào lệnh từ 08:00 - 21:00 UTC</p>
+                         </div>
+                         <button 
+                            onClick={() => setBacktestSessionFilter(!backtestSessionFilter)}
+                            className={cn(
+                               "w-12 h-6 rounded-full p-1 transition-all duration-300",
+                               backtestSessionFilter ? "bg-purple-600 shadow-[0_0_15px_rgba(147,51,234,0.3)]" : "bg-white/10"
+                            )}
+                         >
+                            <div className={cn(
+                               "w-4 h-4 bg-white rounded-full transition-transform duration-300",
+                               backtestSessionFilter ? "translate-x-6" : "translate-x-0"
+                            )} />
+                         </button>
                       </div>
                     </div>
                     <p className="text-slate-500 text-[10px] uppercase tracking-widest font-bold">
