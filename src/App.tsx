@@ -816,22 +816,22 @@ export default function App() {
                     </div>
                   )}
                   <div className="lg:col-span-4 space-y-6">
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                       <div className="bg-[#12121c] p-6 rounded-[2rem] border border-white/5">
-                          <p className="text-[10px] text-slate-500 font-black uppercase mb-2">Tổng Giao Dịch</p>
-                          <p className="text-3xl font-mono font-black">{backtestStatus.lastResult.totalTrades}</p>
+                    <div className="flex flex-col gap-3">
+                       <div className="bg-[#12121c] p-4 rounded-2xl border border-white/5 flex items-center justify-between">
+                          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Tổng Giao Dịch</p>
+                          <p className="text-xl font-mono font-black">{backtestStatus.lastResult.totalTrades}</p>
                        </div>
-                       <div className="bg-[#12121c] p-6 rounded-[2rem] border border-white/5">
-                          <p className="text-[10px] text-slate-500 font-black uppercase mb-2">Tỷ Lệ Thắng</p>
-                          <p className="text-3xl font-mono font-black text-green-400">
+                       <div className="bg-[#12121c] p-4 rounded-2xl border border-white/5 flex items-center justify-between">
+                          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Tỷ Lệ Thắng</p>
+                          <p className="text-xl font-mono font-black text-green-400">
                              {backtestStatus.lastResult.totalTrades > 0 
                                ? Math.round((backtestStatus.lastResult.wins / backtestStatus.lastResult.totalTrades) * 100) 
                                : 0}%
                           </p>
                        </div>
-                       <div className="bg-[#12121c] p-6 rounded-[2rem] border border-white/5">
-                          <p className="text-[10px] text-slate-500 font-black uppercase mb-2">Trung Bình PnL</p>
-                          <p className="text-3xl font-mono font-black text-blue-400">
+                       <div className="bg-[#12121c] p-4 rounded-2xl border border-white/5 flex items-center justify-between">
+                          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Trung Bình PnL</p>
+                          <p className="text-xl font-mono font-black text-blue-400">
                              {backtestStatus.lastResult.totalTrades > 0 
                                ? (backtestStatus.lastResult.totalPnL / backtestStatus.lastResult.totalTrades).toFixed(2) 
                                : 0}R
