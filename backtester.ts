@@ -369,31 +369,54 @@ export async function runBacktest(
     const window = allKlines.slice(0, i + 1);
     const currentPrice = allKlines[i][4];
     
-    // --- KHUNG 1M ---
-    const vwma = calculateVWMA(window, vwmaPeriod);
-    const vwmaPrev = calculateVWMA(window.slice(0, -1), vwmaPeriod);
-    const slope = vwma - vwmaPrev;
+    // --- KHUNG 5P (TỔNG HỢP TỪ M1) ---
+    // Tìm nến M5 tương ứng trong lịch sử
+    const lookbackM1ForM5 = 200; // Đủ để tính VWMA 20 M5
+    const windowM5Raw = allKlines.slice(Math.max(0, i - lookbackM1ForM5), i + 1);
     
-    const adx = calcADX(window);
-    const sweep = detectSweep(window);
-    const atr = calculateATR(window, 14);
+    // Hàm tổng hợp M5 từ M1
+    const resampleTo5M = (m1Bars: any[]) => {
+      const res: any[] = [];
+      let currentM5: any = null;
+      for (const bar of m1Bars) {
+        const t = bar[0];
+        const m5Start = Math.floor(t / 300000) * 300000;
+        if (!currentM5 || currentM5[0] !== m5Start) {
+          if (currentM5) res.push(currentM5);
+          currentM5 = [m5Start, bar[1], bar[2], bar[3], bar[4], bar[5]];
+        } else {
+          currentM5[2] = Math.max(currentM5[2], bar[2]); // High
+          currentM5[3] = Math.min(currentM5[3], bar[3]); // Low
+          currentM5[4] = bar[4]; // Close
+          currentM5[5] += bar[5]; // Volume
+        }
+      }
+      if (currentM5) res.push(currentM5);
+      return res;
+    };
+    
+    const barsM5 = resampleTo5M(windowM5Raw);
+    if(barsM5.length < 30) continue;
 
+    const adxM5 = calcADX(barsM5);
+    const vwmaM5 = calculateVWMA(barsM5, 20);
+    const vwmaM5Prev = calculateVWMA(barsM5.slice(0, -1), 20);
+    const slopeM5 = vwmaM5 - vwmaM5Prev;
+
+    // --- KHUNG 1P (ENTRIES) ---
+    const sweep = detectSweep(window);
+    const atrM1 = calculateATR(window, 14);
     const isInSession = isWithinSessions(allKlines[i][0]);
 
-    const vwmaDistance = Math.abs(currentPrice - vwma);
-    const maxDistance = atr * 1.2;
-
-    const baseCandleConditions = adx.adx >= 10 && isInSession && vwmaDistance < maxDistance;
-    
-    let isLong = baseCandleConditions && currentPrice > vwma && slope > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adx.pDI > adx.mDI;
-    let isShort = baseCandleConditions && currentPrice < vwma && slope < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adx.mDI > adx.pDI;
+    let isLong = adxM5.adx >= 10 && isInSession && currentPrice > vwmaM5 && slopeM5 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM5.pDI > adxM5.mDI;
+    let isShort = adxM5.adx >= 10 && isInSession && currentPrice < vwmaM5 && slopeM5 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM5.mDI > adxM5.pDI;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
       const entryPrice = currentPrice; // Market Entry at Close
       
       const time = new Date(allKlines[i][0]).toISOString();
-      const sl = type === "LONG" ? (sweep.low - atr * 0.2) : (sweep.high + atr * 0.2);
+      const sl = type === "LONG" ? (sweep.low - atrM1 * 0.2) : (sweep.high + atrM1 * 0.2);
       const tp = entryPrice + (entryPrice - sl > 0 ? (entryPrice - sl) * rr : (sl - entryPrice) * -rr);
 
       console.log(`[SIGNAL] ${type} Market Entry at ${time} ($${entryPrice.toFixed(2)})`);

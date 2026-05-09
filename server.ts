@@ -514,37 +514,46 @@ async function traderLoop() {
     if (!bars || bars.length < 50) { setTimeout(traderLoop, 10000); return; }
 
     // 4. TÍNH TOÁN CÁC CHỈ BÁO KỸ THUẬT
-    const atr = calculateATR(bars, 14);
-    const adx = calcADX(bars, 14); botState.adx = adx.adx; botState.plusDI = adx.pDI; botState.minusDI = adx.mDI;
-    const vwma = calculateVWMA(bars, VWMA_PERIOD); 
-    const vwmaPrev = calculateVWMA(bars.slice(0, -1), VWMA_PERIOD);
-    const slope = vwma - vwmaPrev; // Độ dốc của VWMA
-    
+    // --- Khung M1 ---
+    const atrM1 = calculateATR(bars, 14);
     const currentPrice = bars[bars.length - 1][4];
-    const vwmaDistance = Math.abs(currentPrice - vwma);
-    const vwmaDistancePct = (vwmaDistance / vwma) * 100;
-    const maxDistance = atr * 1.2;
+    
+    // --- Khung M5 (Filters) ---
+    // Fetch dữ liệu M5 để lấy VWMA 20, Slope và ADX
+    let barsM5: any[] = [];
+    try {
+      barsM5 = await fetchOHLCVWithRetry(ex, PAIR, "5m", undefined, 50);
+    } catch (err) {
+      console.error("❌ Lỗi fetch M5:", err);
+      setTimeout(traderLoop, 10000);
+      return;
+    }
+    if (barsM5.length < 30) {
+      setTimeout(traderLoop, 5000);
+      return;
+    }
+    const adxM5 = calcADX(barsM5, 14);
+    const vwmaM5 = calculateVWMA(barsM5, 20); 
+    const vwmaM5Prev = calculateVWMA(barsM5.slice(0, -1), 20);
+    const slopeM5 = vwmaM5 - vwmaM5Prev;
 
-    // THÔNG BÁO KHI SẴN SÀNG (CHỈ GỬI 1 LẦN KHI KHỞI ĐỘNG XONG)
+    botState.adx = adxM5.adx; // Lưu ADX M5 vào botState để hiển thị
+
+    // THÔNG BÁO KHI SẴN SÀNG
     if (!botState.isInitNotified) {
       botState.isInitNotified = true;
-      console.log("[INIT] Gửi thông báo khởi động...");
       const vnTime = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
-      await sendTelegram(`🤖 **WHALE BOT ĐÃ SẴN SÀNG!**\n\n` +
-        `✅ Kết nối sàn: Thành công\n` +
-        `✅ Dữ liệu nến: Đã tải ${bars.length} nến ${TIMEFRAME}\n` +
-        `📊 **Chỉ số hiện tại:**\n` +
-        `• VWMA (${VWMA_PERIOD}): ${vwma.toFixed(2)} (Slope: ${slope > 0 ? '↗️' : '↘️'})\n` +
-        `• ADX: ${adx.adx.toFixed(1)} (+DI: ${adx.pDI.toFixed(1)} | -DI: ${adx.mDI.toFixed(1)})\n\n` +
-        `✅ Vốn khởi điểm: ${botState.balance.toFixed(2)}$\n` +
-        `🚀 Chế độ: ${IS_LIVE_TRADING_ENABLED ? "LIVE TRADING ⚡" : "PAPER TRADING 📝"}\n` +
-        `⏰ Thời gian: ${vnTime}`);
+      await sendTelegram(`🤖 **WHALE BOT (M1 ENTRY + M5 FILTER) SẴN SÀNG!**\n\n` +
+        `📊 **Chỉ số M5 hiện tại:**\n` +
+        `• VWMA20_M5: ${vwmaM5.toFixed(2)} (Slope: ${slopeM5 > 0 ? '↗️' : '↘️'})\n` +
+        `• ADX_M5: ${adxM5.adx.toFixed(1)} (+DI: ${adxM5.pDI.toFixed(1)} | -DI: ${adxM5.mDI.toFixed(1)})\n\n` +
+        `🚀 Chế độ: ${IS_LIVE_TRADING_ENABLED ? "LIVE ⚡" : "PAPER 📝"}`);
     }
 
     const lastCandle = bars[bars.length - 1];
     const lastCandleTime = lastCandle[0];
 
-    // Chỉ phân tích khi có nến mới đóng (M5)
+    // Chỉ phân tích khi có nến mới (M1)
     if (lastCandleTime <= botState.lastProcessedCandleTime) {
       setTimeout(traderLoop, 5000);
       return;
@@ -559,12 +568,11 @@ async function traderLoop() {
     // 5. ĐIỀU KIỆN VÀO LỆNH LONG (MUA)
     // ========================================================
     if (
-      isWithinTradingSessions() &&       // 0. Kiểm tra phiên giao dịch
-      currentPrice > vwma &&             // 1. Giá nằm trên đường VWMA 20
-      slope > 0 &&                       // 2. Xu hướng VWMA đang đi lên
-      vwmaDistance < maxDistance &&      // 3. Giá không quá xa VWMA
-      adx.adx >= 10 &&                   // 7. ADX >= 10
-      adx.pDI > adx.mDI                  // 8. +DI > -DI
+      isWithinTradingSessions() &&       
+      currentPrice > vwmaM5 &&           // 1. Giá M1 nằm trên đường VWMA 20 (M5)
+      slopeM5 > 0 &&                     // 2. Xu hướng VWMA M5 đang đi lên
+      adxM5.adx >= 10 &&                 // 3. ADX M5 >= 10
+      adxM5.pDI > adxM5.mDI              // 4. +DI > -DI (M5)
     ) {
       if (sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm) {
         sig = "LONG";
@@ -576,11 +584,10 @@ async function traderLoop() {
     // ========================================================
     if (
       isWithinTradingSessions() &&
-      currentPrice < vwma &&
-      slope < 0 &&
-      vwmaDistance < maxDistance &&
-      adx.adx >= 10 &&
-      adx.mDI > adx.pDI
+      currentPrice < vwmaM5 &&           // 1. Giá M1 nằm dưới đường VWMA 20 (M5)
+      slopeM5 < 0 &&                     // 2. Xu hướng VWMA M5 đang đi xuống
+      adxM5.adx >= 10 &&
+      adxM5.mDI > adxM5.pDI
     ) {
       if (sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm) {
         sig = "SHORT";
@@ -590,7 +597,7 @@ async function traderLoop() {
     // 7. XỬ LÝ LỆNH (MARKET ENTRY)
     if (sig) {
       const e = currentPrice; // Market Entry at Close
-      const sl = sig === "LONG" ? (sweep.low - atr * 0.2) : (sweep.high + atr * 0.2);
+      const sl = sig === "LONG" ? (sweep.low - atrM1 * 0.2) : (sweep.high + atrM1 * 0.2);
       const tp = e + (e - sl > 0 ? (e - sl) * RR : (sl - e) * -RR);
       
       if (!IS_LIVE_TRADING_ENABLED) { 
@@ -610,20 +617,17 @@ async function traderLoop() {
         botState.lastTradeTime = Date.now(); 
 
         const conditions = [
-          `1. Giá vs VWMA: ${sig === 'LONG' ? (currentPrice > vwma ? '✅ Above' : '❌ Below') : (currentPrice < vwma ? '✅ Below' : '❌ Above')}`,
-          `2. Slope: ${sig === 'LONG' ? (slope > 0 ? '✅ Positive' : '❌ Negative') : (slope < 0 ? '✅ Negative' : '❌ Positive')}`,
-          `3. Distance: ${vwmaDistance < maxDistance ? '✅ Safe' : '❌ Fomo'} (${vwmaDistance.toFixed(2)} vs ${maxDistance.toFixed(2)}, ${vwmaDistancePct.toFixed(2)}%)`,
-          `4. Sweep: ${sig === 'LONG' ? (sweep.sweepLow ? '✅ Low Sweep' : '❌ No Sweep') : (sweep.sweepHigh ? '✅ High Sweep' : '❌ No Sweep')}`,
-          `5. Displacement/BOS: ${sig === 'LONG' ? (sweep.displacementBullish ? '✅ Strong Bull' : '❌ Weak') : (sweep.displacementBearish ? '✅ Strong Bear' : '❌ Weak')}`,
-          `6. ADX (>=10): ${adx.adx >= 10 ? '✅' : '❌'} (${adx.adx.toFixed(1)})`,
-          `7. DI Power: ${sig === 'LONG' ? (adx.pDI > adx.mDI ? '✅ +DI > -DI' : '❌') : (adx.mDI > adx.pDI ? '✅ -DI > +DI' : '❌')}`
+          `1. Giá vs VWMA_M5: ${sig === 'LONG' ? (currentPrice > vwmaM5 ? '✅ Above' : '❌ Below') : (currentPrice < vwmaM5 ? '✅ Below' : '❌ Above')}`,
+          `2. Slope_M5: ${sig === 'LONG' ? (slopeM5 > 0 ? '✅ Positive' : '❌ Negative') : (slopeM5 < 0 ? '✅ Negative' : '❌ Positive')}`,
+          `3. ADX_M5 (>=10): ${adxM5.adx >= 10 ? '✅' : '❌'} (${adxM5.adx.toFixed(1)})`,
+          `4. Sweep M1: ${sig === 'LONG' ? (sweep.sweepLow ? '✅ Low Sweep' : '❌ No Sweep') : (sweep.sweepHigh ? '✅ High Sweep' : '❌ No Sweep')}`,
+          `5. DI Power M5: ${sig === 'LONG' ? (adxM5.pDI > adxM5.mDI ? '✅ +DI > -DI' : '❌') : (adxM5.mDI > adxM5.pDI ? '✅ -DI > +DI' : '❌')}`
         ].join('\n');
 
         await sendTelegram(`🚀 [SIGNAL] **${sig}** Market Entry!\n\n` +
-          `📊 **Thông số lệnh:**\n` +
+          `📊 **Thông số lệnh (1M Entry + 5M Filter):**\n` +
           `🎯 Entry: ${e.toFixed(2)}\n` +
-          `🛑 SL: ${sl.toFixed(2)} | 💎 TP: ${tp.toFixed(2)}\n` +
-          `💰 VWMA: ${VWMA_PERIOD} | Distance: ${vwmaDistancePct.toFixed(2)}%\n\n` +
+          `🛑 SL: ${sl.toFixed(2)} | 💎 TP: ${tp.toFixed(2)}\n\n` +
           `📝 **Điều kiện:**\n${conditions}\n\n` +
           `⏰ Giờ VN: ${vnTime}`); 
       } else {
@@ -636,19 +640,16 @@ async function traderLoop() {
           
           const vnTime = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
           const conditions = [
-            `1. Giá vs VWMA: ${sig === 'LONG' ? (currentPrice > vwma ? '✅ Above' : '❌ Below') : (currentPrice < vwma ? '✅ Below' : '❌ Above')}`,
-            `2. Slope: ${sig === 'LONG' ? (slope > 0 ? '✅ Positive' : '❌ Negative') : (slope < 0 ? '✅ Negative' : '❌ Positive')}`,
-            `3. Distance: ${vwmaDistance < maxDistance ? '✅ Safe' : '❌ Fomo'} (${vwmaDistance.toFixed(2)} vs ${maxDistance.toFixed(2)}, ${vwmaDistancePct.toFixed(2)}%)`,
-            `4. Sweep: ${sig === 'LONG' ? (sweep.sweepLow ? '✅ Low Sweep' : '❌ No Sweep') : (sweep.sweepHigh ? '✅ High Sweep' : '❌ No Sweep')}`,
-            `5. Displacement: ${sig === 'LONG' ? (sweep.displacementBullish ? '✅ Strong Bull' : '❌ Weak') : (sweep.displacementBearish ? '✅ Strong Bear' : '❌ Weak')}`,
-            `6. Volume: ${sweep.volConfirm ? '✅ Confirmed' : '❌ Low'}`,
-            `7. ADX (>=10): ${adx.adx >= 10 ? '✅' : '❌'} (${adx.adx.toFixed(1)})`,
-            `8. DI Power: ${sig === 'LONG' ? (adx.pDI > adx.mDI ? '✅ +DI > -DI' : '❌') : (adx.mDI > adx.pDI ? '✅ -DI > +DI' : '❌')}`
+            `1. Giá vs VWMA_M5: ${sig === 'LONG' ? (currentPrice > vwmaM5 ? '✅ Above' : '❌ Below') : (currentPrice < vwmaM5 ? '✅ Below' : '❌ Above')}`,
+            `2. Slope_M5: ${sig === 'LONG' ? (slopeM5 > 0 ? '✅ Positive' : '❌ Negative') : (slopeM5 < 0 ? '✅ Negative' : '❌ Positive')}`,
+            `3. ADX_M5 (>=10): ${adxM5.adx >= 10 ? '✅' : '❌'} (${adxM5.adx.toFixed(1)})`,
+            `4. Sweep M1: ✅ Confirmed`,
+            `5. DI Power M5: ${sig === 'LONG' ? (adxM5.pDI > adxM5.mDI ? '✅ +DI > -DI' : '❌') : (adxM5.mDI > adxM5.pDI ? '✅ -DI > +DI' : '❌')}`
           ].join('\n');
 
-          await sendTelegram(`⚡ [SIGNAL] **${sig}** Market Order!\n\n` +
-            `📊 Entry: ${e.toFixed(2)} | Distance to VWMA: ${vwmaDistancePct.toFixed(2)}%\n` +
-            `📝 **8 Điều kiện vào lệnh:**\n${conditions}\n` +
+          await sendTelegram(`⚡ [SIGNAL] **${sig}** Market Order (Live)!\n\n` +
+            `📊 Entry: ${e.toFixed(2)} (M1 Entry with 5M Filters)\n` +
+            `📝 **Điều kiện vào lệnh:**\n${conditions}\n` +
             `⏰ Giờ VN: ${vnTime}`);
         } catch (err) {
           console.error("Order Error:", err);
