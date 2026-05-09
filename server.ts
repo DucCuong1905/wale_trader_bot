@@ -563,7 +563,7 @@ async function traderLoop() {
       currentPrice > vwma &&             // 1. Giá nằm trên đường VWMA 20
       slope > 0 &&                       // 2. Xu hướng VWMA đang đi lên
       vwmaDistance < maxDistance &&      // 3. Giá không quá xa VWMA
-      adx.adx >= 18 &&                   // 7. ADX >= 18 (Cập nhật từ 10)
+      adx.adx >= 10 &&                   // 7. ADX >= 10
       adx.pDI > adx.mDI                  // 8. +DI > -DI
     ) {
       if (sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm) {
@@ -579,7 +579,7 @@ async function traderLoop() {
       currentPrice < vwma &&
       slope < 0 &&
       vwmaDistance < maxDistance &&
-      adx.adx >= 18 &&
+      adx.adx >= 10 &&
       adx.mDI > adx.pDI
     ) {
       if (sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm) {

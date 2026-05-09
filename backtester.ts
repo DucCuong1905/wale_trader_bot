@@ -383,7 +383,7 @@ export async function runBacktest(
     const vwmaDistance = Math.abs(currentPrice - vwma);
     const maxDistance = atr * 1.2;
 
-    const baseCandleConditions = adx.adx >= 18 && isInSession && vwmaDistance < maxDistance;
+    const baseCandleConditions = adx.adx >= 10 && isInSession && vwmaDistance < maxDistance;
     
     let isLong = baseCandleConditions && currentPrice > vwma && slope > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adx.pDI > adx.mDI;
     let isShort = baseCandleConditions && currentPrice < vwma && slope < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adx.mDI > adx.pDI;
