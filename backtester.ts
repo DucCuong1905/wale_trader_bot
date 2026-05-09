@@ -408,8 +408,8 @@ export async function runBacktest(
     const atrM1 = calculateATR(window, 14);
     const isInSession = isWithinSessions(allKlines[i][0]);
 
-    let isLong = adxM5.adx >= 10 && isInSession && currentPrice > vwmaM5 && slopeM5 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM5.pDI > adxM5.mDI;
-    let isShort = adxM5.adx >= 10 && isInSession && currentPrice < vwmaM5 && slopeM5 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM5.mDI > adxM5.pDI;
+    let isLong = adxM5.adx >= 12 && isInSession && currentPrice > vwmaM5 && slopeM5 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM5.pDI > adxM5.mDI;
+    let isShort = adxM5.adx >= 12 && isInSession && currentPrice < vwmaM5 && slopeM5 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM5.mDI > adxM5.pDI;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
