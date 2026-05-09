@@ -408,8 +408,16 @@ export async function runBacktest(
     const atrM1 = calculateATR(window, 14);
     const isInSession = isWithinSessions(allKlines[i][0]);
 
-    let isLong = adxM5.adx >= 18 && isInSession && currentPrice > vwmaM5 && slopeM5 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM5.pDI > adxM5.mDI;
-    let isShort = adxM5.adx >= 18 && isInSession && currentPrice < vwmaM5 && slopeM5 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM5.mDI > adxM5.pDI;
+    // --- Range Filter (50 bars M1) ---
+    const rangeBars = allKlines.slice(Math.max(0, i - 49), i + 1);
+    const rangeHigh = Math.max(...rangeBars.map(b => b[2]));
+    const rangeLow = Math.min(...rangeBars.map(b => b[3]));
+    const rangeHeight = rangeHigh - rangeLow || 1;
+    const isPriceInLongRange = currentPrice < rangeLow + 0.3 * rangeHeight;
+    const isPriceInShortRange = currentPrice > rangeLow + 0.7 * rangeHeight;
+
+    let isLong = adxM5.adx >= 10 && isInSession && currentPrice > vwmaM5 && slopeM5 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM5.pDI > adxM5.mDI && isPriceInLongRange;
+    let isShort = adxM5.adx >= 10 && isInSession && currentPrice < vwmaM5 && slopeM5 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM5.mDI > adxM5.pDI && isPriceInShortRange;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
