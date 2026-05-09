@@ -178,6 +178,11 @@ function detectSweep(bars: any[]) {
   const sweepLow = sL <= localLow && sC >= localLow;
   const sweepHigh = sH >= localHigh && sC <= localHigh;
 
+  // BOS Mini: High/Low của 1 nến ngay trước nến quét
+  const prevOneCandle = bars[bars.length - 3];
+  const pL = prevOneCandle[3];
+  const pH = prevOneCandle[2];
+
   const body = Math.abs(cC - cO);
   const totalSize = cH - cL || 1;
   const bodySizes = bars.slice(-21, -1).map(b => Math.abs(b[4] - b[1]));
@@ -193,8 +198,8 @@ function detectSweep(bars: any[]) {
 
   const strongSweepCloseBull = sBody > avgBody * 1.5 && (sC - sL) / sRange > 0.75;
   const strongSweepCloseBear = sBody > avgBody * 1.5 && (sH - sC) / sRange > 0.75;
-  const bullishBOSOnSweep = sC > localHigh;
-  const bearishBOSOnSweep = sC < localLow;
+  const bullishBOSOnSweep = sC > pH;
+  const bearishBOSOnSweep = sC < pL;
 
   const extremelyStrongBullish = sweepLow && strongSweepCloseBull && bullishBOSOnSweep && sVolRatio >= 1.3;
   const extremelyStrongBearish = sweepHigh && strongSweepCloseBear && bearishBOSOnSweep && sVolRatio >= 1.3;
