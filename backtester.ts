@@ -177,12 +177,12 @@ function detectSweep(bars: any[]) {
   const bodySizes = bars.slice(-21, -1).map(b => Math.abs(b[4] - b[1]));
   const avgBody = bodySizes.reduce((a, b) => a + b, 0) / bodySizes.length;
   
-  const displacementBullish = body > avgBody * 1.2 && (cC - cL) / totalSize > 0.7;
-  const displacementBearish = body > avgBody * 1.2 && (cH - cC) / totalSize > 0.7;
+  const displacementBullish = body > avgBody * 1.5 && (cC - cL) / totalSize > 0.7 && cC > sH;
+  const displacementBearish = body > avgBody * 1.5 && (cH - cC) / totalSize > 0.7 && cC < sL;
 
   const volumes = bars.slice(-21, -1).map(b => b[5]);
   const avgVol = volumes.reduce((a, b) => a + b, 0) / volumes.length;
-  const volConfirm = cV > avgVol;
+  const volConfirm = cV > avgVol * 1.5;
 
   return {
     sweepLow,
@@ -408,16 +408,8 @@ export async function runBacktest(
     const atrM1 = calculateATR(window, 14);
     const isInSession = isWithinSessions(allKlines[i][0]);
 
-    // --- Range Filter (50 bars M1) ---
-    const rangeBars = allKlines.slice(Math.max(0, i - 49), i + 1);
-    const rangeHigh = Math.max(...rangeBars.map(b => b[2]));
-    const rangeLow = Math.min(...rangeBars.map(b => b[3]));
-    const rangeHeight = rangeHigh - rangeLow || 1;
-    const isPriceInLongRange = currentPrice < rangeLow + 0.3 * rangeHeight;
-    const isPriceInShortRange = currentPrice > rangeLow + 0.7 * rangeHeight;
-
-    let isLong = adxM5.adx >= 10 && isInSession && currentPrice > vwmaM5 && slopeM5 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM5.pDI > adxM5.mDI && isPriceInLongRange;
-    let isShort = adxM5.adx >= 10 && isInSession && currentPrice < vwmaM5 && slopeM5 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM5.mDI > adxM5.pDI && isPriceInShortRange;
+    let isLong = adxM5.adx >= 10 && isInSession && currentPrice > vwmaM5 && slopeM5 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM5.pDI > adxM5.mDI;
+    let isShort = adxM5.adx >= 10 && isInSession && currentPrice < vwmaM5 && slopeM5 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM5.mDI > adxM5.pDI;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";

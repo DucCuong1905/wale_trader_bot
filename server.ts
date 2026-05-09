@@ -284,13 +284,13 @@ function detectWhaleSweep(bars: any[]) {
   const bodySizes = bars.slice(-21, -1).map(b => Math.abs(b[4] - b[1]));
   const avgBody = bodySizes.reduce((a, b) => a + b, 0) / bodySizes.length;
   
-  const displacementBullish = body > avgBody * 1.2 && (cC - cL) / totalSize > 0.7;
-  const displacementBearish = body > avgBody * 1.2 && (cH - cC) / totalSize > 0.7;
+  const displacementBullish = body > avgBody * 1.5 && (cC - cL) / totalSize > 0.7 && cC > sH;
+  const displacementBearish = body > avgBody * 1.5 && (cH - cC) / totalSize > 0.7 && cC < sL;
 
-  // 4. VOLUME CONFIRM (Standard)
+  // 4. VOLUME CONFIRM (Strict: 1.5x Avg)
   const volumes = bars.slice(-21, -1).map(b => b[5]);
   const avgVol = volumes.reduce((a, b) => a + b, 0) / volumes.length;
-  const volConfirm = cV > avgVol;
+  const volConfirm = cV > avgVol * 1.5;
 
   return {
     sweepLow,
@@ -518,14 +518,6 @@ async function traderLoop() {
     const atrM1 = calculateATR(bars, 14);
     const currentPrice = bars[bars.length - 1][4];
     
-    // --- Range Filter (50 bars M1) ---
-    const rangeBars = bars.slice(-50);
-    const rangeHigh = Math.max(...rangeBars.map(b => b[2]));
-    const rangeLow = Math.min(...rangeBars.map(b => b[3]));
-    const rangeHeight = rangeHigh - rangeLow || 1;
-    const isPriceInLongRange = currentPrice < rangeLow + 0.3 * rangeHeight;
-    const isPriceInShortRange = currentPrice > rangeLow + 0.7 * rangeHeight;
-
     // --- Khung M5 (Filters) ---
     // Fetch dữ liệu M5 để lấy VWMA 20, Slope và ADX
     let barsM5: any[] = [];
@@ -580,8 +572,7 @@ async function traderLoop() {
       currentPrice > vwmaM5 &&           // 1. Giá M1 nằm trên đường VWMA 20 (M5)
       slopeM5 > 0 &&                     // 2. Xu hướng VWMA M5 đang đi lên
       adxM5.adx >= 10 &&                 // 3. ADX M5 >= 10
-      adxM5.pDI > adxM5.mDI &&           // 4. +DI > -DI (M5)
-      isPriceInLongRange                 // 5. Giá ở vùng 30% dưới của Range 50 nến
+      adxM5.pDI > adxM5.mDI              // 4. +DI > -DI (M5)
     ) {
       if (sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm) {
         sig = "LONG";
@@ -596,8 +587,7 @@ async function traderLoop() {
       currentPrice < vwmaM5 &&           // 1. Giá M1 nằm dưới đường VWMA 20 (M5)
       slopeM5 < 0 &&                     // 2. Xu hướng VWMA M5 đang đi xuống
       adxM5.adx >= 10 &&
-      adxM5.mDI > adxM5.pDI &&
-      isPriceInShortRange                // 5. Giá ở vùng 70% trên của Range 50 nến
+      adxM5.mDI > adxM5.pDI
     ) {
       if (sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm) {
         sig = "SHORT";
@@ -630,9 +620,8 @@ async function traderLoop() {
           `1. Giá vs VWMA_M5: ${sig === 'LONG' ? (currentPrice > vwmaM5 ? '✅ Above' : '❌ Below') : (currentPrice < vwmaM5 ? '✅ Below' : '❌ Above')}`,
           `2. Slope_M5: ${sig === 'LONG' ? (slopeM5 > 0 ? '✅ Positive' : '❌ Negative') : (slopeM5 < 0 ? '✅ Negative' : '❌ Positive')}`,
           `3. ADX_M5 (>=10): ${adxM5.adx >= 10 ? '✅' : '❌'} (${adxM5.adx.toFixed(1)})`,
-          `4. Range 50: ${sig === 'LONG' ? (isPriceInLongRange ? '✅ Bottom 30%' : '❌ Too High') : (isPriceInShortRange ? '✅ Top 70%' : '❌ Too Low')}`,
-          `5. Sweep M1: ✅ Confirmed`,
-          `6. DI Power M5: ${sig === 'LONG' ? (adxM5.pDI > adxM5.mDI ? '✅ +DI > -DI' : '❌') : (adxM5.mDI > adxM5.pDI ? '✅ -DI > +DI' : '❌')}`
+          `4. Sweep M1: ✅ Confirmed`,
+          `5. DI Power M5: ${sig === 'LONG' ? (adxM5.pDI > adxM5.mDI ? '✅ +DI > -DI' : '❌') : (adxM5.mDI > adxM5.pDI ? '✅ -DI > +DI' : '❌')}`
         ].join('\n');
 
         await sendTelegram(`🚀 [SIGNAL] **${sig}** Market Entry!\n\n` +
@@ -654,9 +643,8 @@ async function traderLoop() {
             `1. Giá vs VWMA_M5: ${sig === 'LONG' ? (currentPrice > vwmaM5 ? '✅ Above' : '❌ Below') : (currentPrice < vwmaM5 ? '✅ Below' : '❌ Above')}`,
             `2. Slope_M5: ${sig === 'LONG' ? (slopeM5 > 0 ? '✅ Positive' : '❌ Negative') : (slopeM5 < 0 ? '✅ Negative' : '❌ Positive')}`,
             `3. ADX_M5 (>=10): ${adxM5.adx >= 10 ? '✅' : '❌'} (${adxM5.adx.toFixed(1)})`,
-            `4. Range 50: ${sig === 'LONG' ? (isPriceInLongRange ? '✅ Bottom 30%' : '❌ Too High') : (isPriceInShortRange ? '✅ Top 70%' : '❌ Too Low')}`,
-            `5. Sweep M1: ✅ Confirmed`,
-            `6. DI Power M5: ${sig === 'LONG' ? (adxM5.pDI > adxM5.mDI ? '✅ +DI > -DI' : '❌') : (adxM5.mDI > adxM5.pDI ? '✅ -DI > +DI' : '❌')}`
+            `4. Sweep M1: ✅ Confirmed`,
+            `5. DI Power M5: ${sig === 'LONG' ? (adxM5.pDI > adxM5.mDI ? '✅ +DI > -DI' : '❌') : (adxM5.mDI > adxM5.pDI ? '✅ -DI > +DI' : '❌')}`
           ].join('\n');
 
           await sendTelegram(`⚡ [SIGNAL] **${sig}** Market Order (Live)!\n\n` +
