@@ -165,7 +165,7 @@ function detectSweep(bars: any[]) {
   const [, sO, sH, sL, sC, sV] = sweepCandle;
   const [, cO, cH, cL, cC, cV] = confirmCandle;
 
-  const prevBars = bars.slice(bars.length - 7, bars.length - 2);
+  const prevBars = bars.slice(bars.length - 12, bars.length - 2);
   const localLow = Math.min(...prevBars.map(b => b[3]));
   const localHigh = Math.max(...prevBars.map(b => b[2]));
 
@@ -409,11 +409,8 @@ export async function runBacktest(
     const atrM1 = calculateATR(window, 14);
     const isInSession = isWithinSessions(allKlines[i][0]);
 
-    const lastCandleLow = allKlines[i][3];
-    const lastCandleHigh = allKlines[i][2];
-
-    let isLong = adxM5.adx >= 10 && isInSession && currentPrice > vwmaM5 && currentPrice > vwmaM1 && lastCandleLow < vwmaM1 && slopeM5 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM5.pDI > adxM5.mDI;
-    let isShort = adxM5.adx >= 10 && isInSession && currentPrice < vwmaM5 && currentPrice < vwmaM1 && lastCandleHigh > vwmaM1 && slopeM5 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM5.mDI > adxM5.pDI;
+    let isLong = adxM5.adx >= 10 && isInSession && currentPrice > vwmaM5 && currentPrice > vwmaM1 && slopeM5 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM5.pDI > adxM5.mDI;
+    let isShort = adxM5.adx >= 10 && isInSession && currentPrice < vwmaM5 && currentPrice < vwmaM1 && slopeM5 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM5.mDI > adxM5.pDI;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
