@@ -543,14 +543,7 @@ async function traderLoop() {
     // THÔNG BÁO KHI SẴN SÀNG
     if (!botState.isInitNotified) {
       botState.isInitNotified = true;
-      const vnTime = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
-      await sendTelegram(`🤖 **WHALE BOT (M1 ENTRY + M5 FILTER) SẴN SÀNG!**\n\n` +
-        `📊 **Chỉ số M5 hiện tại:**\n` +
-        `• VWMA20 M5: ${vwmaM5.toFixed(2)} (Slope: ${slopeM5 > 0 ? '↗️' : '↘️'})\n` +
-        `• ADX M5: ${adxM5.adx.toFixed(1)} (+DI: ${adxM5.pDI.toFixed(1)} | -DI: ${adxM5.mDI.toFixed(1)})\n\n` +
-        `📊 **Chỉ số M1 hiện tại:**\n` +
-        `• VWMA20 M1: ${vwmaM1.toFixed(2)}\n\n` +
-        `🚀 Chế độ: ${IS_LIVE_TRADING_ENABLED ? "LIVE ⚡" : "PAPER 📝"}`);
+      console.log(`🤖 WHALE BOT (M1 ENTRY + M5 FILTER) SẴN SÀNG!`);
     }
 
     const lastCandle = bars[bars.length - 1];
@@ -681,9 +674,24 @@ async function startServer() {
     backtestStatus.isRunning = true;
     runBacktest(startDate, endDate, rr, timeframe, enableSessionFilter, 20, p => { 
       backtestStatus.progress = p; 
-    }).then(r => { 
+    }).then(async (r: any) => { 
       backtestStatus.isRunning = false; 
       backtestStatus.lastResult = r; 
+      
+      // Gửi báo cáo Telegram khi hoàn tất backtest
+      if (r && !r.error) {
+        const winRate = r.totalTrades > 0 ? (r.wins / r.totalTrades * 100).toFixed(1) : "0.0";
+        const netProfit = r.finalBalance - 5000; // Giả sử vốn ban đầu 5000
+        const period = `${new Date(r.startTime).toLocaleDateString('vi-VN')} - ${new Date(r.endTime).toLocaleDateString('vi-VN')}`;
+        
+        await sendTelegram(`📊 **KẾT QUẢ BACKTEST HOÀN TẤT**\n\n` +
+          `🗓 **Khoảng thời gian:** ${period}\n` +
+          `📈 **Lợi nhuận RR:** ${r.totalProfitR.toFixed(2)}R\n` +
+          `💰 **Net Profit:** ${netProfit.toFixed(2)}$\n` +
+          `🎯 **Win Rate:** ${winRate}%\n` +
+          `🔄 **Số lệnh:** ${r.totalTrades} (Hòa/Thắng: ${r.wins} | Thua: ${r.losses})\n` +
+          `🏦 **Số dư cuối:** ${r.finalBalance.toFixed(2)}$`);
+      }
     }).catch(err => {
       console.error("Backtest Error:", err);
       backtestStatus.isRunning = false;
@@ -725,9 +733,6 @@ async function startServer() {
   app.listen(3000, "0.0.0.0", async () => { 
     console.log(`🚀 [SERVER] Bot running at http://0.0.0.0:3000`);
     console.log(`--- SYSTEM REBOOTED 2026 ---`);
-    
-    // Gửi test Telegram ngay lập tức
-    await sendTelegram("🔄 **WHALE BOT ĐÃ RESTART**\nĐang khởi tạo các kết nối và tải dữ liệu nến...");
     
     console.log("[INIT] Hệ thống đã sẵn sàng.");
 
