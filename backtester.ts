@@ -404,12 +404,16 @@ export async function runBacktest(
     const slopeM5 = vwmaM5 - vwmaM5Prev;
 
     // --- KHUNG 1P (ENTRIES) ---
+    const vwmaM1 = calculateVWMA(window, 20); // VWMA 20 M1
     const sweep = detectSweep(window);
     const atrM1 = calculateATR(window, 14);
     const isInSession = isWithinSessions(allKlines[i][0]);
 
-    let isLong = adxM5.adx >= 10 && isInSession && currentPrice > vwmaM5 && slopeM5 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM5.pDI > adxM5.mDI;
-    let isShort = adxM5.adx >= 10 && isInSession && currentPrice < vwmaM5 && slopeM5 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM5.mDI > adxM5.pDI;
+    const lastCandleLow = allKlines[i][3];
+    const lastCandleHigh = allKlines[i][2];
+
+    let isLong = adxM5.adx >= 10 && isInSession && currentPrice > vwmaM5 && currentPrice > vwmaM1 && lastCandleLow < vwmaM1 && slopeM5 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM5.pDI > adxM5.mDI;
+    let isShort = adxM5.adx >= 10 && isInSession && currentPrice < vwmaM5 && currentPrice < vwmaM1 && lastCandleHigh > vwmaM1 && slopeM5 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM5.mDI > adxM5.pDI;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
