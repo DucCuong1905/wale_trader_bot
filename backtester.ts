@@ -146,6 +146,20 @@ function calculateATR(bars: any[], period: number = 14) {
   return trs.slice(-period).reduce((a, b) => a + b, 0) / period;
 }
 
+function calculateVWAP(bars: any[]) {
+  if (bars.length === 0) return 0;
+  const lastBarDate = new Date(bars[bars.length - 1][0]).getUTCDate();
+  let totalPV = 0, totalV = 0;
+  for (let i = bars.length - 1; i >= 0; i--) {
+    const date = new Date(bars[i][0]).getUTCDate();
+    if (date !== lastBarDate) break;
+    const typicalPrice = (bars[i][2] + bars[i][3] + bars[i][4]) / 3;
+    totalPV += typicalPrice * bars[i][5];
+    totalV += bars[i][5];
+  }
+  return totalV === 0 ? bars[bars.length - 1][4] : totalPV / totalV;
+}
+
 function detectSweep(bars: any[]) {
   if (bars.length < 20) return { 
     sweepHigh: false, 
@@ -370,24 +384,24 @@ export async function runBacktest(
       break;
     }
 
-    const window = allKlines.slice(0, i + 1);
-    const currentPrice = allKlines[i][4];
-    
     // --- KHUNG 1P (ENTRIES) ---
-    const vwmaM1 = calculateVWMA(window, 20); // VWMA 20 M1
-    const vwmaM1Prev = calculateVWMA(window.slice(0, -1), 20);
+    const currentPrice = allKlines[i][4];
+    const calcWindow = allKlines.slice(Math.max(0, i - 100), i + 1);
+    const vwapM1 = calculateVWAP(calcWindow);
+    const vwmaM1 = calculateVWMA(calcWindow, 20); // VWMA 20 M1
+    const vwmaM1Prev = calculateVWMA(allKlines.slice(Math.max(0, i - 101), i), 20);
     const slopeM1 = vwmaM1 - vwmaM1Prev;
-    const adxM1 = calcADX(window);
-    const sweep = detectSweep(window);
-    const atrM1 = calculateATR(window, 14);
+    const adxM1 = calcADX(calcWindow);
+    const sweep = detectSweep(calcWindow);
+    const atrM1 = calculateATR(calcWindow, 14);
     const isInSession = isWithinSessions(allKlines[i][0]);
 
     // --- Mean Reversion Filter (Check if price is too far from VWMA) ---
     const distFromVWMA = Math.abs(currentPrice - vwmaM1);
     const isOverExtended = distFromVWMA > (atrM1 * 2.5);
 
-    let isLong = !isOverExtended && adxM1.adx >= 10 && isInSession && currentPrice > vwmaM1 && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI;
-    let isShort = !isOverExtended && adxM1.adx >= 10 && isInSession && currentPrice < vwmaM1 && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI;
+    let isLong = !isOverExtended && currentPrice > vwapM1 && adxM1.adx >= 10 && isInSession && currentPrice > vwmaM1 && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI;
+    let isShort = !isOverExtended && currentPrice < vwapM1 && adxM1.adx >= 10 && isInSession && currentPrice < vwmaM1 && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";

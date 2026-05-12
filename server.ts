@@ -123,6 +123,7 @@ let botState = {
   adx: 0,
   plusDI: 0,
   minusDI: 0,
+  vwap: 0,
   aiReasoning: "TA Only Mode",
   isWsConnected: false,
   isInitNotified: false, 
@@ -255,6 +256,20 @@ function calculateATR(bars: any[], period: number = 14) {
     trs.push(Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)));
   }
   return trs.slice(-period).reduce((a, b) => a + b, 0) / period;
+}
+
+function calculateVWAP(bars: any[]) {
+  if (bars.length === 0) return 0;
+  const lastBarDate = new Date(bars[bars.length - 1][0]).getUTCDate();
+  let totalPV = 0, totalV = 0;
+  for (let i = bars.length - 1; i >= 0; i--) {
+    const date = new Date(bars[i][0]).getUTCDate();
+    if (date !== lastBarDate) break;
+    const typicalPrice = (bars[i][2] + bars[i][3] + bars[i][4]) / 3;
+    totalPV += typicalPrice * bars[i][5];
+    totalV += bars[i][5];
+  }
+  return totalV === 0 ? bars[bars.length - 1][4] : totalPV / totalV;
 }
 
 /**
@@ -520,6 +535,7 @@ async function traderLoop() {
     // 4. TÍNH TOÁN CÁC CHỈ BÁO KỸ THUẬT
     // --- Khung M1 ---
     const atrM1 = calculateATR(bars, 14);
+    const vwapM1 = calculateVWAP(bars);
     const vwmaM1 = calculateVWMA(bars, 20); // VWMA 20 M1
     const vwmaM1Prev = calculateVWMA(bars.slice(0, -1), 20);
     const slopeM1 = vwmaM1 - vwmaM1Prev;
@@ -531,6 +547,7 @@ async function traderLoop() {
     const isOverExtended = distFromVWMA > (atrM1 * 2.5); // Ngưỡng 2.5 lần ATR
     
     botState.adx = adxM1.adx; // Lưu ADX M1 vào botState để hiển thị
+    botState.vwap = vwapM1;
 
     // THÔNG BÁO KHI SẴN SÀNG
     if (!botState.isInitNotified) {
@@ -560,6 +577,7 @@ async function traderLoop() {
     if (
       isWithinTradingSessions() &&       
       !isOverExtended &&                 // 0. Không quá xa VWMA
+      currentPrice > vwapM1 &&           // 0.1 Giá nằm trên VWAP
       currentPrice > vwmaM1 &&           // 1. Giá nằm trên VWMA 20 (M1)
       slopeM1 > 0 &&                     // 2. Xu hướng VWMA M1 đang đi lên
       adxM1.adx >= 10 &&                 // 3. ADX M1 >= 10
@@ -576,6 +594,7 @@ async function traderLoop() {
     if (
       isWithinTradingSessions() &&
       !isOverExtended &&                 // 0. Không quá xa VWMA
+      currentPrice < vwapM1 &&           // 0.1 Giá nằm dưới VWAP
       currentPrice < vwmaM1 &&           // 1. Giá nằm dưới VWMA 20 (M1)
       slopeM1 < 0 &&                     // 2. Xu hướng VWMA M1 đang đi xuống
       adxM1.adx >= 10 &&
@@ -610,11 +629,12 @@ async function traderLoop() {
 
         const conditions = [
           `1. Khoảng cách VWMA: ${!isOverExtended ? '✅ Ok' : '❌ Quá xa'} (${distFromVWMA.toFixed(2)})`,
-          `2. Giá vs VWMA M1: ${sig === 'LONG' ? (currentPrice > vwmaM1 ? '✅ Above' : '❌ Below') : (currentPrice < vwmaM1 ? '✅ Below' : '❌ Above')}`,
-          `3. Slope M1: ${sig === 'LONG' ? (slopeM1 > 0 ? '✅ Positive' : '❌ Negative') : (slopeM1 < 0 ? '✅ Negative' : '❌ Positive')}`,
-          `4. ADX M1 (>=10): ${adxM1.adx >= 10 ? '✅' : '❌'} (${adxM1.adx.toFixed(1)})`,
-          `5. Sweep M1: ✅ Confirmed`,
-          `6. DI Power M1: ${sig === 'LONG' ? (adxM1.pDI > adxM1.mDI ? '✅ +DI > -DI' : '❌') : (adxM1.mDI > adxM1.pDI ? '✅ -DI > +DI' : '❌')}`
+          `2. Giá vs VWAP: ${currentPrice > vwapM1 ? '✅ Above' : '❌ Below'}`,
+          `3. Giá vs VWMA M1: ${sig === 'LONG' ? (currentPrice > vwmaM1 ? '✅ Above' : '❌ Below') : (currentPrice < vwmaM1 ? '✅ Below' : '❌ Above')}`,
+          `4. Slope M1: ${sig === 'LONG' ? (slopeM1 > 0 ? '✅ Positive' : '❌ Negative') : (slopeM1 < 0 ? '✅ Negative' : '❌ Positive')}`,
+          `5. ADX M1 (>=10): ${adxM1.adx >= 10 ? '✅' : '❌'} (${adxM1.adx.toFixed(1)})`,
+          `6. Sweep M1: ✅ Confirmed`,
+          `7. DI Power M1: ${sig === 'LONG' ? (adxM1.pDI > adxM1.mDI ? '✅ +DI > -DI' : '❌') : (adxM1.mDI > adxM1.pDI ? '✅ -DI > +DI' : '❌')}`
         ].join('\n');
 
         await sendTelegram(`🚀 [SIGNAL] **${sig}** Market Entry!\n\n` +
