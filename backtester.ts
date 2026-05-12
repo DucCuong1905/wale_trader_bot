@@ -230,6 +230,24 @@ function calculateVWMA(bars: any[], period: number) {
   return volSum === 0 ? bars[bars.length - 1][4] : pvSum / volSum;
 }
 
+function aggregateCandles(oneMinBars: any[], windowSize: number = 15) {
+  const aggregated: any[] = [];
+  for (let i = 0; i < oneMinBars.length; i += windowSize) {
+      const slice = oneMinBars.slice(i, i + windowSize);
+      if (slice.length === 0) continue;
+      
+      aggregated.push([
+          slice[0][0], // Open time
+          slice[0][1], // Open
+          Math.max(...slice.map(b => b[2])), // High
+          Math.min(...slice.map(b => b[3])), // Low
+          slice[slice.length - 1][4], // Close
+          slice.reduce((acc, b) => acc + b[5], 0) // Volume
+      ]);
+  }
+  return aggregated;
+}
+
 function calcADX(ohlcv: any[]) {
   const period = 14;
   if (ohlcv.length < period * 2) return { adx: 0, pDI: 0, mDI: 0 };
@@ -394,6 +412,11 @@ export async function runBacktest(
       break;
     }
 
+    // --- KHUNG 15P FILTER ---
+    const calcWindow15mRaw = allKlines.slice(Math.max(0, i - 1500), i + 1);
+    const bars15m = aggregateCandles(calcWindow15mRaw, 15);
+    const adx15m = calcADX(bars15m);
+
     // --- KHUNG 1P (ENTRIES) ---
     const currentPrice = allKlines[i][4];
     const calcWindow = allKlines.slice(Math.max(0, i - 100), i + 1);
@@ -434,8 +457,8 @@ export async function runBacktest(
     lastMonth = currentMonth;
     lastYear = currentYear;
 
-    let isLong = !isOverExtended && currentPrice > vwapM1 && adxM1.adx >= adxThreshold && isInSession && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI;
-    let isShort = !isOverExtended && currentPrice < vwapM1 && adxM1.adx >= adxThreshold && isInSession && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI;
+    let isLong = !isOverExtended && adx15m.adx > 25 && currentPrice > vwapM1 && adxM1.adx >= adxThreshold && isInSession && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI;
+    let isShort = !isOverExtended && adx15m.adx > 25 && currentPrice < vwapM1 && adxM1.adx >= adxThreshold && isInSession && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
