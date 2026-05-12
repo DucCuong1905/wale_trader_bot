@@ -48,7 +48,7 @@ export default function App() {
   const [isBacktestRunning, setIsBacktestRunning] = useState(false);
   const [startDate, setStartDate] = useState('2026-01-01');
   const [endDate, setEndDate] = useState('2026-03-31');
-  const [backtestRR, setBacktestRR] = useState(1.1);
+  const [backtestRR, setBacktestRR] = useState(1.0);
   const [backtestTimeframe, setBacktestTimeframe] = useState('1m');
   const [backtestSessionFilter, setBacktestSessionFilter] = useState(false);
   const [vwmaPeriod, setVwmaPeriod] = useState(20);

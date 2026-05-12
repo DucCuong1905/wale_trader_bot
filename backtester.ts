@@ -25,7 +25,7 @@ const modelName = "gemini-2.0-flash";
 const PAIR = "BTC/USDT";
 const START_DATE = "2026-01-01T00:00:00Z"; 
 const END_DATE = "2026-04-01T00:00:00Z";
-const RR = 1.1; 
+const RR = 1.0; 
 const INITIAL_BALANCE = 5000;
 const RISK_PER_TRADE = 0.01; // 1%
 
@@ -433,8 +433,8 @@ export async function runBacktest(
     lastMonth = currentMonth;
     lastYear = currentYear;
 
-    let isLong = !isOverExtended && currentPrice > vwapM1 && adxM1.adx >= 10 && isInSession && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI;
-    let isShort = !isOverExtended && currentPrice < vwapM1 && adxM1.adx >= 10 && isInSession && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI;
+    let isLong = !isOverExtended && currentPrice > vwapM1 && adxM1.adx >= 20 && isInSession && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI;
+    let isShort = !isOverExtended && currentPrice < vwapM1 && adxM1.adx >= 20 && isInSession && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";

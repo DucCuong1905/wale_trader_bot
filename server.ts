@@ -20,7 +20,7 @@ const SYMBOL_ID = "btcusdt"; // ID ký hiệu cho WebSocket
 const TIMEFRAME = "1m"; // Khung thời gian nến (1 phút)
 const IS_LIVE_TRADING_ENABLED = false; // Chế độ giao dịch thật (true = bật, false = test)
 const RISK_PER_TRADE = 0.01; // Rủi ro trên mỗi lệnh (1% tài khoản)
-const RR = 1.1; // Tỷ lệ Risk/Reward 1.1 theo yêu cầu
+const RR = 1.0; // Tỷ lệ Risk/Reward 1.0 theo yêu cầu
 const COOLDOWN_MS = 30000; // Thời gian chờ giữa các lệnh (30 giây)
 const MAX_DAILY_LOSS = 0.06; // Giới hạn lỗ tối đa trong ngày (6%)
 
@@ -579,7 +579,7 @@ async function traderLoop() {
       !isOverExtended &&                 // 0. Không quá xa VWMA
       currentPrice > vwapM1 &&           // 0.1 Giá nằm trên VWAP
       slopeM1 > 0 &&                     // 2. Xu hướng VWMA M1 đang đi lên
-      adxM1.adx >= 10 &&                 // 3. ADX M1 >= 10
+      adxM1.adx >= 20 &&                 // 3. ADX M1 >= 20
       adxM1.pDI > adxM1.mDI              // 4. +DI > -DI (M1)
     ) {
       if (sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm) {
@@ -595,7 +595,7 @@ async function traderLoop() {
       !isOverExtended &&                 // 0. Không quá xa VWMA
       currentPrice < vwapM1 &&           // 0.1 Giá nằm dưới VWAP
       slopeM1 < 0 &&                     // 2. Xu hướng VWMA M1 đang đi xuống
-      adxM1.adx >= 10 &&
+      adxM1.adx >= 20 &&
       adxM1.mDI > adxM1.pDI
     ) {
       if (sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm) {
@@ -629,7 +629,7 @@ async function traderLoop() {
           `1. Khoảng cách VWMA: ${!isOverExtended ? '✅ Ok' : '❌ Quá xa'} (${distFromVWMA.toFixed(2)})`,
           `2. Giá vs VWAP: ${currentPrice > vwapM1 ? '✅ Above' : '❌ Below'}`,
           `3. Slope M1: ${sig === 'LONG' ? (slopeM1 > 0 ? '✅ Positive' : '❌ Negative') : (slopeM1 < 0 ? '✅ Negative' : '❌ Positive')}`,
-          `4. ADX M1 (>=10): ${adxM1.adx >= 10 ? '✅' : '❌'} (${adxM1.adx.toFixed(1)})`,
+          `4. ADX M1 (>=20): ${adxM1.adx >= 20 ? '✅' : '❌'} (${adxM1.adx.toFixed(1)})`,
           `5. Sweep M1: ✅ Confirmed`,
           `6. DI Power M1: ${sig === 'LONG' ? (adxM1.pDI > adxM1.mDI ? '✅ +DI > -DI' : '❌') : (adxM1.mDI > adxM1.pDI ? '✅ -DI > +DI' : '❌')}`
         ].join('\n');
@@ -653,7 +653,7 @@ async function traderLoop() {
             `1. Khoảng cách VWMA: ${!isOverExtended ? '✅ Ok' : '❌ Quá xa'} (${distFromVWMA.toFixed(2)})`,
             `2. Giá vs VWAP: ${currentPrice > vwapM1 ? '✅ Above' : '❌ Below'}`,
             `3. Slope M1: ${sig === 'LONG' ? (slopeM1 > 0 ? '✅ Positive' : '❌ Negative') : (slopeM1 < 0 ? '✅ Negative' : '❌ Positive')}`,
-            `4. ADX M1 (>=10): ${adxM1.adx >= 10 ? '✅' : '❌'} (${adxM1.adx.toFixed(1)})`,
+            `4. ADX M1 (>=20): ${adxM1.adx >= 20 ? '✅' : '❌'} (${adxM1.adx.toFixed(1)})`,
             `5. Sweep M1: ✅ Confirmed`,
             `6. DI Power M1: ${sig === 'LONG' ? (adxM1.pDI > adxM1.mDI ? '✅ +DI > -DI' : '❌') : (adxM1.mDI > adxM1.pDI ? '✅ -DI > +DI' : '❌')}`
           ].join('\n');
