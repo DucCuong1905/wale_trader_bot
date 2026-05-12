@@ -833,6 +833,30 @@ export default function App() {
                           )}>USD</p>
                        </div>
                     </div>
+
+                    {/* Monthly Stats */}
+                    {backtestStatus.lastResult.monthlySnapshots && backtestStatus.lastResult.monthlySnapshots.length > 0 && (
+                      <div className="bg-[#12121c] p-8 rounded-[2rem] border border-purple-500/20 glow-purple">
+                        <p className="text-[10px] font-black uppercase mb-6 tracking-widest text-purple-400">Hiệu Suất Theo Tháng</p>
+                        <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                           {backtestStatus.lastResult.monthlySnapshots.map((m: any, idx: number) => (
+                             <div key={idx} className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5 hover:border-purple-500/30 transition-all">
+                               <div>
+                                 <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{m.date}</p>
+                                 <p className="text-sm font-mono font-black text-white">${m.balance.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+                               </div>
+                               <div className="text-right">
+                                 <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Lợi Nhuận</p>
+                                 <p className={cn(
+                                   "text-sm font-mono font-black",
+                                   m.totalProfitR >= 0 ? "text-green-400" : "text-red-400"
+                                 )}>{m.totalProfitR > 0 ? '+' : ''}{m.totalProfitR.toFixed(1)}R</p>
+                               </div>
+                             </div>
+                           ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="lg:col-span-8 bg-[#12121c] rounded-[2rem] border border-white/5 overflow-hidden">
