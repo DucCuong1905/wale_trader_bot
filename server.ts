@@ -697,7 +697,7 @@ async function startServer() {
         let monthlyStats = "";
         if (r.monthlySnapshots && r.monthlySnapshots.length > 0) {
           monthlyStats = "\n📅 **Thống kê mốc tháng:**\n" + 
-            r.monthlySnapshots.map((m: any) => `• ${m.date}: ${m.balance.toFixed(2)}$ (${m.totalProfitR.toFixed(2)}R)`).join('\n') + "\n";
+            r.monthlySnapshots.map((m: any) => `• ${m.date}: ${m.balance.toFixed(2)}$ (${m.totalProfitR.toFixed(2)}R) | WR: ${m.winRate}% (${m.trades} trades)`).join('\n') + "\n";
         }
 
         await sendTelegram(`📊 **KẾT QUẢ BACKTEST HOÀN TẤT**\n\n` +

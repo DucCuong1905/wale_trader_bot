@@ -841,11 +841,16 @@ export default function App() {
                         <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
                            {backtestStatus.lastResult.monthlySnapshots.map((m: any, idx: number) => (
                              <div key={idx} className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5 hover:border-purple-500/30 transition-all">
-                               <div>
+                               <div className="flex-1">
                                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{m.date}</p>
                                  <p className="text-sm font-mono font-black text-white">${m.balance.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
                                </div>
-                               <div className="text-right">
+                               <div className="flex-1 text-center border-x border-white/5 mx-2">
+                                 <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Win Rate</p>
+                                 <p className="text-sm font-mono font-black text-purple-400">{m.winRate}%</p>
+                                 <p className="text-[9px] text-slate-600 font-bold">({m.trades} lệnh)</p>
+                               </div>
+                               <div className="flex-1 text-right">
                                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Lợi Nhuận</p>
                                  <p className={cn(
                                    "text-sm font-mono font-black",

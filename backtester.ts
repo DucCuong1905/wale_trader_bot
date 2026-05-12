@@ -367,9 +367,9 @@ export async function runBacktest(
 
   let lastMonth = -1;
   let lastYear = -1;
+  let monthlyWins = 0;
+  let monthlyLosses = 0;
   let monthlySnapshots: any[] = [];
-  let currentBalance = results.finalBalance;
-  let totalProfitR = 0;
 
   let sessionSkippedCount = 0;
   const isWithinSessions = (ts: number) => {
@@ -414,12 +414,21 @@ export async function runBacktest(
     const currentYear = d.getUTCFullYear();
     
     if (lastMonth !== -1 && currentMonth !== lastMonth) {
-      // Month changed, record snapshot at start of new month
+      // Month changed, record snapshot of the month that just ended
+      const totalMonthTrades = monthlyWins + monthlyLosses;
+      const monthWinRate = totalMonthTrades > 0 ? (monthlyWins / totalMonthTrades * 100) : 0;
+      
       monthlySnapshots.push({
-        date: d.toLocaleDateString('vi-VN'),
+        date: `Tháng ${lastMonth + 1}/${lastYear}`,
         balance: results.finalBalance,
-        totalProfitR: results.totalProfitR
+        totalProfitR: results.totalProfitR,
+        winRate: monthWinRate.toFixed(1),
+        trades: totalMonthTrades
       });
+
+      // Reset monthly counters
+      monthlyWins = 0;
+      monthlyLosses = 0;
     }
     lastMonth = currentMonth;
     lastYear = currentYear;
@@ -477,8 +486,10 @@ export async function runBacktest(
       if (status === "WIN") {
         results.wins++;
         results.displaceWins++;
+        monthlyWins++;
       } else {
         results.losses++;
+        monthlyLosses++;
       }
       
       results.displaceTrades++;
