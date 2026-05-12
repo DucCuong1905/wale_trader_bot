@@ -51,6 +51,7 @@ interface BacktestResult {
   displaceTrades: number;
   displaceWins: number;
   totalProfitR: number;
+  monthlySnapshots: any[];
 }
 
 let results: BacktestResult = {
@@ -69,7 +70,8 @@ let results: BacktestResult = {
   endTime: END_DATE,
   displaceTrades: 0,
   displaceWins: 0,
-  totalProfitR: 0
+  totalProfitR: 0,
+  monthlySnapshots: []
 };
 
 // --- LOGIC FUNCTIONS (COPIED & ADAPTED FROM SERVER.TS) ---
@@ -187,8 +189,8 @@ function detectSweep(bars: any[]) {
   const lowerWick = Math.min(sO, sC) - sL;
   const upperWick = sH - Math.max(sO, sC);
 
-  const sweepLow = sL <= localLow && sC >= localLow && (lowerWick / sweepSize > 0.5);
-  const sweepHigh = sH >= localHigh && sC <= localHigh && (upperWick / sweepSize > 0.5);
+  const sweepLow = sL <= localLow && sC >= localLow && (lowerWick / sweepSize >= 0.25);
+  const sweepHigh = sH >= localHigh && sC <= localHigh && (upperWick / sweepSize >= 0.25);
 
   const body = Math.abs(cC - cO);
   const totalSize = cH - cL || 1;
@@ -359,8 +361,15 @@ export async function runBacktest(
     endTime: endDate,
     displaceTrades: 0,
     displaceWins: 0,
-    totalProfitR: 0
+    totalProfitR: 0,
+    monthlySnapshots: []
   };
+
+  let lastMonth = -1;
+  let lastYear = -1;
+  let monthlySnapshots: any[] = [];
+  let currentBalance = results.finalBalance;
+  let totalProfitR = 0;
 
   let sessionSkippedCount = 0;
   const isWithinSessions = (ts: number) => {
@@ -396,12 +405,27 @@ export async function runBacktest(
     const atrM1 = calculateATR(calcWindow, 14);
     const isInSession = isWithinSessions(allKlines[i][0]);
 
-    // --- Mean Reversion Filter (Check if price is too far from VWMA) ---
     const distFromVWMA = Math.abs(currentPrice - vwmaM1);
-    const isOverExtended = distFromVWMA > (atrM1 * 2.5);
+    const isOverExtended = distFromVWMA > (atrM1 * 1.2);
 
-    let isLong = !isOverExtended && currentPrice > vwapM1 && adxM1.adx >= 10 && isInSession && currentPrice > vwmaM1 && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI;
-    let isShort = !isOverExtended && currentPrice < vwapM1 && adxM1.adx >= 10 && isInSession && currentPrice < vwmaM1 && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI;
+    // --- MONTHLY SNAPSHOT LOGIC ---
+    const d = new Date(allKlines[i][0]);
+    const currentMonth = d.getUTCMonth();
+    const currentYear = d.getUTCFullYear();
+    
+    if (lastMonth !== -1 && currentMonth !== lastMonth) {
+      // Month changed, record snapshot at start of new month
+      monthlySnapshots.push({
+        date: d.toLocaleDateString('vi-VN'),
+        balance: results.finalBalance,
+        totalProfitR: results.totalProfitR
+      });
+    }
+    lastMonth = currentMonth;
+    lastYear = currentYear;
+
+    let isLong = !isOverExtended && currentPrice > vwapM1 && adxM1.adx >= 10 && isInSession && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI;
+    let isShort = !isOverExtended && currentPrice < vwapM1 && adxM1.adx >= 10 && isInSession && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
@@ -482,6 +506,7 @@ export async function runBacktest(
     }
   }
 
+  results.monthlySnapshots = monthlySnapshots;
   fs.writeFileSync(RESULTS_FILE, JSON.stringify(results, null, 2));
   console.log(`[DONE] Backtest complete. Results: ${RESULTS_FILE}`);
   if (enableSessionFilter) {

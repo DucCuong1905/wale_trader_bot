@@ -294,8 +294,8 @@ function detectWhaleSweep(bars: any[]) {
   const lowerWick = Math.min(sO, sC) - sL;
   const upperWick = sH - Math.max(sO, sC);
 
-  const sweepLow = sL <= localLow && sC >= localLow && (lowerWick / sweepSize > 0.5);
-  const sweepHigh = sH >= localHigh && sC <= localHigh && (upperWick / sweepSize > 0.5);
+  const sweepLow = sL <= localLow && sC >= localLow && (lowerWick / sweepSize >= 0.25);
+  const sweepHigh = sH >= localHigh && sC <= localHigh && (upperWick / sweepSize >= 0.25);
 
   // 2. DISPLACEMENT & BODY SIZE
   const body = Math.abs(cC - cO);
@@ -544,7 +544,7 @@ async function traderLoop() {
     
     // --- Mean Reversion Filter (Check if price is too far from VWMA) ---
     const distFromVWMA = Math.abs(currentPrice - vwmaM1);
-    const isOverExtended = distFromVWMA > (atrM1 * 2.5); // Ngưỡng 2.5 lần ATR
+    const isOverExtended = distFromVWMA > (atrM1 * 1.2); // Ngưỡng 1.2 lần ATR
     
     botState.adx = adxM1.adx; // Lưu ADX M1 vào botState để hiển thị
     botState.vwap = vwapM1;
@@ -578,7 +578,6 @@ async function traderLoop() {
       isWithinTradingSessions() &&       
       !isOverExtended &&                 // 0. Không quá xa VWMA
       currentPrice > vwapM1 &&           // 0.1 Giá nằm trên VWAP
-      currentPrice > vwmaM1 &&           // 1. Giá nằm trên VWMA 20 (M1)
       slopeM1 > 0 &&                     // 2. Xu hướng VWMA M1 đang đi lên
       adxM1.adx >= 10 &&                 // 3. ADX M1 >= 10
       adxM1.pDI > adxM1.mDI              // 4. +DI > -DI (M1)
@@ -595,7 +594,6 @@ async function traderLoop() {
       isWithinTradingSessions() &&
       !isOverExtended &&                 // 0. Không quá xa VWMA
       currentPrice < vwapM1 &&           // 0.1 Giá nằm dưới VWAP
-      currentPrice < vwmaM1 &&           // 1. Giá nằm dưới VWMA 20 (M1)
       slopeM1 < 0 &&                     // 2. Xu hướng VWMA M1 đang đi xuống
       adxM1.adx >= 10 &&
       adxM1.mDI > adxM1.pDI
@@ -630,11 +628,10 @@ async function traderLoop() {
         const conditions = [
           `1. Khoảng cách VWMA: ${!isOverExtended ? '✅ Ok' : '❌ Quá xa'} (${distFromVWMA.toFixed(2)})`,
           `2. Giá vs VWAP: ${currentPrice > vwapM1 ? '✅ Above' : '❌ Below'}`,
-          `3. Giá vs VWMA M1: ${sig === 'LONG' ? (currentPrice > vwmaM1 ? '✅ Above' : '❌ Below') : (currentPrice < vwmaM1 ? '✅ Below' : '❌ Above')}`,
-          `4. Slope M1: ${sig === 'LONG' ? (slopeM1 > 0 ? '✅ Positive' : '❌ Negative') : (slopeM1 < 0 ? '✅ Negative' : '❌ Positive')}`,
-          `5. ADX M1 (>=10): ${adxM1.adx >= 10 ? '✅' : '❌'} (${adxM1.adx.toFixed(1)})`,
-          `6. Sweep M1: ✅ Confirmed`,
-          `7. DI Power M1: ${sig === 'LONG' ? (adxM1.pDI > adxM1.mDI ? '✅ +DI > -DI' : '❌') : (adxM1.mDI > adxM1.pDI ? '✅ -DI > +DI' : '❌')}`
+          `3. Slope M1: ${sig === 'LONG' ? (slopeM1 > 0 ? '✅ Positive' : '❌ Negative') : (slopeM1 < 0 ? '✅ Negative' : '❌ Positive')}`,
+          `4. ADX M1 (>=10): ${adxM1.adx >= 10 ? '✅' : '❌'} (${adxM1.adx.toFixed(1)})`,
+          `5. Sweep M1: ✅ Confirmed`,
+          `6. DI Power M1: ${sig === 'LONG' ? (adxM1.pDI > adxM1.mDI ? '✅ +DI > -DI' : '❌') : (adxM1.mDI > adxM1.pDI ? '✅ -DI > +DI' : '❌')}`
         ].join('\n');
 
         await sendTelegram(`🚀 [SIGNAL] **${sig}** Market Entry!\n\n` +
@@ -654,7 +651,7 @@ async function traderLoop() {
           const vnTime = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
           const conditions = [
             `1. Khoảng cách VWMA: ${!isOverExtended ? '✅ Ok' : '❌ Quá xa'} (${distFromVWMA.toFixed(2)})`,
-            `2. Giá vs VWMA M1: ${sig === 'LONG' ? (currentPrice > vwmaM1 ? '✅ Above' : '❌ Below') : (currentPrice < vwmaM1 ? '✅ Below' : '❌ Above')}`,
+            `2. Giá vs VWAP: ${currentPrice > vwapM1 ? '✅ Above' : '❌ Below'}`,
             `3. Slope M1: ${sig === 'LONG' ? (slopeM1 > 0 ? '✅ Positive' : '❌ Negative') : (slopeM1 < 0 ? '✅ Negative' : '❌ Positive')}`,
             `4. ADX M1 (>=10): ${adxM1.adx >= 10 ? '✅' : '❌'} (${adxM1.adx.toFixed(1)})`,
             `5. Sweep M1: ✅ Confirmed`,
@@ -697,8 +694,15 @@ async function startServer() {
         const netProfit = r.finalBalance - 5000; // Giả sử vốn ban đầu 5000
         const period = `${new Date(r.startTime).toLocaleDateString('vi-VN')} - ${new Date(r.endTime).toLocaleDateString('vi-VN')}`;
         
+        let monthlyStats = "";
+        if (r.monthlySnapshots && r.monthlySnapshots.length > 0) {
+          monthlyStats = "\n📅 **Thống kê mốc tháng:**\n" + 
+            r.monthlySnapshots.map((m: any) => `• ${m.date}: ${m.balance.toFixed(2)}$ (${m.totalProfitR.toFixed(2)}R)`).join('\n') + "\n";
+        }
+
         await sendTelegram(`📊 **KẾT QUẢ BACKTEST HOÀN TẤT**\n\n` +
           `🗓 **Khoảng thời gian:** ${period}\n` +
+          monthlyStats +
           `📈 **Lợi nhuận RR:** ${r.totalProfitR.toFixed(2)}R\n` +
           `💰 **Net Profit:** ${netProfit.toFixed(2)}$\n` +
           `🎯 **Win Rate:** ${winRate}%\n` +
