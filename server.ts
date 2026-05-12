@@ -27,6 +27,7 @@ const MAX_DAILY_LOSS = 0.06; // Giới hạn lỗ tối đa trong ngày (6%)
 // CẤU HÌNH PHIÊN GIAO DỊCH (LONDON & NEW YORK)
 let ENABLE_SESSION_FILTER = false; 
 const VWMA_PERIOD = 20; // Cố định VWMA 20
+let ADX_THRESHOLD = 10; // Ngưỡng ADX mặc định
 const SESSION_START_GMT = 8;  // 08:00 GMT (Mở phiên Âu)
 const SESSION_END_GMT = 21;    // 21:00 GMT (Đóng phiên Mỹ)
 
@@ -579,7 +580,7 @@ async function traderLoop() {
       !isOverExtended &&                 // 0. Không quá xa VWMA
       currentPrice > vwapM1 &&           // 0.1 Giá nằm trên VWAP
       slopeM1 > 0 &&                     // 2. Xu hướng VWMA M1 đang đi lên
-      adxM1.adx >= 10 &&                 // 3. ADX M1 >= 10
+      adxM1.adx >= ADX_THRESHOLD &&       // 3. ADX M1 >= Threshold
       adxM1.pDI > adxM1.mDI              // 4. +DI > -DI (M1)
     ) {
       if (sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm) {
@@ -595,7 +596,7 @@ async function traderLoop() {
       !isOverExtended &&                 // 0. Không quá xa VWMA
       currentPrice < vwapM1 &&           // 0.1 Giá nằm dưới VWAP
       slopeM1 < 0 &&                     // 2. Xu hướng VWMA M1 đang đi xuống
-      adxM1.adx >= 10 &&
+      adxM1.adx >= ADX_THRESHOLD &&
       adxM1.mDI > adxM1.pDI
     ) {
       if (sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm) {
@@ -629,7 +630,7 @@ async function traderLoop() {
           `1. Khoảng cách VWMA: ${!isOverExtended ? '✅ Ok' : '❌ Quá xa'} (${distFromVWMA.toFixed(2)})`,
           `2. Giá vs VWAP: ${currentPrice > vwapM1 ? '✅ Above' : '❌ Below'}`,
           `3. Slope M1: ${sig === 'LONG' ? (slopeM1 > 0 ? '✅ Positive' : '❌ Negative') : (slopeM1 < 0 ? '✅ Negative' : '❌ Positive')}`,
-          `4. ADX M1 (>=10): ${adxM1.adx >= 10 ? '✅' : '❌'} (${adxM1.adx.toFixed(1)})`,
+          `4. ADX M1 (>=${ADX_THRESHOLD}): ${adxM1.adx >= ADX_THRESHOLD ? '✅' : '❌'} (${adxM1.adx.toFixed(1)})`,
           `5. Sweep M1: ✅ Confirmed`,
           `6. DI Power M1: ${sig === 'LONG' ? (adxM1.pDI > adxM1.mDI ? '✅ +DI > -DI' : '❌') : (adxM1.mDI > adxM1.pDI ? '✅ -DI > +DI' : '❌')}`
         ].join('\n');
@@ -653,7 +654,7 @@ async function traderLoop() {
             `1. Khoảng cách VWMA: ${!isOverExtended ? '✅ Ok' : '❌ Quá xa'} (${distFromVWMA.toFixed(2)})`,
             `2. Giá vs VWAP: ${currentPrice > vwapM1 ? '✅ Above' : '❌ Below'}`,
             `3. Slope M1: ${sig === 'LONG' ? (slopeM1 > 0 ? '✅ Positive' : '❌ Negative') : (slopeM1 < 0 ? '✅ Negative' : '❌ Positive')}`,
-            `4. ADX M1 (>=10): ${adxM1.adx >= 10 ? '✅' : '❌'} (${adxM1.adx.toFixed(1)})`,
+            `4. ADX M1 (>=${ADX_THRESHOLD}): ${adxM1.adx >= ADX_THRESHOLD ? '✅' : '❌'} (${adxM1.adx.toFixed(1)})`,
             `5. Sweep M1: ✅ Confirmed`,
             `6. DI Power M1: ${sig === 'LONG' ? (adxM1.pDI > adxM1.mDI ? '✅ +DI > -DI' : '❌') : (adxM1.mDI > adxM1.pDI ? '✅ -DI > +DI' : '❌')}`
           ].join('\n');
@@ -679,12 +680,12 @@ async function startServer() {
   app.get("/api/health", (req, res) => res.json({ status: "ok" }));
   app.post("/api/backtest/run", async (req, res) => {
     if (backtestStatus.isRunning) return res.status(400).json({ error: "Running" });
-    const { startDate, endDate, rr, timeframe, enableSessionFilter } = req.body;
-    console.log(`[SERVER] Received backtest request: sessionFilter=${enableSessionFilter}`);
+    const { startDate, endDate, rr, timeframe, enableSessionFilter, adxThreshold } = req.body;
+    console.log(`[SERVER] Received backtest request: sessionFilter=${enableSessionFilter}, adxThreshold=${adxThreshold}`);
     backtestStatus.isRunning = true;
     runBacktest(startDate, endDate, rr, timeframe, enableSessionFilter, 20, p => { 
       backtestStatus.progress = p; 
-    }).then(async (r: any) => { 
+    }, adxThreshold || 10).then(async (r: any) => { 
       backtestStatus.isRunning = false; 
       backtestStatus.lastResult = r; 
       
@@ -729,13 +730,22 @@ async function startServer() {
       symbol: PAIR, last_price: botState.lastPrice, bid_ratio: botState.obRatioEMA.toFixed(2), in_position: botState.inPosition,
       signals: botState.signals.slice(0, 10), balance: botState.balance, ai_reasoning: botState.aiReasoning,
       adx: botState.adx.toFixed(1), whale_trades: { buy: b.toFixed(0), sell: s.toFixed(0), count: botState.recentWhaleTrades.length },
-      enable_session_filter: ENABLE_SESSION_FILTER, vwma_period: VWMA_PERIOD,
+      enable_session_filter: ENABLE_SESSION_FILTER, vwma_period: VWMA_PERIOD, adx_threshold: ADX_THRESHOLD,
       is_ws_connected: botState.isWsConnected
     });
   });
   app.post("/api/trading/toggle-session", (req, res) => {
     ENABLE_SESSION_FILTER = !ENABLE_SESSION_FILTER;
     res.json({ success: true, enabled: ENABLE_SESSION_FILTER });
+  });
+  app.post("/api/trading/set-adx", (req, res) => {
+    const { threshold } = req.body;
+    if (typeof threshold === 'number' && threshold >= 0) {
+      ADX_THRESHOLD = threshold;
+      res.json({ success: true, threshold: ADX_THRESHOLD });
+    } else {
+      res.status(400).json({ error: "Invalid threshold" });
+    }
   });
   app.get("/api/trading/history", (req, res) => res.json(botState.trades));
 

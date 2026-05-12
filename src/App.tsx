@@ -49,6 +49,7 @@ export default function App() {
   const [startDate, setStartDate] = useState('2026-01-01');
   const [endDate, setEndDate] = useState('2026-03-31');
   const [backtestRR, setBacktestRR] = useState(1.0);
+  const [backtestADX, setBacktestADX] = useState(10);
   const [backtestTimeframe, setBacktestTimeframe] = useState('1m');
   const [backtestSessionFilter, setBacktestSessionFilter] = useState(false);
   const [vwmaPeriod, setVwmaPeriod] = useState(20);
@@ -136,7 +137,8 @@ export default function App() {
           rr: backtestRR,
           timeframe: backtestTimeframe,
           enableSessionFilter: backtestSessionFilter,
-          vwmaPeriod: vwmaPeriod
+          vwmaPeriod: vwmaPeriod,
+          adxThreshold: backtestADX
         })
       });
       if (response.ok) {
@@ -167,6 +169,18 @@ export default function App() {
       });
     } catch (e) {
       console.error("Lỗi khi đặt VWMA:", e);
+    }
+  };
+
+  const setBotAdx = async (threshold: number) => {
+    try {
+      await fetch('/api/trading/set-adx', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ threshold })
+      });
+    } catch (e) {
+      console.error("Lỗi khi đặt ADX:", e);
     }
   };
 
@@ -224,6 +238,22 @@ export default function App() {
           </div>
 
             <div className="flex items-center gap-10">
+              <div className="flex flex-col items-end gap-1">
+                <span className="text-[9px] text-slate-500 font-black uppercase tracking-widest">ADX Filter</span>
+                <div className="flex items-center gap-3">
+                  <input 
+                    type="range" 
+                    min="5" 
+                    max="50" 
+                    step="1" 
+                    value={data?.adx_threshold || 10} 
+                    onChange={(e) => setBotAdx(parseInt(e.target.value))}
+                    className="w-24 h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                  />
+                  <span className="text-xs font-mono font-bold text-blue-400 w-6">{data?.adx_threshold || 10}</span>
+                </div>
+              </div>
+
               <button 
                 onClick={toggleSession}
                 className={cn(
@@ -682,6 +712,22 @@ export default function App() {
                             className="flex-1 accent-purple-500"
                           />
                           <span className="w-16 text-center font-mono font-black text-purple-400 bg-purple-500/10 rounded-lg py-1 border border-purple-500/30">1 : {backtestRR}</span>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 col-span-2">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">ADX Threshold Filter (Min: {backtestADX})</label>
+                        <div className="flex items-center gap-4">
+                          <input 
+                            type="range" 
+                            min="0" 
+                            max="50" 
+                            step="1" 
+                            value={backtestADX} 
+                            onChange={(e) => setBacktestADX(parseFloat(e.target.value))}
+                            className="flex-1 accent-purple-500"
+                          />
+                          <span className="w-16 text-center font-mono font-black text-purple-400 bg-purple-500/10 rounded-lg py-1 border border-purple-500/30">{backtestADX}</span>
                         </div>
                       </div>
                       <div className="space-y-2 col-span-2 flex items-center gap-4 bg-white/5 p-4 rounded-xl border border-white/10 mt-2">
