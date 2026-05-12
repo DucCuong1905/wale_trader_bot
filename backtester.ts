@@ -382,8 +382,12 @@ export async function runBacktest(
     const atrM1 = calculateATR(window, 14);
     const isInSession = isWithinSessions(allKlines[i][0]);
 
-    let isLong = adxM1.adx >= 10 && isInSession && currentPrice > vwmaM1 && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI;
-    let isShort = adxM1.adx >= 10 && isInSession && currentPrice < vwmaM1 && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI;
+    // --- Mean Reversion Filter (Check if price is too far from VWMA) ---
+    const distFromVWMA = Math.abs(currentPrice - vwmaM1);
+    const isOverExtended = distFromVWMA > (atrM1 * 2.5);
+
+    let isLong = !isOverExtended && adxM1.adx >= 10 && isInSession && currentPrice > vwmaM1 && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI;
+    let isShort = !isOverExtended && adxM1.adx >= 10 && isInSession && currentPrice < vwmaM1 && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
