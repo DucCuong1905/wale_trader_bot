@@ -437,7 +437,6 @@ export async function runBacktest(
     const vwmaM1Prev = calculateVWMA(allKlines.slice(Math.max(0, i - 101), i), 20);
     const slopeM1 = vwmaM1 - vwmaM1Prev;
     const adxM1 = calcADX(calcWindow);
-    const bbM1 = calcBB(calcWindow, 20, 2);
     const sweep = detectSweep(calcWindow);
     const atrM1 = calculateATR(calcWindow, 14);
     const isInSession = isWithinSessions(allKlines[i][0]);
@@ -470,8 +469,8 @@ export async function runBacktest(
     lastMonth = currentMonth;
     lastYear = currentYear;
 
-    let isLong = !isOverExtended && bbM1.width > 0.0015 && currentPrice > vwma5m && currentPrice > vwapM1 && adxM1.adx >= adxThreshold && isInSession && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI;
-    let isShort = !isOverExtended && bbM1.width > 0.0015 && currentPrice < vwma5m && currentPrice < vwapM1 && adxM1.adx >= adxThreshold && isInSession && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI;
+    let isLong = !isOverExtended && currentPrice > vwma5m && currentPrice > vwapM1 && adxM1.adx >= adxThreshold && isInSession && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI;
+    let isShort = !isOverExtended && currentPrice < vwma5m && currentPrice < vwapM1 && adxM1.adx >= adxThreshold && isInSession && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
