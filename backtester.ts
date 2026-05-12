@@ -373,48 +373,17 @@ export async function runBacktest(
     const window = allKlines.slice(0, i + 1);
     const currentPrice = allKlines[i][4];
     
-    // --- KHUNG 5P (TỔNG HỢP TỪ M1) ---
-    // Tìm nến M5 tương ứng trong lịch sử
-    const lookbackM1ForM5 = 200; // Đủ để tính VWMA 20 M5
-    const windowM5Raw = allKlines.slice(Math.max(0, i - lookbackM1ForM5), i + 1);
-    
-    // Hàm tổng hợp M5 từ M1
-    const resampleTo5M = (m1Bars: any[]) => {
-      const res: any[] = [];
-      let currentM5: any = null;
-      for (const bar of m1Bars) {
-        const t = bar[0];
-        const m5Start = Math.floor(t / 300000) * 300000;
-        if (!currentM5 || currentM5[0] !== m5Start) {
-          if (currentM5) res.push(currentM5);
-          currentM5 = [m5Start, bar[1], bar[2], bar[3], bar[4], bar[5]];
-        } else {
-          currentM5[2] = Math.max(currentM5[2], bar[2]); // High
-          currentM5[3] = Math.min(currentM5[3], bar[3]); // Low
-          currentM5[4] = bar[4]; // Close
-          currentM5[5] += bar[5]; // Volume
-        }
-      }
-      if (currentM5) res.push(currentM5);
-      return res;
-    };
-    
-    const barsM5 = resampleTo5M(windowM5Raw);
-    if(barsM5.length < 30) continue;
-
-    const adxM5 = calcADX(barsM5);
-    const vwmaM5 = calculateVWMA(barsM5, 20);
-    const vwmaM5Prev = calculateVWMA(barsM5.slice(0, -1), 20);
-    const slopeM5 = vwmaM5 - vwmaM5Prev;
-
     // --- KHUNG 1P (ENTRIES) ---
     const vwmaM1 = calculateVWMA(window, 20); // VWMA 20 M1
+    const vwmaM1Prev = calculateVWMA(window.slice(0, -1), 20);
+    const slopeM1 = vwmaM1 - vwmaM1Prev;
+    const adxM1 = calcADX(window);
     const sweep = detectSweep(window);
     const atrM1 = calculateATR(window, 14);
     const isInSession = isWithinSessions(allKlines[i][0]);
 
-    let isLong = adxM5.adx >= 10 && isInSession && currentPrice > vwmaM5 && currentPrice > vwmaM1 && slopeM5 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM5.pDI > adxM5.mDI;
-    let isShort = adxM5.adx >= 10 && isInSession && currentPrice < vwmaM5 && currentPrice < vwmaM1 && slopeM5 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM5.mDI > adxM5.pDI;
+    let isLong = adxM1.adx >= 10 && isInSession && currentPrice > vwmaM1 && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI;
+    let isShort = adxM1.adx >= 10 && isInSession && currentPrice < vwmaM1 && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
