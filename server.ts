@@ -351,6 +351,18 @@ function calcADX(ohlcv: any[], period: number = 14) {
   return { adx: adxl[adxl.length - 1], pDI: pDIs[pDIs.length - 1], mDI: mDIs[mDIs.length - 1] };
 }
 
+function calcBB(ohlcv: any[], period: number = 20, stdDev: number = 2) {
+  if (ohlcv.length < period) return { mid: 0, top: 0, bot: 0, width: 0 };
+  const closes = ohlcv.slice(-period).map(b => b[4]);
+  const mid = closes.reduce((a, b) => a + b, 0) / period;
+  const variance = closes.reduce((a, b) => a + Math.pow(b - mid, 2), 0) / period;
+  const sd = Math.sqrt(variance);
+  const top = mid + sd * stdDev;
+  const bot = mid - sd * stdDev;
+  const width = (top - bot) / mid;
+  return { mid, top, bot, width };
+}
+
 function calculateVWMA(bars: any[], period: number) {
   if (bars.length < period) return bars[bars.length - 1][4];
   let pv = 0, v = 0;
@@ -543,6 +555,7 @@ async function traderLoop() {
     const vwmaM1Prev = calculateVWMA(bars.slice(0, -1), 20);
     const slopeM1 = vwmaM1 - vwmaM1Prev;
     const adxM1 = calcADX(bars, 14);
+    const bbM1 = calcBB(bars, 20, 2); // Bollinger Bands M1
     const currentPrice = bars[bars.length - 1][4];
     
     // --- Khung M5 Filter ---
@@ -583,6 +596,7 @@ async function traderLoop() {
     if (
       isWithinTradingSessions() &&       
       !isOverExtended &&                 // 0. Không quá xa VWMA
+      bbM1.width > 0.0015 &&             // 0.3 Bollinger Filter: Tránh vùng quá hẹp (Squeeze)
       currentPrice > vwma5m &&           // 0.2 Giá nằm trên VWMA 5m
       currentPrice > vwapM1 &&           // 0.1 Giá nằm trên VWAP
       slopeM1 > 0 &&                     // 2. Xu hướng VWMA M1 đang đi lên
@@ -600,6 +614,7 @@ async function traderLoop() {
     if (
       isWithinTradingSessions() &&
       !isOverExtended &&                 // 0. Không quá xa VWMA
+      bbM1.width > 0.0015 &&             // 0.3 Bollinger Filter
       currentPrice < vwma5m &&           // 0.2 Giá nằm dưới VWMA 5m
       currentPrice < vwapM1 &&           // 0.1 Giá nằm dưới VWAP
       slopeM1 < 0 &&                     // 2. Xu hướng VWMA M1 đang đi xuống
@@ -635,8 +650,9 @@ async function traderLoop() {
 
         const conditions = [
           `1. Khoảng cách VWMA: ${!isOverExtended ? '✅ Ok' : '❌ Quá xa'} (${distFromVWMA.toFixed(2)})`,
-          `2. Giá vs VWMA 5m: ${currentPrice > vwma5m ? '✅ Trên' : '❌ Dưới'}`,
-          `3. Giá vs VWAP: ${currentPrice > vwapM1 ? '✅ Above' : '❌ Below'}`,
+          `2. BB Width (>0.15%): ${bbM1.width > 0.0015 ? '✅' : '❌ Squeeze'} (${(bbM1.width * 100).toFixed(2)}%)`,
+          `3. Giá vs VWMA 5m: ${currentPrice > vwma5m ? '✅ Trên' : '❌ Dưới'}`,
+          `4. Giá vs VWAP: ${currentPrice > vwapM1 ? '✅ Above' : '❌ Below'}`,
           `4. Slope M1: ${sig === 'LONG' ? (slopeM1 > 0 ? '✅ Positive' : '❌ Negative') : (slopeM1 < 0 ? '✅ Negative' : '❌ Positive')}`,
           `5. ADX M1 (>=${ADX_THRESHOLD}): ${adxM1.adx >= ADX_THRESHOLD ? '✅' : '❌'} (${adxM1.adx.toFixed(1)})`,
           `6. Sweep M1: ✅ Confirmed`,

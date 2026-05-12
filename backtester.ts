@@ -248,6 +248,18 @@ function aggregateCandles(oneMinBars: any[], windowSize: number = 15) {
   return aggregated;
 }
 
+function calcBB(ohlcv: any[], period: number = 20, stdDev: number = 2) {
+  if (ohlcv.length < period) return { mid: 0, top: 0, bot: 0, width: 0 };
+  const closes = ohlcv.slice(-period).map(b => b[4]);
+  const mid = closes.reduce((a, b) => a + b, 0) / period;
+  const variance = closes.reduce((a, b) => a + Math.pow(b - mid, 2), 0) / period;
+  const sd = Math.sqrt(variance);
+  const top = mid + sd * stdDev;
+  const bot = mid - sd * stdDev;
+  const width = (top - bot) / mid;
+  return { mid, top, bot, width };
+}
+
 function calcADX(ohlcv: any[]) {
   const period = 14;
   if (ohlcv.length < period * 2) return { adx: 0, pDI: 0, mDI: 0 };
@@ -425,6 +437,7 @@ export async function runBacktest(
     const vwmaM1Prev = calculateVWMA(allKlines.slice(Math.max(0, i - 101), i), 20);
     const slopeM1 = vwmaM1 - vwmaM1Prev;
     const adxM1 = calcADX(calcWindow);
+    const bbM1 = calcBB(calcWindow, 20, 2);
     const sweep = detectSweep(calcWindow);
     const atrM1 = calculateATR(calcWindow, 14);
     const isInSession = isWithinSessions(allKlines[i][0]);
@@ -457,8 +470,8 @@ export async function runBacktest(
     lastMonth = currentMonth;
     lastYear = currentYear;
 
-    let isLong = !isOverExtended && currentPrice > vwma5m && currentPrice > vwapM1 && adxM1.adx >= adxThreshold && isInSession && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI;
-    let isShort = !isOverExtended && currentPrice < vwma5m && currentPrice < vwapM1 && adxM1.adx >= adxThreshold && isInSession && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI;
+    let isLong = !isOverExtended && bbM1.width > 0.0015 && currentPrice > vwma5m && currentPrice > vwapM1 && adxM1.adx >= adxThreshold && isInSession && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI;
+    let isShort = !isOverExtended && bbM1.width > 0.0015 && currentPrice < vwma5m && currentPrice < vwapM1 && adxM1.adx >= adxThreshold && isInSession && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
