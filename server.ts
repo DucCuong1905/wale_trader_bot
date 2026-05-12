@@ -544,7 +544,7 @@ async function traderLoop() {
     
     // --- Mean Reversion Filter (Check if price is too far from VWMA) ---
     const distFromVWMA = Math.abs(currentPrice - vwmaM1);
-    const isOverExtended = distFromVWMA > (atrM1 * 1.2); // Ngưỡng 1.2 lần ATR
+    const isOverExtended = distFromVWMA > (atrM1 * 2);
     
     botState.adx = adxM1.adx; // Lưu ADX M1 vào botState để hiển thị
     botState.vwap = vwapM1;

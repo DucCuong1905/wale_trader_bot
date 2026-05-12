@@ -406,7 +406,7 @@ export async function runBacktest(
     const isInSession = isWithinSessions(allKlines[i][0]);
 
     const distFromVWMA = Math.abs(currentPrice - vwmaM1);
-    const isOverExtended = distFromVWMA > (atrM1 * 1.2);
+    const isOverExtended = distFromVWMA > (atrM1 * 2);
 
     // --- MONTHLY SNAPSHOT LOGIC ---
     const d = new Date(allKlines[i][0]);
