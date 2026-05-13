@@ -473,18 +473,6 @@ export async function runBacktest(
     monthlySnapshots: []
   };
 
-  // Pre-calculate daily ranges for Volatility Expansion Filter
-  const dailyRanges: { range: number }[] = [];
-  const dayMinutes = 1440;
-  for (let idx = 0; idx < allKlines.length; idx += dayMinutes) {
-    const chunk = allKlines.slice(idx, idx + dayMinutes);
-    if (chunk.length > 0) {
-      const high = Math.max(...chunk.map(k => k[2]));
-      const low = Math.min(...chunk.map(k => k[3]));
-      dailyRanges.push({ range: high - low });
-    }
-  }
-
   let lastMonth = -1;
   let lastYear = -1;
   let monthlyWins = 0;
@@ -511,17 +499,6 @@ export async function runBacktest(
     if (shouldStopBacktest) break;
     if (onProgress) onProgress(50 + ((i / allKlines.length) * 50));
 
-    // --- VOLATILITY EXPANSION FILTER (24h vs Avg 7d) ---
-    const dayIdx = Math.floor(i / 1440);
-    let isExpansion = true; // Default true if not enough history
-    if (dayIdx >= 8 && dayIdx < dailyRanges.length) {
-      const range24h = dailyRanges[dayIdx].range;
-      let sum7 = 0;
-      for (let j = 1; j <= 7; j++) sum7 += dailyRanges[dayIdx - j].range;
-      const avg7d = sum7 / 7;
-      isExpansion = range24h > avg7d;
-    }
-    
     // Kiểm tra cháy tài khoản (dưới 10$)
     if (results.finalBalance <= 10) {
       results.isLiquidated = true;
@@ -588,8 +565,8 @@ export async function runBacktest(
     lastMonth = currentMonth;
     lastYear = currentYear;
 
-    let isLong = isExpansion && !isOverExtendedLong && currentPrice > vwma5m && currentPrice > vwapM1 && adxM1.adx >= adxThreshold && isInSession && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI;
-    let isShort = isExpansion && !isOverExtendedShort && currentPrice < vwma5m && currentPrice < vwapM1 && adxM1.adx >= adxThreshold && isInSession && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI;
+    let isLong = !isOverExtendedLong && currentPrice > vwma5m && currentPrice > vwapM1 && adxM1.adx >= adxThreshold && isInSession && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI;
+    let isShort = !isOverExtendedShort && currentPrice < vwma5m && currentPrice < vwapM1 && adxM1.adx >= adxThreshold && isInSession && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
