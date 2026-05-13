@@ -713,29 +713,37 @@ async function startServer() {
       // Gửi báo cáo Telegram khi hoàn tất backtest
         if (r && !r.error) {
           const winRate = r.totalTrades > 0 ? (r.wins / r.totalTrades * 100).toFixed(1) : "0.0";
-          const netProfit = r.finalBalance - 5000; // Giả sử vốn ban đầu 5000
+          const longWR = r.longTrades > 0 ? (r.longWins / r.longTrades * 100).toFixed(1) : "0.0";
+          const shortWR = r.shortTrades > 0 ? (r.shortWins / r.shortTrades * 100).toFixed(1) : "0.0";
+          const netProfit = r.finalBalance - 5000;
           const period = `${new Date(r.startTime).toLocaleDateString('vi-VN')} - ${new Date(r.endTime).toLocaleDateString('vi-VN')}`;
           
-          let monthlyStats = "";
+          let monthlyStatsReport = "";
           if (r.monthlySnapshots && r.monthlySnapshots.length > 0) {
-            monthlyStats = "\n📅 **Thống kê mốc tháng:**\n" + 
-              r.monthlySnapshots.map((m: any) => {
-                const lwr = m.longTrades > 0 ? (m.longWins / m.longTrades * 100).toFixed(1) : "0.0";
-                const swr = m.shortTrades > 0 ? (m.shortWins / m.shortTrades * 100).toFixed(1) : "0.0";
-                return `• ${m.date}: ${m.monthlyProfit.toFixed(2)}$ (${m.monthlyProfitR.toFixed(2)}R) | WR: ${m.winRate}% (${m.trades} trades) (L: ${m.longTrades}, WL: ${m.longWins} -- S: ${m.shortTrades}, WS: ${m.shortWins})`;
-              }).join('\n') + "\n";
+            monthlyStatsReport = r.monthlySnapshots.map((m: any) => 
+              `• ${m.date}: ${m.monthlyProfit.toFixed(2)}$ (${m.monthlyProfitR.toFixed(2)}R) | WR: ${m.winRate}% (${m.trades} trades) (L: ${m.longTrades}, WL: ${m.longWins} -- S: ${m.shortTrades}, WS: ${m.shortWins})`
+            ).join('\n');
           }
 
+          // In ra Console để xem dữ liệu thực tế
+          console.log("\n" + "=".repeat(60));
+          console.log("📊 KẾT QUẢ BACKTEST THỦ CÔNG HOÀN TẤT");
+          console.log("-".repeat(60));
+          console.log(monthlyStatsReport);
+          console.log("-".repeat(60));
+          console.log(`💰 Lợi nhuận: ${r.totalProfitR.toFixed(2)}R ($${netProfit.toFixed(2)})`);
+          console.log(`📈 Win Rate: ${winRate}% (L: ${longWR}% | S: ${shortWR}%)`);
+          console.log(`🔄 Tổng lệnh: ${r.totalTrades}`);
+          console.log("=".repeat(60) + "\n");
+
           await sendTelegram(`📊 **KẾT QUẢ BACKTEST HOÀN TẤT**\n\n` +
-            `🗓 **Khoảng thời gian:** ${period}\n` +
-            monthlyStats +
-            `📈 **Lợi nhuận RR:** ${r.totalProfitR.toFixed(2)}R\n` +
-            `💰 **Net Profit:** ${netProfit.toFixed(2)}$\n` +
+            `🗓 **Giai đoạn:** ${period}\n\n` +
+            `📅 **Chi tiết từng tháng:**\n${monthlyStatsReport}\n\n` +
+            `📈 **Lợi nhuận:** ${r.totalProfitR.toFixed(2)}R ($${netProfit.toFixed(2)})\n` +
             `🎯 **Win Rate:** ${winRate}%\n` +
-            `🚀 **LONG:** ${r.longWins}/${r.longTrades} (${r.longTrades > 0 ? (r.longWins/r.longTrades*100).toFixed(1) : 0}%)\n` +
-            `📉 **SHORT:** ${r.shortWins}/${r.shortTrades} (${r.shortTrades > 0 ? (r.shortWins/r.shortTrades*100).toFixed(1) : 0}%)\n` +
-            `🔄 **Số lệnh khớp:** ${r.totalTrades}\n` +
-            `🏦 **Số dư cuối:** ${r.finalBalance.toFixed(2)}$`);
+            `🚀 **LONG:** ${r.longWins}/${r.longTrades} (${longWR}%)\n` +
+            `📉 **SHORT:** ${r.shortWins}/${r.shortTrades} (${shortWR}%)\n` +
+            `🔄 **Tổng lệnh:** ${r.totalTrades}`);
         }
     }).catch(err => {
       console.error("Backtest Error:", err);
@@ -793,37 +801,48 @@ async function startServer() {
     startWS(); 
     traderLoop(); 
 
-    // Tự động chạy backtest khi khởi động theo yêu cầu của user
-    console.log("[AUTO-BACKTEST] Bắt đầu backtest tự động từ 1/1/2022 đến 1/1/2023...");
-    runBacktest("2022-01-01T00:00:00Z", "2023-01-01T00:00:00Z", RR, "1m", ENABLE_SESSION_FILTER, VWMA_PERIOD, undefined, ADX_THRESHOLD)
-      .then((r: any) => {
+    // 10. AUTO-BACKTEST ON STARTUP
+    setTimeout(async () => {
+      console.log("[AUTO-BACKTEST] Bắt đầu backtest tự động từ 1/1/2022 đến 1/1/2023...");
+      try {
+        const r = await runBacktest("2022-01-01T00:00:00Z", "2023-01-01T00:00:00Z", RR, "1m", ENABLE_SESSION_FILTER, VWMA_PERIOD, undefined, ADX_THRESHOLD);
         if (r && !r.error) {
           const wr = r.totalTrades > 0 ? (r.wins / r.totalTrades * 100).toFixed(1) : "0.0";
           const longWR = r.longTrades > 0 ? (r.longWins / r.longTrades * 100).toFixed(1) : "0.0";
           const shortWR = r.shortTrades > 0 ? (r.shortWins / r.shortTrades * 100).toFixed(1) : "0.0";
+          const netProfit = r.finalBalance - 5000;
 
-          console.log("\n" + "=".repeat(45));
-          console.log("📊 KẾT QUẢ BACKTEST TỰ ĐỘNG (2022-2023)");
-          console.log("-".repeat(45));
-          console.log(`📅 Giai đoạn: 01/01/2022 - 01/01/2023`);
-          console.log(`💰 Tổng Lợi nhuận: ${r.totalProfitR.toFixed(2)}R ($${(r.finalBalance - 5000).toFixed(2)})`);
-          console.log(`📈 Tổng Win Rate: ${wr}%`);
-          console.log(`🔄 Tổng số lệnh: ${r.totalTrades}`);
-          console.log("-".repeat(45));
-          
+          let monthlyStatsReport = "";
           if (r.monthlySnapshots && r.monthlySnapshots.length > 0) {
-            r.monthlySnapshots.forEach((m: any) => {
-              console.log(`• ${m.date}: ${m.monthlyProfit.toFixed(2)}$ (${m.monthlyProfitR.toFixed(2)}R) | WR: ${m.winRate}% (${m.trades} trades) (L: ${m.longTrades}, WL: ${m.longWins} -- S: ${m.shortTrades}, WS: ${m.shortWins})`);
-            });
-            console.log("-".repeat(45));
+            monthlyStatsReport = r.monthlySnapshots.map((m: any) => 
+              `• ${m.date}: ${m.monthlyProfit.toFixed(2)}$ (${m.monthlyProfitR.toFixed(2)}R) | WR: ${m.winRate}% (${m.trades} trades) (L: ${m.longTrades}, WL: ${m.longWins} -- S: ${m.shortTrades}, WS: ${m.shortWins})`
+            ).join('\n');
           }
 
-          console.log(`🚀 LONG total: ${r.longTrades} | Wins: ${r.longWins} (${longWR}%)`);
-          console.log(`📉 SHORT total: ${r.shortTrades} | Wins: ${r.shortWins} (${shortWR}%)`);
-          console.log("=".repeat(45) + "\n");
+          // Log ra Console
+          console.log("\n" + "=".repeat(60));
+          console.log("📊 KẾT QUẢ BACKTEST TỰ ĐỘNG (2022-2023)");
+          console.log("-".repeat(60));
+          console.log(monthlyStatsReport);
+          console.log("-".repeat(60));
+          console.log(`💰 Tổng Lợi nhuận: ${r.totalProfitR.toFixed(2)}R ($${netProfit.toFixed(2)})`);
+          console.log(`📈 Tổng Win Rate: ${wr}% | LONG: ${longWR}% | SHORT: ${shortWR}%`);
+          console.log(`🔄 Tổng số lệnh: ${r.totalTrades} (L: ${r.longTrades} | S: ${r.shortTrades})`);
+          console.log("=".repeat(60) + "\n");
+
+          // Gửi lên Telegram
+          await sendTelegram(`📊 **KẾT QUẢ AUTO-BACKTEST (2022)**\n\n` +
+            `📅 **Chi tiết từng tháng:**\n${monthlyStatsReport}\n\n` +
+            `📈 **Lợi nhuận:** ${r.totalProfitR.toFixed(2)}R ($${netProfit.toFixed(2)})\n` +
+            `🎯 **Win Rate:** ${wr}%\n` +
+            `🚀 **LONG:** ${r.longWins}/${r.longTrades} (${longWR}%)\n` +
+            `📉 **SHORT:** ${r.shortWins}/${r.shortTrades} (${shortWR}%)\n` +
+            `🔄 **Tổng lệnh:** ${r.totalTrades}`);
         }
-      })
-      .catch(err => console.error("[AUTO-BACKTEST ERROR]", err));
+      } catch (err) {
+        console.error("[AUTO-BACKTEST ERROR]", err);
+      }
+    }, 5000);
   });
 }
 
