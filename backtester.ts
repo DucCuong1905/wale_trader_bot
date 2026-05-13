@@ -496,7 +496,7 @@ export async function runBacktest(
 
     const distFromVWMA = Math.abs(currentPrice - vwmaM1);
     const isOverExtendedLong = distFromVWMA > (atrM1 * 2);
-    const isOverExtendedShort = distFromVWMA > (atrM1 * 4);
+    const isOverExtendedShort = distFromVWMA > (atrM1 * 2.5);
 
     // --- MONTHLY SNAPSHOT LOGIC ---
     const d = new Date(allKlines[i][0]);

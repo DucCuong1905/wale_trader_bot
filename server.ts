@@ -563,7 +563,7 @@ async function traderLoop() {
     // --- Mean Reversion Filter (Check if price is too far from VWMA) ---
     const distFromVWMA = Math.abs(currentPrice - vwmaM1);
     const isOverExtendedLong = distFromVWMA > (atrM1 * 2);
-    const isOverExtendedShort = distFromVWMA > (atrM1 * 4);
+    const isOverExtendedShort = distFromVWMA > (atrM1 * 2.5);
     
     botState.adx = adxM1.adx; // Lưu ADX M1 vào botState để hiển thị
     botState.vwap = vwapM1;
@@ -612,7 +612,7 @@ async function traderLoop() {
     // ========================================================
     if (
       isWithinTradingSessions() &&
-      !isOverExtendedShort &&                 // 0. Không quá xa VWMA (4*ATR)
+      !isOverExtendedShort &&                 // 0. Không quá xa VWMA (2.5*ATR)
       currentPrice < vwma5m &&           // 0.2 Giá nằm dưới VWMA 5m
       currentPrice < vwapM1 &&           // 0.1 Giá nằm dưới VWAP
       slopeM1 < 0 &&                     // 2. Xu hướng VWMA M1 đang đi xuống
@@ -801,49 +801,6 @@ async function startServer() {
 
     startWS(); 
     traderLoop(); 
-
-    // 10. AUTO-BACKTEST ON STARTUP
-    setTimeout(async () => {
-      console.log("[AUTO-BACKTEST] Bắt đầu backtest tự động từ 1/1/2025 đến 1/1/2026...");
-      try {
-        const r = await runBacktest("2025-01-01T00:00:00Z", "2026-01-01T00:00:00Z", RR, "1m", ENABLE_SESSION_FILTER, VWMA_PERIOD, undefined, ADX_THRESHOLD) as any;
-        if (r && !r.error) {
-          const wr = r.totalTrades > 0 ? (r.wins / r.totalTrades * 100).toFixed(1) : "0.0";
-          const longWR = r.longTrades > 0 ? (r.longWins / r.longTrades * 100).toFixed(1) : "0.0";
-          const shortWR = r.shortTrades > 0 ? (r.shortWins / r.shortTrades * 100).toFixed(1) : "0.0";
-          const netProfit = r.finalBalance - 5000;
-
-          let monthlyStatsReport = "";
-          if (r.monthlySnapshots && r.monthlySnapshots.length > 0) {
-            monthlyStatsReport = r.monthlySnapshots.map((m: any) => 
-              `• ${m.date}: ${m.monthlyProfit.toFixed(2)}$ (${m.monthlyProfitR.toFixed(2)}R) | WR: ${m.winRate}% (${m.trades} trades) (L: ${m.longTrades}, WL: ${m.longWins} -- S: ${m.shortTrades}, WS: ${m.shortWins})`
-            ).join('\n');
-          }
-
-          // Log ra Console
-          console.log("\n" + "=".repeat(60));
-          console.log("📊 KẾT QUẢ BACKTEST TỰ ĐỘNG (2025-2026)");
-          console.log("-".repeat(60));
-          console.log(monthlyStatsReport);
-          console.log("-".repeat(60));
-          console.log(`💰 Tổng Lợi nhuận: ${r.totalProfitR.toFixed(2)}R ($${netProfit.toFixed(2)})`);
-          console.log(`📈 Tổng Win Rate: ${wr}% | LONG: ${longWR}% | SHORT: ${shortWR}%`);
-          console.log(`🔄 Tổng số lệnh: ${r.totalTrades} (L: ${r.longTrades} | S: ${r.shortTrades})`);
-          console.log("=".repeat(60) + "\n");
-
-          // Gửi lên Telegram
-          await sendTelegram(`📊 **KẾT QUẢ AUTO-BACKTEST (2025)**\n\n` +
-            `📅 **Chi tiết từng tháng:**\n${monthlyStatsReport}\n\n` +
-            `📈 **Lợi nhuận:** ${r.totalProfitR.toFixed(2)}R ($${netProfit.toFixed(2)})\n` +
-            `🎯 **Win Rate:** ${wr}%\n` +
-            `🚀 **LONG:** ${r.longWins}/${r.longTrades} (${longWR}%)\n` +
-            `📉 **SHORT:** ${r.shortWins}/${r.shortTrades} (${shortWR}%)\n` +
-            `🔄 **Tổng lệnh:** ${r.totalTrades}`);
-        }
-      } catch (err) {
-        console.error("[AUTO-BACKTEST ERROR]", err);
-      }
-    }, 5000);
   });
 }
 
