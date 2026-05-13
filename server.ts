@@ -786,6 +786,30 @@ async function startServer() {
 
     startWS(); 
     traderLoop(); 
+
+    // Tự động chạy backtest khi khởi động theo yêu cầu của user
+    console.log("[AUTO-BACKTEST] Bắt đầu backtest tự động từ 1/1/2022 đến 1/1/2023...");
+    runBacktest("2022-01-01T00:00:00Z", "2023-01-01T00:00:00Z", RR, "1m", ENABLE_SESSION_FILTER, VWMA_PERIOD, undefined, ADX_THRESHOLD)
+      .then((r: any) => {
+        if (r && !r.error) {
+          const wr = r.totalTrades > 0 ? (r.wins / r.totalTrades * 100).toFixed(1) : "0.0";
+          const longWR = r.longTrades > 0 ? (r.longWins / r.longTrades * 100).toFixed(1) : "0.0";
+          const shortWR = r.shortTrades > 0 ? (r.shortWins / r.shortTrades * 100).toFixed(1) : "0.0";
+
+          console.log("\n" + "=".repeat(45));
+          console.log("📊 KẾT QUẢ BACKTEST TỰ ĐỘNG (2022-2023)");
+          console.log("-".repeat(45));
+          console.log(`📅 Giai đoạn: 01/01/2022 - 01/01/2023`);
+          console.log(`💰 Lợi nhuận: ${r.totalProfitR.toFixed(2)}R ($${(r.finalBalance - 5000).toFixed(2)})`);
+          console.log(`📈 Tổng Win Rate: ${wr}%`);
+          console.log(`🔄 Tổng số lệnh: ${r.totalTrades}`);
+          console.log("-".repeat(45));
+          console.log(`🚀 LONG total: ${r.longTrades} | Wins: ${r.longWins} (${longWR}%)`);
+          console.log(`📉 SHORT total: ${r.shortTrades} | Wins: ${r.shortWins} (${shortWR}%)`);
+          console.log("=".repeat(45) + "\n");
+        }
+      })
+      .catch(err => console.error("[AUTO-BACKTEST ERROR]", err));
   });
 }
 

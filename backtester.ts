@@ -38,6 +38,10 @@ interface BacktestResult {
   totalTrades: number;
   wins: number;
   losses: number;
+  longTrades: number;
+  longWins: number;
+  shortTrades: number;
+  shortWins: number;
   cancelledTrades: number;
   totalPnL: number;
   finalBalance: number;
@@ -58,6 +62,10 @@ let results: BacktestResult = {
   totalTrades: 0,
   wins: 0,
   losses: 0,
+  longTrades: 0,
+  longWins: 0,
+  shortTrades: 0,
+  shortWins: 0,
   cancelledTrades: 0,
   totalPnL: 0,
   finalBalance: INITIAL_BALANCE,
@@ -380,6 +388,10 @@ export async function runBacktest(
     totalTrades: 0, 
     wins: 0, 
     losses: 0, 
+    longTrades: 0,
+    longWins: 0,
+    shortTrades: 0,
+    shortWins: 0,
     cancelledTrades: 0,
     totalPnL: 0, 
     finalBalance: INITIAL_BALANCE, 
@@ -519,8 +531,13 @@ export async function runBacktest(
       results.finalBalance += dollarPnL; 
 
       results.totalTrades++;
+      if (type === "LONG") results.longTrades++;
+      else results.shortTrades++;
+
       if (status === "WIN") {
         results.wins++;
+        if (type === "LONG") results.longWins++;
+        else results.shortWins++;
         results.displaceWins++;
         monthlyWins++;
       } else {
