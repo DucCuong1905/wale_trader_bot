@@ -21,6 +21,8 @@ let backtestDataCache: {
   data: any[]
 } | null = null;
 
+const SPECIAL_CACHE_FILE = path.join(DATA_DIR, "backtest_data_2026_special_v2.json");
+
 function getCleanEnv(key: string) {
   const val = process.env[key];
   if (!val) return "";
@@ -374,44 +376,72 @@ export async function runBacktest(
   const startTs = exchange.parse8601(startDate);
   const endTs = exchange.parse8601(endDate);
 
-  // KIỂM TRA CACHE
-  if (
-    backtestDataCache &&
-    backtestDataCache.pair === PAIR &&
-    backtestDataCache.timeframe === timeframe &&
-    backtestDataCache.start === startDate &&
-    backtestDataCache.end === endDate
-  ) {
-    console.log(`[BACKTEST] ⚡ Sử dụng dữ liệu từ Cache (${backtestDataCache.data.length} nến)`);
-    allKlines = backtestDataCache.data;
-  } else {
-    console.log(`[BACKTEST] 🌐 Fetching dữ liệu mới từ sàn...`);
-    let since = startTs;
-    while (since < endTs) {
-      if (shouldStopBacktest) break;
-      try {
-        const klines = await fetchOHLCVWithRetry(exchange, PAIR, timeframe, since, 1000);
-        if (!klines.length) break;
-        allKlines.push(...klines);
-        since = klines[klines.length - 1][0] + 1;
-        console.log(`Fetched ${allKlines.length} klines...`);
-        if (onProgress) onProgress(Math.min(50, (allKlines.length / 3000) * 50));
-      } catch (err: any) {
-        console.error("❌ Lỗi nghiêm trọng khi tải dữ liệu backtest:", err.message);
-        throw new Error(`Không thể kết nối với sàn Binance để tải dữ liệu: ${err.message}`);
-      }
+  // KIỂM TRA PHẠM VI ĐẶC BIỆT (Tháng 1 -> Tháng 5 năm 2026) ĐỂ CACHE VĨNH VIỄN
+  const isSpecialRange = (startDate.startsWith("2026-01-01") && endDate.startsWith("2026-05-01"));
+
+  if (isSpecialRange && fs.existsSync(SPECIAL_CACHE_FILE)) {
+    try {
+      console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ VÀNG (2026-01-01 -> 2026-05-01)`);
+      console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE VĨNH VIỄN từ ổ đĩa...`);
+      const rawData = fs.readFileSync(SPECIAL_CACHE_FILE, "utf-8");
+      allKlines = JSON.parse(rawData);
+      console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
+    } catch (e) {
+      console.error("[BACKTEST] ❌ Lỗi khi đọc cache vĩnh viễn, sẽ fetch lại:", e);
     }
-    
-    // Lưu vào Cache
-    if (!shouldStopBacktest && allKlines.length > 0) {
-      backtestDataCache = {
-        pair: PAIR,
-        timeframe,
-        start: startDate,
-        end: endDate,
-        data: allKlines
-      };
-      console.log(`[BACKTEST] ✅ Đã lưu dữ liệu vào Cache (${allKlines.length} nến)`);
+  }
+
+  if (allKlines.length === 0) {
+    // KIỂM TRA CACHE TRONG BỘ NHỚ (Cho các khung giờ khác)
+    if (
+      backtestDataCache &&
+      backtestDataCache.pair === PAIR &&
+      backtestDataCache.timeframe === timeframe &&
+      backtestDataCache.start === startDate &&
+      backtestDataCache.end === endDate
+    ) {
+      console.log(`[BACKTEST] ⚡ Sử dụng dữ liệu từ Cache bộ nhớ (${backtestDataCache.data.length} nến)`);
+      allKlines = backtestDataCache.data;
+    } else {
+      console.log(`[BACKTEST] 🌐 Fetching dữ liệu mới từ sàn...`);
+      let since = startTs;
+      while (since < endTs) {
+        if (shouldStopBacktest) break;
+        try {
+          const klines = await fetchOHLCVWithRetry(exchange, PAIR, timeframe, since, 1000);
+          if (!klines.length) break;
+          allKlines.push(...klines);
+          since = klines[klines.length - 1][0] + 1;
+          console.log(`Fetched ${allKlines.length} klines...`);
+          if (onProgress) onProgress(Math.min(50, (allKlines.length / 3000) * 50));
+        } catch (err: any) {
+          console.error("❌ Lỗi nghiêm trọng khi tải dữ liệu backtest:", err.message);
+          throw new Error(`Không thể kết nối với sàn Binance để tải dữ liệu: ${err.message}`);
+        }
+      }
+      
+      // Lưu vào Cache bộ nhớ
+      if (!shouldStopBacktest && allKlines.length > 0) {
+        backtestDataCache = {
+          pair: PAIR,
+          timeframe,
+          start: startDate,
+          end: endDate,
+          data: allKlines
+        };
+        console.log(`[BACKTEST] ✅ Đã lưu dữ liệu vào Cache bộ nhớ (${allKlines.length} nến)`);
+
+        // NẾU LÀ KHUNG ĐẶC BIỆT THÌ LƯU VÀO FILE
+        if (isSpecialRange) {
+          try {
+            console.log(`[BACKTEST] 💾 Đang lưu dữ liệu CACHE VĨNH VIỄN vào ổ đĩa...`);
+            fs.writeFileSync(SPECIAL_CACHE_FILE, JSON.stringify(allKlines));
+            console.log(`[BACKTEST] ✅ Hoàn tất lưu cache vĩnh viễn.`);
+          } catch (e) {
+            console.error("[BACKTEST] ❌ Lỗi khi ghi cache vĩnh viễn:", e);
+          }
+        }
+      }
     }
   }
 
