@@ -563,7 +563,7 @@ async function traderLoop() {
     // --- Mean Reversion Filter (Check if price is too far from VWMA) ---
     const distFromVWMA = Math.abs(currentPrice - vwmaM1);
     const isOverExtendedLong = distFromVWMA > (atrM1 * 2);
-    const isOverExtendedShort = distFromVWMA > (atrM1 * 2.5);
+    const isOverExtendedShort = distFromVWMA > (atrM1 * 2);
     
     botState.adx = adxM1.adx; // Lưu ADX M1 vào botState để hiển thị
     botState.vwap = vwapM1;
@@ -612,7 +612,7 @@ async function traderLoop() {
     // ========================================================
     if (
       isWithinTradingSessions() &&
-      !isOverExtendedShort &&                 // 0. Không quá xa VWMA (2.5*ATR)
+      !isOverExtendedShort &&                 // 0. Không quá xa VWMA (2*ATR)
       currentPrice < vwma5m &&           // 0.2 Giá nằm dưới VWMA 5m
       currentPrice < vwapM1 &&           // 0.1 Giá nằm dưới VWAP
       slopeM1 < 0 &&                     // 2. Xu hướng VWMA M1 đang đi xuống
