@@ -515,6 +515,8 @@ export async function runBacktest(
     // --- KHUNG 1h FILTER ---
     const bars1h = aggregateCandles(calcWindow5mRaw, 60);
     const vwma1h = calculateVWMA(bars1h, 20);
+    const prevVwma1h = calculateVWMA(bars1h.slice(0, -1), 20);
+    const slope1h = vwma1h - prevVwma1h;
 
     // --- KHUNG 1P (ENTRIES) ---
     const currentPrice = allKlines[i][4];
@@ -569,8 +571,8 @@ export async function runBacktest(
     lastMonth = currentMonth;
     lastYear = currentYear;
 
-    let isLong = !isOverExtendedLong && currentPrice > vwma5m && currentPrice > vwma1h && currentPrice > vwapM1 && adxM1.adx >= adxThreshold && isInSession && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI;
-    let isShort = !isOverExtendedShort && currentPrice < vwma5m && currentPrice < vwma1h && currentPrice < vwapM1 && adxM1.adx >= adxThreshold && isInSession && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI;
+    let isLong = !isOverExtendedLong && currentPrice > vwma5m && currentPrice > vwma1h && slope1h > 0 && currentPrice > vwapM1 && adxM1.adx >= adxThreshold && isInSession && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI;
+    let isShort = !isOverExtendedShort && currentPrice < vwma5m && currentPrice < vwma1h && slope1h < 0 && currentPrice < vwapM1 && adxM1.adx >= adxThreshold && isInSession && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";

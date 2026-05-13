@@ -567,6 +567,8 @@ async function traderLoop() {
 
     // --- Khung 1h Filter ---
     const vwma1h = calculateVWMA(bars1h, 20);
+    const prevVwma1h = calculateVWMA(bars1h.slice(0, -1), 20);
+    const slope1h = vwma1h - prevVwma1h;
     
     // --- Mean Reversion Filter (Check if price is too far from VWMA) ---
     const distFromVWMA = Math.abs(currentPrice - vwmaM1);
@@ -606,6 +608,7 @@ async function traderLoop() {
       !isOverExtendedLong &&                 // 0. Không quá xa VWMA (2*ATR)
       currentPrice > vwma5m &&           // 0.2 Giá nằm trên VWMA 5m
       currentPrice > vwma1h &&          // 0.3 Giá nằm trên VWMA 1h
+      slope1h > 0 &&                    // 0.4 VWMA 1h đang hướng lên
       currentPrice > vwapM1 &&           // 0.1 Giá nằm trên VWAP
       slopeM1 > 0 &&                     // 2. Xu hướng VWMA M1 đang đi lên
       adxM1.adx >= ADX_THRESHOLD &&       // 3. ADX M1 >= Threshold
@@ -624,6 +627,7 @@ async function traderLoop() {
       !isOverExtendedShort &&                 // 0. Không quá xa VWMA (2*ATR)
       currentPrice < vwma5m &&           // 0.2 Giá nằm dưới VWMA 5m
       currentPrice < vwma1h &&          // 0.3 Giá nằm dưới VWMA 1h
+      slope1h < 0 &&                    // 0.4 VWMA 1h đang hướng xuống
       currentPrice < vwapM1 &&           // 0.1 Giá nằm dưới VWAP
       slopeM1 < 0 &&                     // 2. Xu hướng VWMA M1 đang đi xuống
       adxM1.adx >= ADX_THRESHOLD &&
@@ -660,11 +664,12 @@ async function traderLoop() {
           `1. Khoảng cách VWMA: ${sig === 'LONG' ? (!isOverExtendedLong ? '✅ Ok' : '❌ Quá xa') : (!isOverExtendedShort ? '✅ Ok' : '❌ Quá xa')} (${distFromVWMA.toFixed(2)})`,
           `2. Giá vs VWMA 5m: ${currentPrice > vwma5m ? '✅ Trên' : '❌ Dưới'}`,
           `3. Giá vs VWMA 1h: ${currentPrice > vwma1h ? '✅ Trên' : '❌ Dưới'}`,
-          `4. Giá vs VWAP: ${currentPrice > vwapM1 ? '✅ Above' : '❌ Below'}`,
-          `5. Slope M1: ${sig === 'LONG' ? (slopeM1 > 0 ? '✅ Positive' : '❌ Negative') : (slopeM1 < 0 ? '✅ Negative' : '❌ Positive')}`,
-          `6. ADX M1 (>=${ADX_THRESHOLD}): ${adxM1.adx >= ADX_THRESHOLD ? '✅' : '❌'} (${adxM1.adx.toFixed(1)})`,
-          `7. Sweep M1: ✅ Confirmed`,
-          `8. DI Power M1: ${sig === 'LONG' ? (adxM1.pDI > adxM1.mDI ? '✅ +DI > -DI' : '❌') : (adxM1.mDI > adxM1.pDI ? '✅ -DI > +DI' : '❌')}`
+          `4. Slope 1h: ${slope1h > 0 ? '✅ Up' : '❌ Down'} (${slope1h.toFixed(2)})`,
+          `5. Giá vs VWAP: ${currentPrice > vwapM1 ? '✅ Above' : '❌ Below'}`,
+          `6. Slope M1: ${sig === 'LONG' ? (slopeM1 > 0 ? '✅ Positive' : '❌ Negative') : (slopeM1 < 0 ? '✅ Negative' : '❌ Positive')}`,
+          `7. ADX M1 (>=${ADX_THRESHOLD}): ${adxM1.adx >= ADX_THRESHOLD ? '✅' : '❌'} (${adxM1.adx.toFixed(1)})`,
+          `8. Sweep M1: ✅ Confirmed`,
+          `9. DI Power M1: ${sig === 'LONG' ? (adxM1.pDI > adxM1.mDI ? '✅ +DI > -DI' : '❌') : (adxM1.mDI > adxM1.pDI ? '✅ -DI > +DI' : '❌')}`
         ].join('\n');
 
         await sendTelegram(`🚀 [SIGNAL] **${sig}** Market Entry!\n\n` +
@@ -686,11 +691,12 @@ async function traderLoop() {
             `1. Khoảng cách VWMA: ${sig === 'LONG' ? (!isOverExtendedLong ? '✅ Ok' : '❌ Quá xa') : (!isOverExtendedShort ? '✅ Ok' : '❌ Quá xa')} (${distFromVWMA.toFixed(2)})`,
             `2. Giá vs VWMA 5m: ${currentPrice > vwma5m ? '✅ Trên' : '❌ Dưới'}`,
             `3. Giá vs VWMA 1h: ${currentPrice > vwma1h ? '✅ Trên' : '❌ Dưới'}`,
-            `4. Giá vs VWAP: ${currentPrice > vwapM1 ? '✅ Above' : '❌ Below'}`,
-            `5. Slope M1: ${sig === 'LONG' ? (slopeM1 > 0 ? '✅ Positive' : '❌ Negative') : (slopeM1 < 0 ? '✅ Negative' : '❌ Positive')}`,
-            `6. ADX M1 (>=${ADX_THRESHOLD}): ${adxM1.adx >= ADX_THRESHOLD ? '✅' : '❌'} (${adxM1.adx.toFixed(1)})`,
-            `7. Sweep M1: ✅ Confirmed`,
-            `8. DI Power M1: ${sig === 'LONG' ? (adxM1.pDI > adxM1.mDI ? '✅ +DI > -DI' : '❌') : (adxM1.mDI > adxM1.pDI ? '✅ -DI > +DI' : '❌')}`
+            `4. Slope 1h: ${slope1h > 0 ? '✅ Up' : '❌ Down'} (${slope1h.toFixed(2)})`,
+            `5. Giá vs VWAP: ${currentPrice > vwapM1 ? '✅ Above' : '❌ Below'}`,
+            `6. Slope M1: ${sig === 'LONG' ? (slopeM1 > 0 ? '✅ Positive' : '❌ Negative') : (slopeM1 < 0 ? '✅ Negative' : '❌ Positive')}`,
+            `7. ADX M1 (>=${ADX_THRESHOLD}): ${adxM1.adx >= ADX_THRESHOLD ? '✅' : '❌'} (${adxM1.adx.toFixed(1)})`,
+            `8. Sweep M1: ✅ Confirmed`,
+            `9. DI Power M1: ${sig === 'LONG' ? (adxM1.pDI > adxM1.mDI ? '✅ +DI > -DI' : '❌') : (adxM1.mDI > adxM1.pDI ? '✅ -DI > +DI' : '❌')}`
           ].join('\n');
 
           await sendTelegram(`⚡ [SIGNAL] **${sig}** Market Order (Live)!\n\n` +
