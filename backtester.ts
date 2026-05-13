@@ -412,6 +412,12 @@ export async function runBacktest(
   let lastYear = -1;
   let monthlyWins = 0;
   let monthlyLosses = 0;
+  let monthlyLongTrades = 0;
+  let monthlyLongWins = 0;
+  let monthlyShortTrades = 0;
+  let monthlyShortWins = 0;
+  let monthlyPnL = 0;
+  let monthlyProfitR = 0;
   let monthlySnapshots: any[] = [];
 
   let sessionSkippedCount = 0;
@@ -469,14 +475,26 @@ export async function runBacktest(
       monthlySnapshots.push({
         date: `Tháng ${lastMonth + 1}/${lastYear}`,
         balance: results.finalBalance,
+        monthlyProfit: monthlyPnL,
+        monthlyProfitR: monthlyProfitR,
         totalProfitR: results.totalProfitR,
         winRate: monthWinRate.toFixed(1),
-        trades: totalMonthTrades
+        trades: totalMonthTrades,
+        longTrades: monthlyLongTrades,
+        longWins: monthlyLongWins,
+        shortTrades: monthlyShortTrades,
+        shortWins: monthlyShortWins
       });
 
       // Reset monthly counters
       monthlyWins = 0;
       monthlyLosses = 0;
+      monthlyLongTrades = 0;
+      monthlyLongWins = 0;
+      monthlyShortTrades = 0;
+      monthlyShortWins = 0;
+      monthlyPnL = 0;
+      monthlyProfitR = 0;
     }
     lastMonth = currentMonth;
     lastYear = currentYear;
@@ -529,15 +547,27 @@ export async function runBacktest(
       results.totalFees += estimatedFee;
       results.totalSlippage += estimatedSlippage;
       results.finalBalance += dollarPnL; 
+      monthlyPnL += dollarPnL;
+      monthlyProfitR += pnlR;
 
       results.totalTrades++;
-      if (type === "LONG") results.longTrades++;
-      else results.shortTrades++;
+      if (type === "LONG") {
+        results.longTrades++;
+        monthlyLongTrades++;
+      } else {
+        results.shortTrades++;
+        monthlyShortTrades++;
+      }
 
       if (status === "WIN") {
         results.wins++;
-        if (type === "LONG") results.longWins++;
-        else results.shortWins++;
+        if (type === "LONG") {
+          results.longWins++;
+          monthlyLongWins++;
+        } else {
+          results.shortWins++;
+          monthlyShortWins++;
+        }
         results.displaceWins++;
         monthlyWins++;
       } else {

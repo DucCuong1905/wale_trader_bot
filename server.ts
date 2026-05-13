@@ -711,26 +711,32 @@ async function startServer() {
       backtestStatus.lastResult = r; 
       
       // Gửi báo cáo Telegram khi hoàn tất backtest
-      if (r && !r.error) {
-        const winRate = r.totalTrades > 0 ? (r.wins / r.totalTrades * 100).toFixed(1) : "0.0";
-        const netProfit = r.finalBalance - 5000; // Giả sử vốn ban đầu 5000
-        const period = `${new Date(r.startTime).toLocaleDateString('vi-VN')} - ${new Date(r.endTime).toLocaleDateString('vi-VN')}`;
-        
-        let monthlyStats = "";
-        if (r.monthlySnapshots && r.monthlySnapshots.length > 0) {
-          monthlyStats = "\n📅 **Thống kê mốc tháng:**\n" + 
-            r.monthlySnapshots.map((m: any) => `• ${m.date}: ${m.balance.toFixed(2)}$ (${m.totalProfitR.toFixed(2)}R) | WR: ${m.winRate}% (${m.trades} trades)`).join('\n') + "\n";
-        }
+        if (r && !r.error) {
+          const winRate = r.totalTrades > 0 ? (r.wins / r.totalTrades * 100).toFixed(1) : "0.0";
+          const netProfit = r.finalBalance - 5000; // Giả sử vốn ban đầu 5000
+          const period = `${new Date(r.startTime).toLocaleDateString('vi-VN')} - ${new Date(r.endTime).toLocaleDateString('vi-VN')}`;
+          
+          let monthlyStats = "";
+          if (r.monthlySnapshots && r.monthlySnapshots.length > 0) {
+            monthlyStats = "\n📅 **Thống kê mốc tháng:**\n" + 
+              r.monthlySnapshots.map((m: any) => {
+                const lwr = m.longTrades > 0 ? (m.longWins / m.longTrades * 100).toFixed(1) : "0.0";
+                const swr = m.shortTrades > 0 ? (m.shortWins / m.shortTrades * 100).toFixed(1) : "0.0";
+                return `• ${m.date}: ${m.monthlyProfit.toFixed(2)}$ (${m.monthlyProfitR.toFixed(2)}R) | WR: ${m.winRate}% (${m.trades} trades) (L: ${m.longTrades}, WL: ${m.longWins} -- S: ${m.shortTrades}, WS: ${m.shortWins})`;
+              }).join('\n') + "\n";
+          }
 
-        await sendTelegram(`📊 **KẾT QUẢ BACKTEST HOÀN TẤT**\n\n` +
-          `🗓 **Khoảng thời gian:** ${period}\n` +
-          monthlyStats +
-          `📈 **Lợi nhuận RR:** ${r.totalProfitR.toFixed(2)}R\n` +
-          `💰 **Net Profit:** ${netProfit.toFixed(2)}$\n` +
-          `🎯 **Win Rate:** ${winRate}%\n` +
-          `🔄 **Số lệnh khớp:** ${r.totalTrades} (Thắng: ${r.wins} | Thua: ${r.losses})\n` +
-          `🏦 **Số dư cuối:** ${r.finalBalance.toFixed(2)}$`);
-      }
+          await sendTelegram(`📊 **KẾT QUẢ BACKTEST HOÀN TẤT**\n\n` +
+            `🗓 **Khoảng thời gian:** ${period}\n` +
+            monthlyStats +
+            `📈 **Lợi nhuận RR:** ${r.totalProfitR.toFixed(2)}R\n` +
+            `💰 **Net Profit:** ${netProfit.toFixed(2)}$\n` +
+            `🎯 **Win Rate:** ${winRate}%\n` +
+            `🚀 **LONG:** ${r.longWins}/${r.longTrades} (${r.longTrades > 0 ? (r.longWins/r.longTrades*100).toFixed(1) : 0}%)\n` +
+            `📉 **SHORT:** ${r.shortWins}/${r.shortTrades} (${r.shortTrades > 0 ? (r.shortWins/r.shortTrades*100).toFixed(1) : 0}%)\n` +
+            `🔄 **Số lệnh khớp:** ${r.totalTrades}\n` +
+            `🏦 **Số dư cuối:** ${r.finalBalance.toFixed(2)}$`);
+        }
     }).catch(err => {
       console.error("Backtest Error:", err);
       backtestStatus.isRunning = false;
@@ -800,10 +806,18 @@ async function startServer() {
           console.log("📊 KẾT QUẢ BACKTEST TỰ ĐỘNG (2022-2023)");
           console.log("-".repeat(45));
           console.log(`📅 Giai đoạn: 01/01/2022 - 01/01/2023`);
-          console.log(`💰 Lợi nhuận: ${r.totalProfitR.toFixed(2)}R ($${(r.finalBalance - 5000).toFixed(2)})`);
+          console.log(`💰 Tổng Lợi nhuận: ${r.totalProfitR.toFixed(2)}R ($${(r.finalBalance - 5000).toFixed(2)})`);
           console.log(`📈 Tổng Win Rate: ${wr}%`);
           console.log(`🔄 Tổng số lệnh: ${r.totalTrades}`);
           console.log("-".repeat(45));
+          
+          if (r.monthlySnapshots && r.monthlySnapshots.length > 0) {
+            r.monthlySnapshots.forEach((m: any) => {
+              console.log(`• ${m.date}: ${m.monthlyProfit.toFixed(2)}$ (${m.monthlyProfitR.toFixed(2)}R) | WR: ${m.winRate}% (${m.trades} trades) (L: ${m.longTrades}, WL: ${m.longWins} -- S: ${m.shortTrades}, WS: ${m.shortWins})`);
+            });
+            console.log("-".repeat(45));
+          }
+
           console.log(`🚀 LONG total: ${r.longTrades} | Wins: ${r.longWins} (${longWR}%)`);
           console.log(`📉 SHORT total: ${r.shortTrades} | Wins: ${r.shortWins} (${shortWR}%)`);
           console.log("=".repeat(45) + "\n");
