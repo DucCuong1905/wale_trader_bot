@@ -537,18 +537,31 @@ async function traderLoop() {
     // 3. LẤY DỮ LIỆU NẾN (OHLCV)
     let bars: any[] = [];
     let bars5m: any[] = [];
+    let bars1d: any[] = [];
     try {
       bars = await fetchOHLCVWithRetry(ex, PAIR, TIMEFRAME, undefined, 100);
       bars5m = await fetchOHLCVWithRetry(ex, PAIR, "5m", undefined, 50);
+      bars1d = await fetchOHLCVWithRetry(ex, PAIR, "1d", undefined, 10);
     } catch (ohlcvErr: any) {
       console.error("❌ Lỗi fetchOHLCV (sau khi retry):", ohlcvErr.message);
       setTimeout(traderLoop, 10000);
       return;
     }
-    if (!bars || bars.length < 50 || !bars5m || bars5m.length < 20) { 
+    if (!bars || bars.length < 50 || !bars5m || bars5m.length < 20 || !bars1d || bars1d.length < 8) { 
       setTimeout(traderLoop, 10000); 
       return; 
     }
+
+    // 3.1 VOLATILITY EXPANSION FILTER (24h vs Avg 7d)
+    const currentDay = bars1d[bars1d.length - 1];
+    const current24hRange = currentDay[2] - currentDay[3]; // H - L
+
+    let sum7dRange = 0;
+    for (let i = bars1d.length - 8; i < bars1d.length - 1; i++) {
+      sum7dRange += (bars1d[i][2] - bars1d[i][3]);
+    }
+    const avg7dRange = sum7dRange / 7;
+    const isExpansion = current24hRange > avg7dRange;
 
     // 4. TÍNH TOÁN CÁC CHỈ BÁO KỸ THUẬT
     // --- Khung M1 ---
@@ -574,7 +587,7 @@ async function traderLoop() {
     // THÔNG BÁO KHI SẴN SÀNG
     if (!botState.isInitNotified) {
       botState.isInitNotified = true;
-      console.log(`🤖 WHALE BOT (M1 ONLY STRATEGY) SẴN SÀNG! VWMA 5m: ${vwma5m.toFixed(2)}`);
+      console.log(`🤖 Bot Sẵn Sàng! Range 24h: ${current24hRange.toFixed(2)} | Avg 7d: ${avg7dRange.toFixed(2)} | Expansion: ${isExpansion ? '✅' : '❌'}`);
     }
 
     const lastCandle = bars[bars.length - 1];
@@ -597,6 +610,7 @@ async function traderLoop() {
     // 5. ĐIỀU KIỆN VÀO LỆNH LONG (MUA)
     // ========================================================
     if (
+      isExpansion &&                     // 0.0 Volatility Expansion Filter
       isWithinTradingSessions() &&       
       !isOverExtendedLong &&                 // 0. Không quá xa VWMA (2*ATR)
       currentPrice > vwma5m &&           // 0.2 Giá nằm trên VWMA 5m
@@ -614,6 +628,7 @@ async function traderLoop() {
     // 6. ĐIỀU KIỆN VÀO LỆNH SHORT (BÁN)
     // ========================================================
     if (
+      isExpansion &&                     // 0.0 Volatility Expansion Filter
       isWithinTradingSessions() &&
       !isOverExtendedShort &&                 // 0. Không quá xa VWMA (2*ATR)
       currentPrice < vwma5m &&           // 0.2 Giá nằm dưới VWMA 5m
@@ -650,6 +665,7 @@ async function traderLoop() {
         botState.lastTradeTime = Date.now(); 
 
         const conditions = [
+          `0. Expansion (24h>Avg7d): ${isExpansion ? '✅' : '❌'} (24h: ${current24hRange.toFixed(2)} vs Avg: ${avg7dRange.toFixed(2)})`,
           `1. Khoảng cách VWMA: ${sig === 'LONG' ? (!isOverExtendedLong ? '✅ Ok' : '❌ Quá xa') : (!isOverExtendedShort ? '✅ Ok' : '❌ Quá xa')} (${distFromVWMA.toFixed(2)})`,
           `2. Giá vs VWMA 5m: ${currentPrice > vwma5m ? '✅ Trên' : '❌ Dưới'}`,
           `3. Giá vs VWAP: ${currentPrice > vwapM1 ? '✅ Above' : '❌ Below'}`,
