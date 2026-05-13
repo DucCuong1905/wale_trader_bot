@@ -12,6 +12,15 @@ const DATA_DIR = path.join(process.cwd(), "data");
 const RESULTS_FILE = path.join(DATA_DIR, "backtest_results.json");
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
 
+// --- CACHE ---
+let backtestDataCache: {
+  pair: string,
+  timeframe: string,
+  start: string,
+  end: string,
+  data: any[]
+} | null = null;
+
 function getCleanEnv(key: string) {
   const val = process.env[key];
   if (!val) return "";
@@ -30,7 +39,7 @@ const INITIAL_BALANCE = 5000;
 const RISK_PER_TRADE = 0.01; // 1%
 
 // CẤU HÌNH PHIÊN GIAO DỊCH
-const ENABLE_SESSION_FILTER = false;
+const ENABLE_SESSION_FILTER = true;
 const SESSION_START_GMT = 8;
 const SESSION_END_GMT = 21;
 
@@ -362,21 +371,47 @@ export async function runBacktest(
   }
   
   let allKlines: any[] = [];
-  let since = exchange.parse8601(startDate);
+  const startTs = exchange.parse8601(startDate);
   const endTs = exchange.parse8601(endDate);
 
-  while (since < endTs) {
-    if (shouldStopBacktest) break;
-    try {
-      const klines = await fetchOHLCVWithRetry(exchange, PAIR, timeframe, since, 1000);
-      if (!klines.length) break;
-      allKlines.push(...klines);
-      since = klines[klines.length - 1][0] + 1;
-      console.log(`Fetched ${allKlines.length} klines...`);
-      if (onProgress) onProgress(Math.min(50, (allKlines.length / 3000) * 50));
-    } catch (err: any) {
-      console.error("❌ Lỗi nghiêm trọng khi tải dữ liệu backtest:", err.message);
-      throw new Error(`Không thể kết nối với sàn Binance để tải dữ liệu: ${err.message}`);
+  // KIỂM TRA CACHE
+  if (
+    backtestDataCache &&
+    backtestDataCache.pair === PAIR &&
+    backtestDataCache.timeframe === timeframe &&
+    backtestDataCache.start === startDate &&
+    backtestDataCache.end === endDate
+  ) {
+    console.log(`[BACKTEST] ⚡ Sử dụng dữ liệu từ Cache (${backtestDataCache.data.length} nến)`);
+    allKlines = backtestDataCache.data;
+  } else {
+    console.log(`[BACKTEST] 🌐 Fetching dữ liệu mới từ sàn...`);
+    let since = startTs;
+    while (since < endTs) {
+      if (shouldStopBacktest) break;
+      try {
+        const klines = await fetchOHLCVWithRetry(exchange, PAIR, timeframe, since, 1000);
+        if (!klines.length) break;
+        allKlines.push(...klines);
+        since = klines[klines.length - 1][0] + 1;
+        console.log(`Fetched ${allKlines.length} klines...`);
+        if (onProgress) onProgress(Math.min(50, (allKlines.length / 3000) * 50));
+      } catch (err: any) {
+        console.error("❌ Lỗi nghiêm trọng khi tải dữ liệu backtest:", err.message);
+        throw new Error(`Không thể kết nối với sàn Binance để tải dữ liệu: ${err.message}`);
+      }
+    }
+    
+    // Lưu vào Cache
+    if (!shouldStopBacktest && allKlines.length > 0) {
+      backtestDataCache = {
+        pair: PAIR,
+        timeframe,
+        start: startDate,
+        end: endDate,
+        data: allKlines
+      };
+      console.log(`[BACKTEST] ✅ Đã lưu dữ liệu vào Cache (${allKlines.length} nến)`);
     }
   }
 
@@ -460,7 +495,8 @@ export async function runBacktest(
     const isInSession = isWithinSessions(allKlines[i][0]);
 
     const distFromVWMA = Math.abs(currentPrice - vwmaM1);
-    const isOverExtended = distFromVWMA > (atrM1 * 2);
+    const isOverExtendedLong = distFromVWMA > (atrM1 * 2);
+    const isOverExtendedShort = distFromVWMA > (atrM1 * 4);
 
     // --- MONTHLY SNAPSHOT LOGIC ---
     const d = new Date(allKlines[i][0]);
@@ -499,8 +535,8 @@ export async function runBacktest(
     lastMonth = currentMonth;
     lastYear = currentYear;
 
-    let isLong = !isOverExtended && currentPrice > vwma5m && currentPrice > vwapM1 && adxM1.adx >= adxThreshold && isInSession && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI;
-    let isShort = !isOverExtended && currentPrice < vwma5m && currentPrice < vwapM1 && adxM1.adx >= adxThreshold && isInSession && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI;
+    let isLong = !isOverExtendedLong && currentPrice > vwma5m && currentPrice > vwapM1 && adxM1.adx >= adxThreshold && isInSession && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI;
+    let isShort = !isOverExtendedShort && currentPrice < vwma5m && currentPrice < vwapM1 && adxM1.adx >= adxThreshold && isInSession && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";

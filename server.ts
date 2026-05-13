@@ -25,7 +25,7 @@ const COOLDOWN_MS = 30000; // Thời gian chờ giữa các lệnh (30 giây)
 const MAX_DAILY_LOSS = 0.06; // Giới hạn lỗ tối đa trong ngày (6%)
 
 // CẤU HÌNH PHIÊN GIAO DỊCH (LONDON & NEW YORK)
-let ENABLE_SESSION_FILTER = false; 
+let ENABLE_SESSION_FILTER = true; 
 const VWMA_PERIOD = 20; // Cố định VWMA 20
 let ADX_THRESHOLD = 10; // Ngưỡng ADX mặc định
 const SESSION_START_GMT = 8;  // 08:00 GMT (Mở phiên Âu)
@@ -562,7 +562,8 @@ async function traderLoop() {
     
     // --- Mean Reversion Filter (Check if price is too far from VWMA) ---
     const distFromVWMA = Math.abs(currentPrice - vwmaM1);
-    const isOverExtended = distFromVWMA > (atrM1 * 2);
+    const isOverExtendedLong = distFromVWMA > (atrM1 * 2);
+    const isOverExtendedShort = distFromVWMA > (atrM1 * 4);
     
     botState.adx = adxM1.adx; // Lưu ADX M1 vào botState để hiển thị
     botState.vwap = vwapM1;
@@ -594,7 +595,7 @@ async function traderLoop() {
     // ========================================================
     if (
       isWithinTradingSessions() &&       
-      !isOverExtended &&                 // 0. Không quá xa VWMA
+      !isOverExtendedLong &&                 // 0. Không quá xa VWMA (2*ATR)
       currentPrice > vwma5m &&           // 0.2 Giá nằm trên VWMA 5m
       currentPrice > vwapM1 &&           // 0.1 Giá nằm trên VWAP
       slopeM1 > 0 &&                     // 2. Xu hướng VWMA M1 đang đi lên
@@ -611,7 +612,7 @@ async function traderLoop() {
     // ========================================================
     if (
       isWithinTradingSessions() &&
-      !isOverExtended &&                 // 0. Không quá xa VWMA
+      !isOverExtendedShort &&                 // 0. Không quá xa VWMA (4*ATR)
       currentPrice < vwma5m &&           // 0.2 Giá nằm dưới VWMA 5m
       currentPrice < vwapM1 &&           // 0.1 Giá nằm dưới VWAP
       slopeM1 < 0 &&                     // 2. Xu hướng VWMA M1 đang đi xuống
@@ -646,7 +647,7 @@ async function traderLoop() {
         botState.lastTradeTime = Date.now(); 
 
         const conditions = [
-          `1. Khoảng cách VWMA: ${!isOverExtended ? '✅ Ok' : '❌ Quá xa'} (${distFromVWMA.toFixed(2)})`,
+          `1. Khoảng cách VWMA: ${sig === 'LONG' ? (!isOverExtendedLong ? '✅ Ok' : '❌ Quá xa') : (!isOverExtendedShort ? '✅ Ok' : '❌ Quá xa')} (${distFromVWMA.toFixed(2)})`,
           `2. Giá vs VWMA 5m: ${currentPrice > vwma5m ? '✅ Trên' : '❌ Dưới'}`,
           `3. Giá vs VWAP: ${currentPrice > vwapM1 ? '✅ Above' : '❌ Below'}`,
           `4. Slope M1: ${sig === 'LONG' ? (slopeM1 > 0 ? '✅ Positive' : '❌ Negative') : (slopeM1 < 0 ? '✅ Negative' : '❌ Positive')}`,
@@ -671,7 +672,7 @@ async function traderLoop() {
           
           const vnTime = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
           const conditions = [
-            `1. Khoảng cách VWMA: ${!isOverExtended ? '✅ Ok' : '❌ Quá xa'} (${distFromVWMA.toFixed(2)})`,
+            `1. Khoảng cách VWMA: ${sig === 'LONG' ? (!isOverExtendedLong ? '✅ Ok' : '❌ Quá xa') : (!isOverExtendedShort ? '✅ Ok' : '❌ Quá xa')} (${distFromVWMA.toFixed(2)})`,
             `2. Giá vs VWMA 5m: ${currentPrice > vwma5m ? '✅ Trên' : '❌ Dưới'}`,
             `3. Giá vs VWAP: ${currentPrice > vwapM1 ? '✅ Above' : '❌ Below'}`,
             `4. Slope M1: ${sig === 'LONG' ? (slopeM1 > 0 ? '✅ Positive' : '❌ Negative') : (slopeM1 < 0 ? '✅ Negative' : '❌ Positive')}`,
@@ -803,9 +804,9 @@ async function startServer() {
 
     // 10. AUTO-BACKTEST ON STARTUP
     setTimeout(async () => {
-      console.log("[AUTO-BACKTEST] Bắt đầu backtest tự động từ 1/1/2022 đến 1/1/2023...");
+      console.log("[AUTO-BACKTEST] Bắt đầu backtest tự động từ 1/1/2025 đến 1/1/2026...");
       try {
-        const r = await runBacktest("2022-01-01T00:00:00Z", "2023-01-01T00:00:00Z", RR, "1m", ENABLE_SESSION_FILTER, VWMA_PERIOD, undefined, ADX_THRESHOLD);
+        const r = await runBacktest("2025-01-01T00:00:00Z", "2026-01-01T00:00:00Z", RR, "1m", ENABLE_SESSION_FILTER, VWMA_PERIOD, undefined, ADX_THRESHOLD) as any;
         if (r && !r.error) {
           const wr = r.totalTrades > 0 ? (r.wins / r.totalTrades * 100).toFixed(1) : "0.0";
           const longWR = r.longTrades > 0 ? (r.longWins / r.longTrades * 100).toFixed(1) : "0.0";
@@ -821,7 +822,7 @@ async function startServer() {
 
           // Log ra Console
           console.log("\n" + "=".repeat(60));
-          console.log("📊 KẾT QUẢ BACKTEST TỰ ĐỘNG (2022-2023)");
+          console.log("📊 KẾT QUẢ BACKTEST TỰ ĐỘNG (2025-2026)");
           console.log("-".repeat(60));
           console.log(monthlyStatsReport);
           console.log("-".repeat(60));
@@ -831,7 +832,7 @@ async function startServer() {
           console.log("=".repeat(60) + "\n");
 
           // Gửi lên Telegram
-          await sendTelegram(`📊 **KẾT QUẢ AUTO-BACKTEST (2022)**\n\n` +
+          await sendTelegram(`📊 **KẾT QUẢ AUTO-BACKTEST (2025)**\n\n` +
             `📅 **Chi tiết từng tháng:**\n${monthlyStatsReport}\n\n` +
             `📈 **Lợi nhuận:** ${r.totalProfitR.toFixed(2)}R ($${netProfit.toFixed(2)})\n` +
             `🎯 **Win Rate:** ${wr}%\n` +
