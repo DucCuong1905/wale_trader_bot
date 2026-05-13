@@ -537,17 +537,17 @@ async function traderLoop() {
     // 3. LẤY DỮ LIỆU NẾN (OHLCV)
     let bars: any[] = [];
     let bars5m: any[] = [];
-    let bars15m: any[] = [];
+    let bars1h: any[] = [];
     try {
       bars = await fetchOHLCVWithRetry(ex, PAIR, TIMEFRAME, undefined, 100);
       bars5m = await fetchOHLCVWithRetry(ex, PAIR, "5m", undefined, 50);
-      bars15m = await fetchOHLCVWithRetry(ex, PAIR, "15m", undefined, 50);
+      bars1h = await fetchOHLCVWithRetry(ex, PAIR, "1h", undefined, 50);
     } catch (ohlcvErr: any) {
       console.error("❌ Lỗi fetchOHLCV (sau khi retry):", ohlcvErr.message);
       setTimeout(traderLoop, 10000);
       return;
     }
-    if (!bars || bars.length < 50 || !bars5m || bars5m.length < 20 || !bars15m || bars15m.length < 20) { 
+    if (!bars || bars.length < 50 || !bars5m || bars5m.length < 20 || !bars1h || bars1h.length < 20) { 
       setTimeout(traderLoop, 10000); 
       return; 
     }
@@ -565,8 +565,8 @@ async function traderLoop() {
     // --- Khung M5 Filter ---
     const vwma5m = calculateVWMA(bars5m, 20);
 
-    // --- Khung M15 Filter ---
-    const vwma15m = calculateVWMA(bars15m, 20);
+    // --- Khung 1h Filter ---
+    const vwma1h = calculateVWMA(bars1h, 20);
     
     // --- Mean Reversion Filter (Check if price is too far from VWMA) ---
     const distFromVWMA = Math.abs(currentPrice - vwmaM1);
@@ -579,7 +579,7 @@ async function traderLoop() {
     // THÔNG BÁO KHI SẴN SÀNG
     if (!botState.isInitNotified) {
       botState.isInitNotified = true;
-      console.log(`🤖 WHALE BOT (M1 ONLY STRATEGY) SẴN SÀNG! VWMA 5m: ${vwma5m.toFixed(2)} | VWMA 15m: ${vwma15m.toFixed(2)}`);
+      console.log(`🤖 WHALE BOT (M1 ONLY STRATEGY) SẴN SÀNG! VWMA 5m: ${vwma5m.toFixed(2)} | VWMA 1h: ${vwma1h.toFixed(2)}`);
     }
 
     const lastCandle = bars[bars.length - 1];
@@ -605,7 +605,7 @@ async function traderLoop() {
       isWithinTradingSessions() &&       
       !isOverExtendedLong &&                 // 0. Không quá xa VWMA (2*ATR)
       currentPrice > vwma5m &&           // 0.2 Giá nằm trên VWMA 5m
-      currentPrice > vwma15m &&          // 0.3 Giá nằm trên VWMA 15m
+      currentPrice > vwma1h &&          // 0.3 Giá nằm trên VWMA 1h
       currentPrice > vwapM1 &&           // 0.1 Giá nằm trên VWAP
       slopeM1 > 0 &&                     // 2. Xu hướng VWMA M1 đang đi lên
       adxM1.adx >= ADX_THRESHOLD &&       // 3. ADX M1 >= Threshold
@@ -623,7 +623,7 @@ async function traderLoop() {
       isWithinTradingSessions() &&
       !isOverExtendedShort &&                 // 0. Không quá xa VWMA (2*ATR)
       currentPrice < vwma5m &&           // 0.2 Giá nằm dưới VWMA 5m
-      currentPrice < vwma15m &&          // 0.3 Giá nằm dưới VWMA 15m
+      currentPrice < vwma1h &&          // 0.3 Giá nằm dưới VWMA 1h
       currentPrice < vwapM1 &&           // 0.1 Giá nằm dưới VWAP
       slopeM1 < 0 &&                     // 2. Xu hướng VWMA M1 đang đi xuống
       adxM1.adx >= ADX_THRESHOLD &&
@@ -659,7 +659,7 @@ async function traderLoop() {
         const conditions = [
           `1. Khoảng cách VWMA: ${sig === 'LONG' ? (!isOverExtendedLong ? '✅ Ok' : '❌ Quá xa') : (!isOverExtendedShort ? '✅ Ok' : '❌ Quá xa')} (${distFromVWMA.toFixed(2)})`,
           `2. Giá vs VWMA 5m: ${currentPrice > vwma5m ? '✅ Trên' : '❌ Dưới'}`,
-          `3. Giá vs VWMA 15m: ${currentPrice > vwma15m ? '✅ Trên' : '❌ Dưới'}`,
+          `3. Giá vs VWMA 1h: ${currentPrice > vwma1h ? '✅ Trên' : '❌ Dưới'}`,
           `4. Giá vs VWAP: ${currentPrice > vwapM1 ? '✅ Above' : '❌ Below'}`,
           `5. Slope M1: ${sig === 'LONG' ? (slopeM1 > 0 ? '✅ Positive' : '❌ Negative') : (slopeM1 < 0 ? '✅ Negative' : '❌ Positive')}`,
           `6. ADX M1 (>=${ADX_THRESHOLD}): ${adxM1.adx >= ADX_THRESHOLD ? '✅' : '❌'} (${adxM1.adx.toFixed(1)})`,
@@ -685,7 +685,7 @@ async function traderLoop() {
           const conditions = [
             `1. Khoảng cách VWMA: ${sig === 'LONG' ? (!isOverExtendedLong ? '✅ Ok' : '❌ Quá xa') : (!isOverExtendedShort ? '✅ Ok' : '❌ Quá xa')} (${distFromVWMA.toFixed(2)})`,
             `2. Giá vs VWMA 5m: ${currentPrice > vwma5m ? '✅ Trên' : '❌ Dưới'}`,
-            `3. Giá vs VWMA 15m: ${currentPrice > vwma15m ? '✅ Trên' : '❌ Dưới'}`,
+            `3. Giá vs VWMA 1h: ${currentPrice > vwma1h ? '✅ Trên' : '❌ Dưới'}`,
             `4. Giá vs VWAP: ${currentPrice > vwapM1 ? '✅ Above' : '❌ Below'}`,
             `5. Slope M1: ${sig === 'LONG' ? (slopeM1 > 0 ? '✅ Positive' : '❌ Negative') : (slopeM1 < 0 ? '✅ Negative' : '❌ Positive')}`,
             `6. ADX M1 (>=${ADX_THRESHOLD}): ${adxM1.adx >= ADX_THRESHOLD ? '✅' : '❌'} (${adxM1.adx.toFixed(1)})`,
