@@ -856,7 +856,7 @@ async function startServer() {
           console.log("\n📈 --- TỔNG KẾT THEO REGIME (2024-2026) ---");
           Object.entries(r.regimeStats).forEach(([regime, stats]: [string, any]) => {
             const wr = stats.trades > 0 ? ((stats.wins / stats.trades) * 100).toFixed(1) : "0";
-            console.log(`• ${regime}: ${stats.trades} trades (${stats.wins} WIN - ${stats.trades - stats.wins} LOSS) | WR: ${wr}% | PnL: ${stats.pnlR.toFixed(1)}R`);
+            console.log(`• ${regime}: ${stats.trades} trades | WR: ${wr}% | PnL: ${stats.pnlR.toFixed(1)}R`);
           });
         }
         console.log("--------------------------------------\n");
