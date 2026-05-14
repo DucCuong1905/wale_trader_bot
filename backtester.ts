@@ -567,10 +567,10 @@ export async function runBacktest(
   let monthlyProfitR = 0;
   let monthlySnapshots: any[] = [];
   
-  // Tracking exception trades (distance 2R-3R in Expansion)
-  let exceptionTrades = 0;
-  let exceptionWins = 0;
-  let exceptionPnLR = 0;
+  // Tracking for NEW Continuation strategy
+  let continuationTrades = 0;
+  let continuationWins = 0;
+  let continuationPnLR = 0;
 
   let sessionSkippedCount = 0;
   const isWithinSessions = (ts: number) => {
@@ -633,14 +633,8 @@ export async function runBacktest(
 
     const distFromVWMA = Math.abs(currentPrice - vwmaM1);
     
-    // Default limit is 2*ATR, but for Expansion we allow 3*ATR
-    const isExpansion = regimeData.regime === "TREND_EXPANSION";
-    const extensionMultiplier = isExpansion ? 3 : 2;
-    const effectiveAdxThreshold = isExpansion ? 30 : adxThreshold;
-    
-    const isOverExtended = distFromVWMA > (atrM1 * extensionMultiplier);
-    // Is it in the "Exception Zone" (between 2 and 3 ATR)?
-    const isExceptionZone = distFromVWMA > (atrM1 * 2) && distFromVWMA <= (atrM1 * 3);
+    const isOverExtendedLong = distFromVWMA > (atrM1 * 2);
+    const isOverExtendedShort = distFromVWMA > (atrM1 * 2);
 
     // --- MONTHLY SNAPSHOT LOGIC ---
     const d = new Date(allKlines[i][0]);
@@ -648,7 +642,6 @@ export async function runBacktest(
     const currentYear = d.getUTCFullYear();
     
     if (lastMonth !== -1 && currentMonth !== lastMonth) {
-      // Month changed, record snapshot of the month that just ended
       const totalMonthTrades = monthlyWins + monthlyLosses;
       const monthWinRate = totalMonthTrades > 0 ? (monthlyWins / totalMonthTrades * 100) : 0;
       
@@ -670,29 +663,82 @@ export async function runBacktest(
         shortWins: monthlyShortWins
       });
 
-      // Reset monthly counters
-      monthlyWins = 0;
-      monthlyLosses = 0;
-      monthlyLongTrades = 0;
-      monthlyLongWins = 0;
-      monthlyShortTrades = 0;
-      monthlyShortWins = 0;
-      monthlyPnL = 0;
-      monthlyProfitR = 0;
+      monthlyWins = 0; monthlyLosses = 0; monthlyLongTrades = 0; monthlyLongWins = 0;
+      monthlyShortTrades = 0; monthlyShortWins = 0; monthlyPnL = 0; monthlyProfitR = 0;
     }
     lastMonth = currentMonth;
     lastYear = currentYear;
 
-    let isLong = (regimeData.riskPercent > 0) && !isOverExtended && currentPrice > vwma5m && currentPrice > vwapM1 && adxM1.adx >= effectiveAdxThreshold && isInSession && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI;
-    let isShort = (regimeData.riskPercent > 0) && !isOverExtended && currentPrice < vwma5m && currentPrice < vwapM1 && adxM1.adx >= effectiveAdxThreshold && isInSession && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI;
+    // --- MINI COMPRESSION & CONTINUATION LOGIC ---
+    const recent5 = allKlines.slice(Math.max(0, i - 5), i);
+    const recentHigh = Math.max(...recent5.map(b => b[2]));
+    const recentLow = Math.min(...recent5.map(b => b[3]));
+    const compRange = recentHigh - recentLow;
+    
+    const volMA = allKlines.slice(Math.max(0, i - 20), i).reduce((s, b) => s + b[5], 0) / 20;
+    const bodySize = Math.abs(allKlines[i][4] - allKlines[i][1]);
+    const prevHigh = allKlines[i-1][2];
+    const prevLow = allKlines[i-1][3];
+
+    // LONG CONTINUATION
+    const isContinuationLong = 
+      regimeData.totalScore >= 70 &&
+      currentPrice > vwma5m &&
+      currentPrice > vwapM1 &&
+      slopeM1 > 0 &&
+      adxM1.adx >= 25 &&
+      adxM1.pDI > adxM1.mDI &&
+      distFromVWMA < (atrM1 * 1.5) && // Exhaustion Filter
+      compRange < (atrM1 * 1.2) &&    // Mini Compression
+      recentLow > vwma5m &&           // Healthy Pullback
+      currentPrice > recentHigh &&    // Breakout
+      bodySize > (atrM1 * 0.6) &&     // Strong Body
+      allKlines[i][5] > volMA &&      // Volume Expansion
+      currentPrice > prevHigh;        // Momentum
+
+    // SHORT CONTINUATION
+    const isContinuationShort = 
+      regimeData.totalScore >= 70 &&
+      currentPrice < vwma5m &&
+      currentPrice < vwapM1 &&
+      slopeM1 < 0 &&
+      adxM1.adx >= 25 &&
+      adxM1.mDI > adxM1.pDI &&
+      distFromVWMA < (atrM1 * 1.5) &&
+      compRange < (atrM1 * 1.2) &&
+      recentHigh < vwma5m &&
+      currentPrice < recentLow &&
+      bodySize > (atrM1 * 0.6) &&
+      allKlines[i][5] > volMA &&
+      currentPrice < prevLow;
+
+    // --- ENTRY DECISION (SWEP OR CONTINUATION) ---
+    let isLong = (regimeData.riskPercent > 0) && isInSession && (
+      (!isOverExtendedLong && currentPrice > vwma5m && currentPrice > vwapM1 && adxM1.adx >= adxThreshold && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI) ||
+      isContinuationLong
+    );
+
+    let isShort = (regimeData.riskPercent > 0) && isInSession && (
+      (!isOverExtendedShort && currentPrice < vwma5m && currentPrice < vwapM1 && adxM1.adx >= adxThreshold && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI) ||
+      isContinuationShort
+    );
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
-      const tradeIsException = isExceptionZone && isExpansion;
-      const entryPrice = currentPrice; // Market Entry at Close
+      const isContTrade = (type === "LONG" ? isContinuationLong : isContinuationShort);
+      const entryPrice = currentPrice; 
       
       const time = new Date(allKlines[i][0]).toISOString();
-      const sl = type === "LONG" ? (sweep.low - atrM1 * 0.2) : (sweep.high + atrM1 * 0.2);
+      // Nếu là lệnh Continuation, ta dùng ATR để đặt SL thay vì dùng nến Sweep (vì Sweep có thể ko tồn tại)
+      let sl = type === "LONG" ? (sweep.low || (currentPrice - atrM1 * 2)) : (sweep.high || (currentPrice + atrM1 * 2));
+      
+      // Fine-tune SL cho Continuation: Nếu SL Sweep quá xa hoặc ko có, dùng 1.5 ATR
+      if (isContinuationLong || isContinuationShort) {
+         sl = type === "LONG" ? (currentPrice - atrM1 * 1.5) : (currentPrice + atrM1 * 1.5);
+      } else {
+         // Lệnh Sweep vẫn dùng SL cũ
+         sl = type === "LONG" ? (sweep.low - atrM1 * 0.2) : (sweep.high + atrM1 * 0.2);
+      }
       const tp = entryPrice + (entryPrice - sl > 0 ? (entryPrice - sl) * rr : (sl - entryPrice) * -rr);
 
       const riskPercentForTrade = RISK_PER_TRADE * regimeData.riskPercent;
@@ -757,22 +803,9 @@ export async function runBacktest(
         }
         results.displaceWins++;
         monthlyWins++;
-
-        if (tradeIsException) {
-          exceptionWins++;
-          exceptionPnLR += rr;
-        }
       } else {
         results.losses++;
         monthlyLosses++;
-
-        if (tradeIsException) {
-          exceptionPnLR -= 1;
-        }
-      }
-
-      if (tradeIsException) {
-        exceptionTrades++;
       }
       
       results.displaceTrades++;
@@ -780,6 +813,15 @@ export async function runBacktest(
     results.totalPnL += dollarPnL;
     const effectiveR = pnlR * regimeData.riskPercent;
     results.totalProfitR += effectiveR;
+    
+    // Track Continuation stats
+    if (isContTrade) {
+      continuationTrades++;
+      continuationPnLR += effectiveR;
+      if (status === "WIN") {
+        continuationWins++;
+      }
+    }
 
     // Track regime stats
     if (results.regimeStats[regimeData.regime]) {
@@ -821,10 +863,10 @@ export async function runBacktest(
     console.log(`• ${regime}: ${stats.trades} trades | WR: ${wr}% | PnL: ${stats.pnlR.toFixed(1)}R`);
   });
 
-  if (exceptionTrades > 0) {
-    const excWR = ((exceptionWins / exceptionTrades) * 100).toFixed(1);
-    console.log(`\n⚠️  --- THỐNG KÊ LỆNH NGOẠI LỆ (EXTENDED 2-3R) ---`);
-    console.log(`• Số lệnh: ${exceptionTrades} | Winrate: ${excWR}% | PnL: ${exceptionPnLR.toFixed(1)}R`);
+  if (continuationTrades > 0) {
+    const contWR = ((continuationWins / continuationTrades) * 100).toFixed(1);
+    console.log(`\n🚀 --- THỐNG KÊ CHIẾN LƯỢC CONTINUATION (PULLBACK/BREAKOUT) ---`);
+    console.log(`• Số lệnh: ${continuationTrades} | Winrate: ${contWR}% | PnL: ${continuationPnLR.toFixed(1)}R`);
   }
   console.log("--------------------------------------\n");
 
