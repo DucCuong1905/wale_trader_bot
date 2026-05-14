@@ -79,9 +79,9 @@ export function calculateMarketRegime(
   const volumeRatio = lastD1.volume / (volumeMA20 || 1);
 
   const expansionScore =
-    normalize(atrRatio, 0.8, 1.5) * 40 +
-    normalize(rangeRatio, 0.8, 2.0) * 35 +
-    normalize(volumeRatio, 0.8, 1.8) * 25;
+    normalize(atrRatio, 0.7, 1.3) * 40 +
+    normalize(rangeRatio, 0.7, 1.8) * 35 +
+    normalize(volumeRatio, 0.7, 1.6) * 25;
 
   // =========================
   // TREND QUALITY SCORE
@@ -129,8 +129,8 @@ export function calculateMarketRegime(
   const vwapRespect = 1 - normalize(vwapCrosses, 3, 15);
 
   const trendQualityScore =
-    normalize(bodyEfficiency, 0.3, 0.8) * 40 +
-    normalize(directionalConsistency, 0.5, 0.9) * 35 +
+    normalize(bodyEfficiency, 0.2, 0.7) * 40 +
+    normalize(directionalConsistency, 0.45, 0.8) * 35 +
     vwapRespect * 25;
 
   // =========================
@@ -148,8 +148,8 @@ export function calculateMarketRegime(
     }
   }
 
-  const atrCompression = 1 - normalize(atrRatio, 0.8, 1.5);
-  const rangeCompression = 1 - normalize(rangeRatio, 0.8, 2.0);
+  const atrCompression = 1 - normalize(atrRatio, 0.7, 1.3);
+  const rangeCompression = 1 - normalize(rangeRatio, 0.7, 1.8);
   const insideBarScore = normalize(insideBars, 1, 5);
 
   const compressionScore =
