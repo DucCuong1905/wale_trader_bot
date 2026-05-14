@@ -671,40 +671,10 @@ export async function runBacktest(
     lastMonth = currentMonth;
     lastYear = currentYear;
 
-    // --- ENTRY CONDITIONS ---
-    let isLong = false;
-    let isShort = false;
+    let isLong = (regimeData.riskPercent > 0) && !isOverExtendedLong && currentPrice > vwma5m && currentPrice > vwapM1 && adxM1.adx >= adxThreshold && isInSession && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI;
+    let isShort = (regimeData.riskPercent > 0) && !isOverExtendedShort && currentPrice < vwma5m && currentPrice < vwapM1 && adxM1.adx >= adxThreshold && isInSession && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI;
 
-    // NHẬN DIỆN PULLBACK TRONG TREND_EXPANSION
-    // Chúng ta không muốn mua đuổi khi giá đã chạy quá xa VWMA
-    const isPullbackLong = currentPrice > vwapM1 && currentPrice < vwmaM1 + (atrM1 * 0.5);
-    const isPullbackShort = currentPrice < vwapM1 && currentPrice > vwmaM1 - (atrM1 * 0.5);
-
-    if (regimeData.regime === "TREND_EXPANSION") {
-      // Logic đặc biệt cho Expansion: Cần ADX mạnh + Pullback + Đa khung đồng thuận
-      const trendStrong = adxM1.adx > 25 && adxM1.adx > adxThreshold;
-      const mtfBullish = currentPrice > vwma5m * 1.0005; // Cao hơn hẳn VWMA 5m
-      const mtfBearish = currentPrice < vwma5m * 0.9995; // Thấp hơn hẳn VWMA 5m
-
-      isLong = trendStrong && mtfBullish && isPullbackLong && adxM1.pDI > adxM1.mDI && slopeM1 > 0;
-      isShort = trendStrong && mtfBearish && isPullbackShort && adxM1.mDI > adxM1.pDI && slopeM1 < 0;
-      
-      // Nếu không có pullback nhưng có Sweep cực mạnh thì vẫn có thể vào (Aggressive entry)
-      if (!isLong && !isShort && sweep.volConfirm) {
-         isLong = trendStrong && mtfBullish && sweep.sweepLow && sweep.displacementBullish;
-         isShort = trendStrong && mtfBearish && sweep.sweepHigh && sweep.displacementBearish;
-      }
-    } else if (regimeData.regime === "NEUTRAL") {
-      // Logic cho Neutral: Dựa hoàn toàn vào Sweep (Breakout từ vùng tích lũy)
-      isLong = sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && currentPrice > vwapM1;
-      isShort = sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && currentPrice < vwapM1;
-    } else {
-      // Choppy: Hạn chế tối đa, chỉ vào khi có Sweep cực kỳ rõ ràng
-      isLong = sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.adx > 30;
-      isShort = sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.adx > 30;
-    }
-
-    if ((isLong || isShort) && isInSession) {
+    if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
       const entryPrice = currentPrice; // Market Entry at Close
       
