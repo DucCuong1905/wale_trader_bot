@@ -629,45 +629,32 @@ async function traderLoop() {
 
     let sig: "LONG" | "SHORT" | null = null;
     
-    // ========================================================
-    // 5. ĐIỀU KIỆN VÀO LỆNH LONG (MUA)
-    // ========================================================
-    if (
-      regimeData.riskPercent > 0 &&
-      isWithinTradingSessions() &&       
-      !isOverExtendedLong &&                 // 0. Không quá xa VWMA (2*ATR)
-      currentPrice > vwma5m &&           // 0.2 Giá nằm trên VWMA 5m
-      currentPrice > vwapM1 &&           // 0.1 Giá nằm trên VWAP
-      slopeM1 > 0 &&                     // 2. Xu hướng VWMA M1 đang đi lên
-      adxM1.adx >= ADX_THRESHOLD &&       // 3. ADX M1 >= Threshold
-      adxM1.pDI > adxM1.mDI              // 4. +DI > -DI (M1)
-    ) {
-      if (sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm) {
-        sig = "LONG";
-      } 
-    }
+    // --- OPTIMIZED ENTRY LOGIC ---
+    const isPullbackLong = currentPrice > vwapM1 && currentPrice < vwmaM1 + (atrM1 * 0.5);
+    const isPullbackShort = currentPrice < vwapM1 && currentPrice > vwmaM1 - (atrM1 * 0.5);
 
-    // ========================================================
-    // 6. ĐIỀU KIỆN VÀO LỆNH SHORT (BÁN)
-    // ========================================================
-    if (
-      regimeData.riskPercent > 0 &&
-      isWithinTradingSessions() &&
-      !isOverExtendedShort &&                 // 0. Không quá xa VWMA (2*ATR)
-      currentPrice < vwma5m &&           // 0.2 Giá nằm dưới VWMA 5m
-      currentPrice < vwapM1 &&           // 0.1 Giá nằm dưới VWAP
-      slopeM1 < 0 &&                     // 2. Xu hướng VWMA M1 đang đi xuống
-      adxM1.adx >= ADX_THRESHOLD &&
-      adxM1.mDI > adxM1.pDI
-    ) {
-      if (sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm) {
-        sig = "SHORT";
+    if (regimeData.regime === "TREND_EXPANSION") {
+      const trendStrong = adxM1.adx > 25 && adxM1.adx >= ADX_THRESHOLD;
+      const mtfBullish = currentPrice > vwma5m * 1.0005;
+      const mtfBearish = currentPrice < vwma5m * 0.9995;
+
+      if (trendStrong && mtfBullish && isPullbackLong && adxM1.pDI > adxM1.mDI && slopeM1 > 0) sig = "LONG";
+      else if (trendStrong && mtfBearish && isPullbackShort && adxM1.mDI > adxM1.pDI && slopeM1 < 0) sig = "SHORT";
+      else if (sweep.volConfirm) {
+        if (trendStrong && mtfBullish && sweep.sweepLow && sweep.displacementBullish) sig = "LONG";
+        else if (trendStrong && mtfBearish && sweep.sweepHigh && sweep.displacementBearish) sig = "SHORT";
       }
+    } else if (regimeData.regime === "NEUTRAL") {
+      if (sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && currentPrice > vwapM1) sig = "LONG";
+      else if (sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && currentPrice < vwapM1) sig = "SHORT";
+    } else if (regimeData.regime === "CHOPPY") {
+      if (sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.adx > 30) sig = "LONG";
+      else if (sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.adx > 30) sig = "SHORT";
     }
 
     // 7. XỬ LÝ LỆNH (MARKET ENTRY)
-    if (sig) {
-      const e = currentPrice; // Market Entry at Close
+    if (sig && isWithinTradingSessions()) {
+      const e = currentPrice; 
       const sl = sig === "LONG" ? (sweep.low - atrM1 * 0.2) : (sweep.high + atrM1 * 0.2);
       const tp = e + (e - sl > 0 ? (e - sl) * RR : (sl - e) * -RR);
       
@@ -688,18 +675,17 @@ async function traderLoop() {
         botState.lastTradeTime = Date.now(); 
 
         const conditions = [
-          `0. Regime: ${regimeData.regime} (Risk: ${regimeData.riskPercent}x)`,
-          `1. Khoảng cách VWMA: ${sig === 'LONG' ? (!isOverExtendedLong ? '✅ Ok' : '❌ Quá xa') : (!isOverExtendedShort ? '✅ Ok' : '❌ Quá xa')} (${distFromVWMA.toFixed(2)})`,
+          `0. Regime: **${regimeData.regime}** (Risk: ${regimeData.riskPercent}x)`,
+          `1. Pullback Zone: ${sig === 'LONG' ? (isPullbackLong ? '✅' : '❌') : (isPullbackShort ? '✅' : '❌')}`,
           `2. Giá vs VWMA 5m: ${currentPrice > vwma5m ? '✅ Trên' : '❌ Dưới'}`,
-          `3. Giá vs VWAP: ${currentPrice > vwapM1 ? '✅ Above' : '❌ Below'}`,
-          `4. Slope M1: ${sig === 'LONG' ? (slopeM1 > 0 ? '✅ Positive' : '❌ Negative') : (slopeM1 < 0 ? '✅ Negative' : '❌ Positive')}`,
-          `5. ADX M1 (>=${ADX_THRESHOLD}): ${adxM1.adx >= ADX_THRESHOLD ? '✅' : '❌'} (${adxM1.adx.toFixed(1)})`,
-          `6. Sweep M1: ✅ Confirmed`,
-          `7. DI Power M1: ${sig === 'LONG' ? (adxM1.pDI > adxM1.mDI ? '✅ +DI > -DI' : '❌') : (adxM1.mDI > adxM1.pDI ? '✅ -DI > +DI' : '❌')}`
+          `3. Price vs VWAP: ${currentPrice > vwapM1 ? '✅ Above' : '❌ Below'}`,
+          `4. Slope M1: ${sig === 'LONG' ? (slopeM1 > 0 ? '✅ Up' : '❌') : (slopeM1 < 0 ? '✅ Down' : '❌')}`,
+          `5. ADX M1: ${adxM1.adx.toFixed(1)} (Strong: ${adxM1.adx > 25})`,
+          `6. Sweep Confirm: ${sweep.displacementBullish || sweep.displacementBearish ? '✅' : 'Pullback Entry'}`
         ].join('\n');
 
         await sendTelegram(`🚀 [SIGNAL] **${sig}** Market Entry!\n\n` +
-          `📊 **Thông số lệnh (Pure 1M Strategy):**\n` +
+          `📊 **Thông số lệnh:**\n` +
           `🎯 Entry: ${e.toFixed(2)}\n` +
           `🛑 SL: ${sl.toFixed(2)} | 💎 TP: ${tp.toFixed(2)}\n\n` +
           `📝 **Điều kiện:**\n${conditions}\n\n` +
