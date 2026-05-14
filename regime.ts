@@ -67,16 +67,16 @@ export function calculateMarketRegime(
     atrHistory.push(atr(d1Candles.slice(0, i), 14));
   }
 
-  const atrMA10 = sma(atrHistory, 10);
+  const atrMA20 = sma(atrHistory, 20);
   const lastD1 = d1Candles[d1Candles.length - 1];
   const dailyRange = lastD1.high - lastD1.low;
 
   const volumeHistory = d1Candles.map(c => c.volume);
-  const volumeMA10 = sma(volumeHistory, 10);
+  const volumeMA20 = sma(volumeHistory, 20);
 
-  const atrRatio = atr14 / (atrMA10 || 1);
+  const atrRatio = atr14 / (atrMA20 || 1);
   const rangeRatio = dailyRange / (atr14 || 1);
-  const volumeRatio = lastD1.volume / (volumeMA10 || 1);
+  const volumeRatio = lastD1.volume / (volumeMA20 || 1);
 
   const expansionScore =
     normalize(atrRatio, 0.8, 1.5) * 40 +
@@ -158,7 +158,7 @@ export function calculateMarketRegime(
     insideBarScore * 25;
 
   // =========================
-  // FINAL DECISION (Kịch bản nới lỏng)
+  // FINAL DECISION (Loosened thresholds)
   // =========================
 
   let regime = "NEUTRAL";
@@ -169,32 +169,32 @@ export function calculateMarketRegime(
     compressionScore < 50
   ) {
     regime = "TREND_EXPANSION";
-  } else if (compressionScore > 70) {
+  } else if (compressionScore > 65) {
     regime = "COMPRESSION";
   } else if (trendQualityScore < 35) {
     regime = "CHOPPY";
   }
 
   // =========================
-  // RISK MODEL (Multiplier: 1.0, 0.8, 0.4, 0.2)
+  // RISK MODEL (Absolute percentages: 2%, 1%, 0.5%, 0.25%)
   // =========================
 
   let riskPercent = 0;
   switch (regime) {
     case "TREND_EXPANSION":
-      riskPercent = 1.0;
+      riskPercent = 2.0;
       break;
     case "NEUTRAL":
-      riskPercent = 0.8;
+      riskPercent = 1.0;
       break;
     case "COMPRESSION":
-      riskPercent = 0.4;
+      riskPercent = 0.5;
       break;
     case "CHOPPY":
-      riskPercent = 0.2;
+      riskPercent = 0.25;
       break;
     default:
-      riskPercent = 0.5;
+      riskPercent = 1.0;
   }
 
   return {
