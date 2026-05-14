@@ -94,13 +94,13 @@ export function calculateMarketRegime(
 
     const bodyEfficiency = bodySum / rangeSum;
     const directionalConsistency = Math.max(bullish, bearish) / recent.length;
-    // vwapRespect: Nới lỏng, chỉ cần không cắt quá nhiều (ngưỡng 2-15 lần)
-    const vwapRespect = 1 - normalize(vwapCrosses, 2, 12);
+    // vwapRespect: Giảm ngưỡng cắt xuống (2-10 lần) để nhạy cảm hơn với choppy
+    const vwapRespect = 1 - normalize(vwapCrosses, 2, 10);
 
     const score =
-      normalize(bodyEfficiency, 0.2, 0.7) * 40 +         // Thân nến chiếm >20% range là có lực
-      normalize(directionalConsistency, 0.45, 0.8) * 35 + // Tỉ lệ nến cùng màu >45%
-      vwapRespect * 25;                                   // Tôn trọng VWAP
+      normalize(bodyEfficiency, 0.15, 0.5) * 40 +        // Chỉ cần thân nến >15% là bắt đầu có lực, >50% là cực mạnh
+      normalize(directionalConsistency, 0.52, 0.75) * 35 + // 52% cùng màu là bắt đầu trend, 75% là trend mạnh
+      vwapRespect * 25;
 
     return Number(score.toFixed(1));
   };
@@ -112,10 +112,11 @@ export function calculateMarketRegime(
   let regime = "NEUTRAL";
   let riskPercent = 0.5;
 
-  if (totalScore > 65) {
+  // Thu hẹp vùng NEUTRAL để bot nhạy hơn
+  if (totalScore > 60) {
     regime = "TREND_EXPANSION";
     riskPercent = 1.0; 
-  } else if (totalScore < 35) {
+  } else if (totalScore < 42) {
     regime = "CHOPPY";
     riskPercent = 0.1;
   }
