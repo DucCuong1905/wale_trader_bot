@@ -69,6 +69,7 @@ interface BacktestResult {
   displaceWins: number;
   totalProfitR: number;
   monthlySnapshots: any[];
+  marketRegime?: any;
 }
 
 let results: BacktestResult = {
@@ -92,7 +93,8 @@ let results: BacktestResult = {
   displaceTrades: 0,
   displaceWins: 0,
   totalProfitR: 0,
-  monthlySnapshots: []
+  monthlySnapshots: [],
+  marketRegime: null
 };
 
 // --- LOGIC FUNCTIONS (COPIED & ADAPTED FROM SERVER.TS) ---
@@ -533,21 +535,25 @@ export async function runBacktest(
     const bars5m = aggregateCandles(calcWindow5mRaw, 5);
     const vwma5m = calculateVWMA(bars5m, 20);
 
-    // --- MARKET REGIME FILTER ---
-    const calcWindowDailyRaw = allKlines.slice(Math.max(0, i - 1440 * 100), i + 1);
-    const bars1d = aggregateCandles(calcWindowDailyRaw, 1440);
-    
-    const toCandle = (b: any): Candle => ({
-      open: b[1],
-      high: b[2],
-      low: b[3],
-      close: b[4],
-      volume: b[5]
-    });
+    // --- MARKET REGIME FILTER (Optimize: Only calculate every 15 mins) ---
+    const shouldUpdateRegime = i % 15 === 0 || !results.marketRegime;
+    if (shouldUpdateRegime) {
+      const calcWindowDailyRaw = allKlines.slice(Math.max(0, i - 1440 * 100), i + 1);
+      const bars1d = aggregateCandles(calcWindowDailyRaw, 1440);
+      
+      const toCandle = (b: any): Candle => ({
+        open: b[1],
+        high: b[2],
+        low: b[3],
+        close: b[4],
+        volume: b[5]
+      });
 
-    const d1Candles = bars1d.map(toCandle);
-    const m5CandlesBacktest = bars5m.map(toCandle);
-    const regimeData = calculateMarketRegime(d1Candles, m5CandlesBacktest);
+      const d1Candles = bars1d.map(toCandle);
+      const m5CandlesBacktest = bars5m.map(toCandle);
+      results.marketRegime = calculateMarketRegime(d1Candles, m5CandlesBacktest);
+    }
+    const regimeData = results.marketRegime!;
 
     // --- KHUNG 1P (ENTRIES) ---
     const currentPrice = allKlines[i][4];
