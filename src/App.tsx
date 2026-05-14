@@ -819,41 +819,41 @@ export default function App() {
                        <div className="bg-[#161625] p-6 rounded-[1.5rem] border border-white/5 flex items-center justify-between shadow-lg">
                           <p className="text-[11px] text-slate-400 font-black uppercase tracking-[0.15em]">TRUNG BÌNH PNL</p>
                           <p className="text-2xl font-mono font-black text-blue-500 glow-blue">
-                             {backtestStatus.lastResult.totalTrades > 0 
-                               ? (backtestStatus.lastResult.totalPnL / backtestStatus.lastResult.totalTrades).toFixed(2) 
+                             {(backtestStatus.lastResult?.totalTrades || 0) > 0 
+                               ? ((backtestStatus.lastResult?.totalProfitR || 0) / (backtestStatus.lastResult?.totalTrades || 1)).toFixed(2) 
                                : 0}R
                           </p>
                        </div>
 
                        <div className={cn(
                           "bg-[#12121c] p-10 rounded-[2.5rem] border-2 transition-all flex flex-col justify-center min-h-[220px]",
-                          backtestStatus.lastResult.totalPnL >= 0 
+                          (backtestStatus.lastResult?.totalProfitR || 0) >= 0 
                             ? "border-emerald-500/30 glow-green shadow-[0_0_40px_rgba(16,185,129,0.1)]" 
                             : "border-red-500/30 glow-red shadow-[0_0_40px_rgba(239,68,68,0.1)]"
                         )}>
                          <p className={cn(
                             "text-xs font-black uppercase mb-6 tracking-widest",
-                            backtestStatus.lastResult.totalPnL >= 0 ? "text-emerald-400" : "text-red-400"
-                         )}>TỔNG TỶ LỆ LỢI NHUẬN: {(backtestStatus.lastResult.totalPnL || 0).toFixed(1)}R</p>
+                            (backtestStatus.lastResult?.totalProfitR || 0) >= 0 ? "text-emerald-400" : "text-red-400"
+                         )}>TỔNG TỶ LỆ LỢI NHUẬN: {(backtestStatus.lastResult?.totalProfitR || 0).toFixed(1)}R</p>
                          <div className="flex items-center">
                             <p className={cn(
                               "text-7xl font-mono font-black tracking-tighter",
-                              backtestStatus.lastResult.totalPnL >= 0 ? "text-emerald-400" : "text-red-400"
+                              (backtestStatus.lastResult?.totalProfitR || 0) >= 0 ? "text-emerald-400" : "text-red-400"
                             )}>
-                              {backtestStatus.lastResult.totalPnL > 0 ? '+' : ''}{backtestStatus.lastResult.totalPnL.toFixed(1)}R
+                              {(backtestStatus.lastResult?.totalProfitR || 0) > 0 ? '+' : ''}{(backtestStatus.lastResult?.totalProfitR || 0).toFixed(1)}R
                             </p>
                          </div>
                       </div>
 
                        <div className="bg-[#12121c] p-4 rounded-2xl border border-white/5 flex items-center justify-between">
                           <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Tổng Giao Dịch</p>
-                          <p className="text-xl font-mono font-black">{backtestStatus.lastResult.totalTrades}</p>
+                          <p className="text-xl font-mono font-black">{backtestStatus.lastResult?.totalTrades || 0}</p>
                        </div>
                        <div className="bg-[#12121c] p-4 rounded-2xl border border-white/5 flex items-center justify-between">
                           <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Tỷ Lệ Thắng</p>
                           <p className="text-xl font-mono font-black text-green-400">
-                             {backtestStatus.lastResult.totalTrades > 0 
-                               ? Math.round((backtestStatus.lastResult.wins / backtestStatus.lastResult.totalTrades) * 100) 
+                             {(backtestStatus.lastResult?.totalTrades || 0) > 0 
+                               ? Math.round(((backtestStatus.lastResult?.wins || 0) / (backtestStatus.lastResult?.totalTrades || 1)) * 100) 
                                : 0}%
                           </p>
                        </div>
@@ -861,24 +861,24 @@ export default function App() {
 
                     <div className={cn(
                         "bg-[#12121c] p-8 rounded-[2rem] border transition-all",
-                        backtestStatus.lastResult.finalBalance >= 2000 
+                        (backtestStatus.lastResult?.finalBalance || 0) >= 2000 
                           ? "border-blue-500/20 glow-blue shadow-[0_0_20px_rgba(59,130,246,0.1)]" 
                           : "border-red-500/20 glow-red shadow-[0_0_20px_rgba(239,68,68,0.1)]"
                       )}>
                        <p className={cn(
                           "text-[10px] font-black uppercase mb-4 tracking-widest",
-                          backtestStatus.lastResult.finalBalance >= 2000 ? "text-blue-500" : "text-red-500"
+                          (backtestStatus.lastResult?.finalBalance || 0) >= 2000 ? "text-blue-500" : "text-red-500"
                        )}>Số Dư Cuối Cùng</p>
                        <div className="flex items-end gap-3">
                           <p className={cn(
                             "text-4xl font-mono font-black",
-                            backtestStatus.lastResult.finalBalance >= 2000 ? "text-blue-400" : "text-red-400"
+                            (backtestStatus.lastResult?.finalBalance || 0) >= 2000 ? "text-blue-400" : "text-red-400"
                           )}>
-                            ${backtestStatus.lastResult.finalBalance.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                            ${(backtestStatus.lastResult?.finalBalance || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                           </p>
                           <p className={cn(
                             "text-sm font-bold mb-2 uppercase",
-                            backtestStatus.lastResult.finalBalance >= 2000 ? "text-blue-600" : "text-red-600"
+                            (backtestStatus.lastResult?.finalBalance || 0) >= 2000 ? "text-blue-600" : "text-red-600"
                           )}>USD</p>
                        </div>
                     </div>
@@ -903,8 +903,8 @@ export default function App() {
                                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Lợi Nhuận</p>
                                  <p className={cn(
                                    "text-sm font-mono font-black",
-                                   m.totalProfitR >= 0 ? "text-green-400" : "text-red-400"
-                                 )}>{m.totalProfitR > 0 ? '+' : ''}{m.totalProfitR.toFixed(1)}R</p>
+                                   (m.monthlyProfitR || 0) >= 0 ? "text-green-400" : "text-red-400"
+                                 )}>{(m.monthlyProfitR || 0) > 0 ? '+' : ''}{(m.monthlyProfitR || 0).toFixed(1)}R</p>
                                </div>
                              </div>
                            ))}
@@ -917,8 +917,8 @@ export default function App() {
                      <div className="p-8 border-b border-white/5 flex items-center justify-between">
                         <h3 className="text-lg font-black uppercase">Nhật Ký Backtest</h3>
                         <div className="flex items-center gap-4 text-[10px] font-bold">
-                           <span className="flex items-center gap-1.5"><div className="w-2 h-2 bg-green-500 rounded-full" /> WIN: {backtestStatus.lastResult.wins}</span>
-                           <span className="flex items-center gap-1.5"><div className="w-2 h-2 bg-red-500 rounded-full" /> LOSS: {backtestStatus.lastResult.losses}</span>
+                           <span className="flex items-center gap-1.5"><div className="w-2 h-2 bg-green-500 rounded-full" /> WIN: {backtestStatus.lastResult?.wins || 0}</span>
+                           <span className="flex items-center gap-1.5"><div className="w-2 h-2 bg-red-500 rounded-full" /> LOSS: {backtestStatus.lastResult?.losses || 0}</span>
                         </div>
                      </div>
                      <div className="max-h-[600px] overflow-y-auto">
@@ -932,7 +932,7 @@ export default function App() {
                               </tr>
                            </thead>
                            <tbody className="divide-y divide-white/5">
-                              {backtestStatus.lastResult.trades.map((t: any, i: number) => (
+                              {(backtestStatus.lastResult?.trades || []).map((t: any, i: number) => (
                                 <tr key={i} className="hover:bg-white/[0.02] transition-all">
                                    <td className="px-8 py-4 text-[11px] font-mono whitespace-nowrap">{new Date(t.time).toLocaleString()}</td>
                                    <td className="px-8 py-4">
@@ -944,7 +944,7 @@ export default function App() {
                                    <td className="px-8 py-4 text-xs text-slate-300 italic">"{t.reason}"</td>
                                    <td className={cn(
                                      "px-8 py-4 text-right font-mono font-black",
-                                     (t.pnlR !== undefined ? t.pnlR : t.pnl) > 0 ? "text-green-400" : "text-red-400"
+                                     (t.pnlR !== undefined ? t.pnlR : (t.pnl || 0)) > 0 ? "text-green-400" : "text-red-400"
                                    )}>
                                       {t.pnlR !== undefined ? (t.pnlR > 0 ? `+${t.pnlR}R` : `${t.pnlR}R`) : (t.pnl > 0 ? `+${t.pnl}R` : `${t.pnl}R`)}
                                    </td>
