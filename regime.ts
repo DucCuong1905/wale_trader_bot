@@ -79,9 +79,9 @@ export function calculateMarketRegime(
   const volumeRatio = lastD1.volume / (volumeMA20 || 1);
 
   const expansionScore =
-    normalize(atrRatio, 0.8, 1.5) * 40 +
-    normalize(rangeRatio, 0.8, 2.0) * 35 +
-    normalize(volumeRatio, 0.8, 1.8) * 25;
+    normalize(atrRatio, 0.7, 1.3) * 40 +
+    normalize(rangeRatio, 0.7, 1.8) * 35 +
+    normalize(volumeRatio, 0.7, 1.6) * 25;
 
   // =========================
   // TREND QUALITY SCORE
@@ -126,11 +126,11 @@ export function calculateMarketRegime(
 
   const bodyEfficiency = bodySum / (rangeSum || 1);
   const directionalConsistency = Math.max(bullish, bearish) / recentM5.length;
-  const vwapRespect = 1 - normalize(vwapCrosses, 3, 15);
+  const vwapRespect = 1 - normalize(vwapCrosses, 4, 18);
 
   const trendQualityScore =
-    normalize(bodyEfficiency, 0.3, 0.8) * 40 +
-    normalize(directionalConsistency, 0.5, 0.9) * 35 +
+    normalize(bodyEfficiency, 0.2, 0.7) * 40 +
+    normalize(directionalConsistency, 0.45, 0.8) * 35 +
     vwapRespect * 25;
 
   // =========================
@@ -158,39 +158,43 @@ export function calculateMarketRegime(
     insideBarScore * 25;
 
   // =========================
-  // FINAL DECISION
+  // FINAL DECISION (Loosened thresholds)
   // =========================
 
   let regime = "NEUTRAL";
 
   if (
-    expansionScore > 70 &&
-    trendQualityScore > 65 &&
-    compressionScore < 40
+    expansionScore > 60 &&
+    trendQualityScore > 55 &&
+    compressionScore < 50
   ) {
     regime = "TREND_EXPANSION";
-  } else if (compressionScore > 70) {
+  } else if (compressionScore > 65) {
     regime = "COMPRESSION";
-  } else if (trendQualityScore < 40) {
+  } else if (trendQualityScore < 35) {
     regime = "CHOPPY";
   }
 
   // =========================
-  // RISK MODEL
+  // RISK MODEL (More aggressive allocation)
   // =========================
 
   let riskPercent = 0;
   switch (regime) {
     case "TREND_EXPANSION":
-      riskPercent = 1.0;
+      riskPercent = 1.0; // 100% risk trong xu hướng mạnh
       break;
     case "NEUTRAL":
-      riskPercent = 0.5;
+      riskPercent = 0.8; // 80% risk trong thị trường bình thường (tăng từ 50%)
+      break;
+    case "COMPRESSION":
+      riskPercent = 0.4; // 40% risk khi tích lũy (tăng từ 0%)
       break;
     case "CHOPPY":
-    case "COMPRESSION":
-      riskPercent = 0;
+      riskPercent = 0.2; // 20% risk khi thị trường nhiễu (tăng từ 0%)
       break;
+    default:
+      riskPercent = 0.5;
   }
 
   return {

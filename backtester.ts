@@ -663,7 +663,7 @@ export async function runBacktest(
       results.totalSlippage += estimatedSlippage;
       results.finalBalance += dollarPnL; 
       monthlyPnL += dollarPnL;
-      monthlyProfitR += pnlR;
+      monthlyProfitR += (pnlR * regimeData.riskPercent);
 
       results.totalTrades++;
       if (type === "LONG") {
