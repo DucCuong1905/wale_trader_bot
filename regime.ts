@@ -107,7 +107,7 @@ export function calculateMarketRegime(
 
   const tqs5m = calculateTQS(m5Candles);
   const tqs1m = calculateTQS(m1Candles);
-  const totalScore = (tqs5m + tqs1m) / 2;
+  const totalScore = tqs5m * 0.6 + tqs1m * 0.4;
 
   let regime = "NEUTRAL";
   let riskPercent = 0.5; // Mặc định khớp lệnh nhẹ

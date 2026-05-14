@@ -788,6 +788,14 @@ export async function runBacktest(
   results.monthlySnapshots = monthlySnapshots;
   fs.writeFileSync(RESULTS_FILE, JSON.stringify(results, null, 2));
   console.log(`[DONE] Backtest complete. Results: ${RESULTS_FILE}`);
+
+  console.log("\n📈 --- THỐNG KÊ CHI TIẾT THEO REGIME ---");
+  Object.entries(results.regimeStats).forEach(([regime, stats]: [string, any]) => {
+    const wr = stats.trades > 0 ? ((stats.wins / stats.trades) * 100).toFixed(1) : "0";
+    console.log(`• ${regime}: ${stats.trades} trades | WR: ${wr}% | PnL: ${stats.pnlR.toFixed(1)}R`);
+  });
+  console.log("--------------------------------------\n");
+
   if (enableSessionFilter) {
     console.log(`[SESSION] Filtered out ${sessionSkippedCount} candles outside of 08:00 - 21:00 UTC.`);
   }
