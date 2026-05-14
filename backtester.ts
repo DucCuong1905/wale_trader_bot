@@ -566,6 +566,11 @@ export async function runBacktest(
   let monthlyPnL = 0;
   let monthlyProfitR = 0;
   let monthlySnapshots: any[] = [];
+  
+  // Tracking exception trades (distance 2R-3R in Expansion)
+  let exceptionTrades = 0;
+  let exceptionWins = 0;
+  let exceptionPnLR = 0;
 
   let sessionSkippedCount = 0;
   const isWithinSessions = (ts: number) => {
@@ -627,8 +632,15 @@ export async function runBacktest(
     const isInSession = isWithinSessions(allKlines[i][0]);
 
     const distFromVWMA = Math.abs(currentPrice - vwmaM1);
-    const isOverExtendedLong = distFromVWMA > (atrM1 * 2);
-    const isOverExtendedShort = distFromVWMA > (atrM1 * 2);
+    
+    // Default limit is 2*ATR, but for Expansion we allow 3*ATR
+    const isExpansion = regimeData.regime === "TREND_EXPANSION";
+    const extensionMultiplier = isExpansion ? 3 : 2;
+    const effectiveAdxThreshold = isExpansion ? 30 : adxThreshold;
+    
+    const isOverExtended = distFromVWMA > (atrM1 * extensionMultiplier);
+    // Is it in the "Exception Zone" (between 2 and 3 ATR)?
+    const isExceptionZone = distFromVWMA > (atrM1 * 2) && distFromVWMA <= (atrM1 * 3);
 
     // --- MONTHLY SNAPSHOT LOGIC ---
     const d = new Date(allKlines[i][0]);
@@ -671,11 +683,12 @@ export async function runBacktest(
     lastMonth = currentMonth;
     lastYear = currentYear;
 
-    let isLong = (regimeData.riskPercent > 0) && !isOverExtendedLong && currentPrice > vwma5m && currentPrice > vwapM1 && adxM1.adx >= adxThreshold && isInSession && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI;
-    let isShort = (regimeData.riskPercent > 0) && !isOverExtendedShort && currentPrice < vwma5m && currentPrice < vwapM1 && adxM1.adx >= adxThreshold && isInSession && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI;
+    let isLong = (regimeData.riskPercent > 0) && !isOverExtended && currentPrice > vwma5m && currentPrice > vwapM1 && adxM1.adx >= effectiveAdxThreshold && isInSession && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI;
+    let isShort = (regimeData.riskPercent > 0) && !isOverExtended && currentPrice < vwma5m && currentPrice < vwapM1 && adxM1.adx >= effectiveAdxThreshold && isInSession && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
+      const tradeIsException = isExceptionZone && isExpansion;
       const entryPrice = currentPrice; // Market Entry at Close
       
       const time = new Date(allKlines[i][0]).toISOString();
@@ -744,9 +757,22 @@ export async function runBacktest(
         }
         results.displaceWins++;
         monthlyWins++;
+
+        if (tradeIsException) {
+          exceptionWins++;
+          exceptionPnLR += rr;
+        }
       } else {
         results.losses++;
         monthlyLosses++;
+
+        if (tradeIsException) {
+          exceptionPnLR -= 1;
+        }
+      }
+
+      if (tradeIsException) {
+        exceptionTrades++;
       }
       
       results.displaceTrades++;
@@ -794,6 +820,12 @@ export async function runBacktest(
     const wr = stats.trades > 0 ? ((stats.wins / stats.trades) * 100).toFixed(1) : "0";
     console.log(`• ${regime}: ${stats.trades} trades | WR: ${wr}% | PnL: ${stats.pnlR.toFixed(1)}R`);
   });
+
+  if (exceptionTrades > 0) {
+    const excWR = ((exceptionWins / exceptionTrades) * 100).toFixed(1);
+    console.log(`\n⚠️  --- THỐNG KÊ LỆNH NGOẠI LỆ (EXTENDED 2-3R) ---`);
+    console.log(`• Số lệnh: ${exceptionTrades} | Winrate: ${excWR}% | PnL: ${exceptionPnLR.toFixed(1)}R`);
+  }
   console.log("--------------------------------------\n");
 
   if (enableSessionFilter) {
