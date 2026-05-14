@@ -158,20 +158,20 @@ export function calculateMarketRegime(
     insideBarScore * 25;
 
   // =========================
-  // FINAL DECISION (Loosened thresholds)
+  // FINAL DECISION (Nới lỏng để dễ kích hoạt TREND_EXPANSION)
   // =========================
 
   let regime = "NEUTRAL";
 
   if (
-    expansionScore > 60 &&
-    trendQualityScore > 55 &&
-    compressionScore < 50
+    expansionScore > 50 &&
+    trendQualityScore > 45 &&
+    compressionScore < 60
   ) {
     regime = "TREND_EXPANSION";
-  } else if (compressionScore > 65) {
+  } else if (compressionScore > 70) {
     regime = "COMPRESSION";
-  } else if (trendQualityScore < 35) {
+  } else if (trendQualityScore < 30) {
     regime = "CHOPPY";
   }
 
