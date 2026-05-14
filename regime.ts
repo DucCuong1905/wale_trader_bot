@@ -164,14 +164,14 @@ export function calculateMarketRegime(
   let regime = "NEUTRAL";
 
   if (
-    expansionScore > 60 &&
-    trendQualityScore > 55 &&
-    compressionScore < 50
+    expansionScore > 65 &&
+    trendQualityScore > 60 &&
+    compressionScore < 45
   ) {
     regime = "TREND_EXPANSION";
-  } else if (compressionScore > 65) {
+  } else if (compressionScore > 60) {
     regime = "COMPRESSION";
-  } else if (trendQualityScore < 35) {
+  } else if (trendQualityScore < 45) {
     regime = "CHOPPY";
   }
 
