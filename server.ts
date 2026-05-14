@@ -135,9 +135,9 @@ let botState = {
   latestSweepStatus: "None" as "None" | "Low" | "High",
   latestSweepCandle: -1,
   marketRegime: {
-    expansionScore: 0,
-    trendQualityScore: 0,
-    compressionScore: 0,
+    tqs5m: 0,
+    tqs1m: 0,
+    totalScore: 0,
     regime: "NEUTRAL",
     riskPercent: 0.5
   }
@@ -569,10 +569,10 @@ async function traderLoop() {
       volume: b[5]
     });
 
-    const d1Candles = bars1d.map(toCandle);
     const m5Candles = bars5m.map(toCandle);
+    const m1Candles = bars.map(toCandle);
 
-    const regimeData = calculateMarketRegime(d1Candles, m5Candles);
+    const regimeData = calculateMarketRegime(m5Candles, m1Candles);
     botState.marketRegime = regimeData;
 
     // 4. TÍNH TOÁN CÁC CHỈ BÁO KỸ THUẬT
@@ -599,7 +599,7 @@ async function traderLoop() {
     // THÔNG BÁO KHI SẴN SÀNG
     if (!botState.isInitNotified) {
       botState.isInitNotified = true;
-      console.log(`🤖 WHALE BOT SẴN SÀNG! Regime: ${regimeData.regime} (Exp: ${regimeData.expansionScore}%, Trend: ${regimeData.trendQualityScore}%, Comp: ${regimeData.compressionScore}%)`);
+      console.log(`🤖 WHALE BOT SẴN SÀNG! Regime: ${regimeData.regime} (TQS 5m: ${regimeData.tqs5m}, TQS 1m: ${regimeData.tqs1m}, Tổng: ${regimeData.totalScore})`);
     }
 
     const lastCandle = bars[bars.length - 1];
@@ -834,37 +834,6 @@ async function startServer() {
 
     startWS(); 
     traderLoop(); 
-
-    // AUTO RUN BACKTEST 2020-2022 ON START
-    console.log("🚀 [AUTO] Bắt đầu tự động chạy backtest 2020-2022...");
-    backtestStatus.isRunning = true;
-    runBacktest("2020-01-01T00:00:00Z", "2022-01-01T00:00:00Z", 1.0, "1m", true, 20, p => {
-      backtestStatus.progress = p;
-    }, 10).then(r => {
-      backtestStatus.isRunning = false;
-      backtestStatus.lastResult = r;
-      console.log("✅ [AUTO] Hoàn tất backtest 2020-2022.");
-      
-      if (r.monthlySnapshots && r.monthlySnapshots.length > 0) {
-        console.log("\n📊 --- THỐNG KÊ CHI TIẾT 2020-2022 (THEO THÁNG) ---");
-        r.monthlySnapshots.forEach((m: any) => {
-          const wr = m.trades > 0 ? ((m.wins / m.trades) * 100).toFixed(1) : "0";
-          console.log(`• Tháng ${m.month}/${m.year}: PnL: $${m.monthlyProfit.toFixed(2)} (${m.monthlyProfitR.toFixed(1)}R) | WR: ${wr}% (${m.trades} trades) (L: ${m.longTrades}, WL: ${m.longWins} -- S: ${m.shortTrades}, WS: ${m.shortWins})`);
-        });
-        
-        if (r.regimeStats) {
-          console.log("\n📈 --- TỔNG KẾT THEO REGIME (2020-2022) ---");
-          Object.entries(r.regimeStats).forEach(([regime, stats]: [string, any]) => {
-            const wr = stats.trades > 0 ? ((stats.wins / stats.trades) * 100).toFixed(1) : "0";
-            console.log(`• ${regime}: ${stats.trades} trades | WR: ${wr}% | PnL: ${stats.pnlR.toFixed(1)}R`);
-          });
-        }
-        console.log("--------------------------------------\n");
-      }
-    }).catch(err => {
-      console.error("❌ [AUTO] Lỗi backtest 2020-2022:", err);
-      backtestStatus.isRunning = false;
-    });
   });
 }
 

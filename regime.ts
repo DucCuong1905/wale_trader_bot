@@ -42,166 +42,90 @@ function normalize(v: number, min: number, max: number) {
 }
 
 export function calculateMarketRegime(
-  d1Candles: Candle[],
-  m5Candles: Candle[]
+  m5Candles: Candle[],
+  m1Candles: Candle[]
 ) {
-  if (d1Candles.length < 35 || m5Candles.length < 48) {
+  // Cần tối thiểu 50 nến cho mỗi khung giờ
+  if (m1Candles.length < 50 || m5Candles.length < 50) {
     return {
-      expansionScore: 0,
-      trendQualityScore: 0,
-      compressionScore: 0,
+      tqs5m: 0,
+      tqs1m: 0,
+      totalScore: 0,
       regime: "NEUTRAL",
       riskPercent: 0.5
     };
   }
 
-  // =========================
-  // DAILY EXPANSION SCORE
-  // =========================
+  const calculateTQS = (candles: Candle[]) => {
+    const recent = candles.slice(-50);
+    let bodySum = 0;
+    let rangeSum = 0;
+    let bullish = 0;
+    let bearish = 0;
+    let vwapCrosses = 0;
+    let prevAboveVWAP: boolean | null = null;
 
-  const atr14 = atr(d1Candles, 14);
-  const atrHistory: number[] = [];
+    const typicalPrices = recent.map(c => (c.high + c.low + c.close) / 3);
+    const volumes = recent.map(c => c.volume);
+    let cumulativeTPV = 0;
+    let cumulativeVolume = 0;
 
-  // Need at least 20 + 14 candles to have a 20-period SMA of 14-period ATR
-  for (let i = 15; i <= d1Candles.length; i++) {
-    atrHistory.push(atr(d1Candles.slice(0, i), 14));
-  }
+    for (let i = 0; i < recent.length; i++) {
+      const c = recent[i];
+      const body = Math.abs(c.close - c.open);
+      const range = c.high - c.low || 0.000001;
 
-  const atrMA20 = sma(atrHistory, 20);
-  const lastD1 = d1Candles[d1Candles.length - 1];
-  const dailyRange = lastD1.high - lastD1.low;
+      bodySum += body;
+      rangeSum += range;
 
-  const volumeHistory = d1Candles.map(c => c.volume);
-  const volumeMA20 = sma(volumeHistory, 20);
+      if (c.close > c.open) bullish++;
+      else if (c.close < c.open) bearish++;
 
-  const atrRatio = atr14 / (atrMA20 || 1);
-  const rangeRatio = dailyRange / (atr14 || 1);
-  const volumeRatio = lastD1.volume / (volumeMA20 || 1);
+      cumulativeTPV += typicalPrices[i] * (volumes[i] || 1);
+      cumulativeVolume += (volumes[i] || 1);
+      const vwap = cumulativeTPV / cumulativeVolume;
+      const aboveVWAP = c.close > vwap;
 
-  const expansionScore =
-    normalize(atrRatio, 0.7, 1.3) * 40 +
-    normalize(rangeRatio, 0.7, 1.8) * 35 +
-    normalize(volumeRatio, 0.7, 1.6) * 25;
-
-  // =========================
-  // TREND QUALITY SCORE
-  // =========================
-
-  const recentM5 = m5Candles.slice(-48);
-  let bodySum = 0;
-  let rangeSum = 0;
-  let bullish = 0;
-  let bearish = 0;
-  let vwapCrosses = 0;
-  let prevAboveVWAP: boolean | null = null;
-
-  const typicalPrices = recentM5.map(c => (c.high + c.low + c.close) / 3);
-  const volumes = recentM5.map(c => c.volume);
-
-  let cumulativeTPV = 0;
-  let cumulativeVolume = 0;
-
-  for (let i = 0; i < recentM5.length; i++) {
-    const c = recentM5[i];
-    const body = Math.abs(c.close - c.open);
-    const range = c.high - c.low;
-
-    bodySum += body;
-    rangeSum += (range || 0.000001); // Avoid div by zero
-
-    if (c.close > c.open) bullish++;
-    else bearish++;
-
-    cumulativeTPV += typicalPrices[i] * (volumes[i] || 1);
-    cumulativeVolume += (volumes[i] || 1);
-
-    const vwap = cumulativeTPV / cumulativeVolume;
-    const aboveVWAP = c.close > vwap;
-
-    if (prevAboveVWAP !== null && aboveVWAP !== prevAboveVWAP) {
-      vwapCrosses++;
+      if (prevAboveVWAP !== null && aboveVWAP !== prevAboveVWAP) {
+        vwapCrosses++;
+      }
+      prevAboveVWAP = aboveVWAP;
     }
-    prevAboveVWAP = aboveVWAP;
-  }
 
-  const bodyEfficiency = bodySum / (rangeSum || 1);
-  const directionalConsistency = Math.max(bullish, bearish) / recentM5.length;
-  const vwapRespect = 1 - normalize(vwapCrosses, 3, 15);
+    const bodyEfficiency = bodySum / rangeSum;
+    const directionalConsistency = Math.max(bullish, bearish) / recent.length;
+    // vwapRespect: càng ít cắt VWAP thì điểm càng cao. Ngưỡng 2-12 lần cắt.
+    const vwapRespect = 1 - normalize(vwapCrosses, 2, 12);
 
-  const trendQualityScore =
-    normalize(bodyEfficiency, 0.2, 0.7) * 40 +
-    normalize(directionalConsistency, 0.45, 0.8) * 35 +
-    vwapRespect * 25;
+    const score =
+      normalize(bodyEfficiency, 0.2, 0.7) * 40 +
+      normalize(directionalConsistency, 0.45, 0.8) * 35 +
+      vwapRespect * 25;
 
-  // =========================
-  // COMPRESSION SCORE
-  // =========================
+    return Number((score * 100).toFixed(1));
+  };
 
-  let insideBars = 0;
-  // Check daily compression over last 10 days
-  const compressionWindow = d1Candles.slice(-10);
-  for (let i = 1; i < compressionWindow.length; i++) {
-    const prev = compressionWindow[i - 1];
-    const curr = compressionWindow[i];
-    if (curr.high < prev.high && curr.low > prev.low) {
-      insideBars++;
-    }
-  }
-
-  const atrCompression = 1 - normalize(atrRatio, 0.7, 1.3);
-  const rangeCompression = 1 - normalize(rangeRatio, 0.7, 1.8);
-  const insideBarScore = normalize(insideBars, 1, 5);
-
-  const compressionScore =
-    atrCompression * 40 +
-    rangeCompression * 35 +
-    insideBarScore * 25;
-
-  // =========================
-  // FINAL DECISION (Loosened thresholds)
-  // =========================
+  const tqs5m = calculateTQS(m5Candles);
+  const tqs1m = calculateTQS(m1Candles);
+  const totalScore = (tqs5m + tqs1m) / 2;
 
   let regime = "NEUTRAL";
+  let riskPercent = 0.5; // Mặc định khớp lệnh nhẹ
 
-  if (
-    expansionScore > 65 &&
-    trendQualityScore > 60 &&
-    compressionScore < 45
-  ) {
+  if (totalScore > 65) {
     regime = "TREND_EXPANSION";
-  } else if (compressionScore > 60) {
-    regime = "COMPRESSION";
-  } else if (trendQualityScore < 45) {
+    riskPercent = 1.0; // Xu hướng đẹp: Full risk
+  } else if (totalScore < 35) {
     regime = "CHOPPY";
-  }
-
-  // =========================
-  // RISK MODEL (Absolute percentages: 2%, 1%, 0.5%, 0.25%)
-  // =========================
-
-  let riskPercent = 0;
-  switch (regime) {
-    case "TREND_EXPANSION":
-      riskPercent = 2.0;
-      break;
-    case "NEUTRAL":
-      riskPercent = 1.0;
-      break;
-    case "COMPRESSION":
-      riskPercent = 0.5;
-      break;
-    case "CHOPPY":
-      riskPercent = 0.25;
-      break;
-    default:
-      riskPercent = 1.0;
+    riskPercent = 0.1; // Chợ búa: Đánh cực nhỏ hoặc nghỉ
   }
 
   return {
-    expansionScore: Number(expansionScore.toFixed(1)),
-    trendQualityScore: Number(trendQualityScore.toFixed(1)),
-    compressionScore: Number(compressionScore.toFixed(1)),
+    tqs5m,
+    tqs1m,
+    totalScore: Number(totalScore.toFixed(1)),
     regime,
     riskPercent
   };
 }
+

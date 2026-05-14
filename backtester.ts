@@ -608,9 +608,9 @@ export async function runBacktest(
         volume: b[5]
       });
 
-      const d1Candles = bars1d.map(toCandle);
       const m5CandlesBacktest = bars5m.map(toCandle);
-      results.marketRegime = calculateMarketRegime(d1Candles, m5CandlesBacktest);
+      const m1Candles = allKlines.slice(Math.max(0, i - 100), i + 1).map(toCandle);
+      results.marketRegime = calculateMarketRegime(m5CandlesBacktest, m1Candles);
     }
     const regimeData = results.marketRegime!;
 
