@@ -725,14 +725,18 @@ async function traderLoop() {
         const vnTime = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
         botState.lastTradeTime = Date.now(); 
 
+        const isContTrade = (sig === "LONG" && isContinuationLong) || (sig === "SHORT" && isContinuationShort);
+        const strategyName = isContTrade ? "CONTINUATION (Bùng nổ tiếp diễn)" : "WHALE SWEEP (Quét thanh khoản)";
+
         const conditions = [
+          `📡 Chiến lược: **${strategyName}**`,
           `0. Regime: ${regimeData.regime} (Risk: ${regimeData.riskPercent}x)`,
           `1. Khoảng cách VWMA: ${sig === 'LONG' ? (!isOverExtendedLong ? '✅ Ok' : '❌ Quá xa') : (!isOverExtendedShort ? '✅ Ok' : '❌ Quá xa')} (${distFromVWMA.toFixed(2)})`,
           `2. Giá vs VWMA 5m: ${currentPrice > vwma5m ? '✅ Trên' : '❌ Dưới'}`,
           `3. Giá vs VWAP: ${currentPrice > vwapM1 ? '✅ Above' : '❌ Below'}`,
           `4. Slope M1: ${sig === 'LONG' ? (slopeM1 > 0 ? '✅ Positive' : '❌ Negative') : (slopeM1 < 0 ? '✅ Negative' : '❌ Positive')}`,
           `5. ADX M1 (>=${ADX_THRESHOLD}): ${adxM1.adx >= ADX_THRESHOLD ? '✅' : '❌'} (${adxM1.adx.toFixed(1)})`,
-          `6. Sweep M1: ✅ Confirmed`,
+          `6. Sweep M1: ${isContTrade ? 'N/A (Continuation)' : '✅ Confirmed'}`,
           `7. DI Power M1: ${sig === 'LONG' ? (adxM1.pDI > adxM1.mDI ? '✅ +DI > -DI' : '❌') : (adxM1.mDI > adxM1.pDI ? '✅ -DI > +DI' : '❌')}`
         ].join('\n');
 
