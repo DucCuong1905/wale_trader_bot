@@ -79,9 +79,9 @@ export function calculateMarketRegime(
   const volumeRatio = lastD1.volume / (volumeMA10 || 1);
 
   const expansionScore =
-    normalize(atrRatio, 0.65, 1.15) * 40 +
-    normalize(rangeRatio, 0.65, 1.6) * 35 +
-    normalize(volumeRatio, 0.65, 1.4) * 25;
+    normalize(atrRatio, 0.8, 1.5) * 40 +
+    normalize(rangeRatio, 0.8, 2.0) * 35 +
+    normalize(volumeRatio, 0.8, 1.8) * 25;
 
   // =========================
   // TREND QUALITY SCORE
@@ -126,11 +126,11 @@ export function calculateMarketRegime(
 
   const bodyEfficiency = bodySum / (rangeSum || 1);
   const directionalConsistency = Math.max(bullish, bearish) / recentM5.length;
-  const vwapRespect = 1 - normalize(vwapCrosses, 5, 20);
+  const vwapRespect = 1 - normalize(vwapCrosses, 3, 15);
 
   const trendQualityScore =
-    normalize(bodyEfficiency, 0.15, 0.6) * 40 +
-    normalize(directionalConsistency, 0.4, 0.75) * 35 +
+    normalize(bodyEfficiency, 0.3, 0.8) * 40 +
+    normalize(directionalConsistency, 0.5, 0.9) * 35 +
     vwapRespect * 25;
 
   // =========================
@@ -148,8 +148,8 @@ export function calculateMarketRegime(
     }
   }
 
-  const atrCompression = 1 - normalize(atrRatio, 0.7, 1.3);
-  const rangeCompression = 1 - normalize(rangeRatio, 0.7, 1.8);
+  const atrCompression = 1 - normalize(atrRatio, 0.8, 1.5);
+  const rangeCompression = 1 - normalize(rangeRatio, 0.8, 2.0);
   const insideBarScore = normalize(insideBars, 1, 5);
 
   const compressionScore =
@@ -158,43 +158,43 @@ export function calculateMarketRegime(
     insideBarScore * 25;
 
   // =========================
-  // FINAL DECISION (Nối lỏng tối đa để kích hoạt TREND_EXPANSION)
+  // FINAL DECISION (Kịch bản nới lỏng)
   // =========================
 
   let regime = "NEUTRAL";
 
   if (
-    expansionScore > 40 &&
-    trendQualityScore > 40 &&
-    compressionScore < 65
+    expansionScore > 60 &&
+    trendQualityScore > 55 &&
+    compressionScore < 50
   ) {
     regime = "TREND_EXPANSION";
-  } else if (compressionScore > 75) {
+  } else if (compressionScore > 70) {
     regime = "COMPRESSION";
-  } else if (trendQualityScore < 30) {
+  } else if (trendQualityScore < 35) {
     regime = "CHOPPY";
   }
 
   // =========================
-  // RISK MODEL (Absolute percentages: 2%, 1%, 0.5%, 0.25%)
+  // RISK MODEL (Multiplier: 1.0, 0.8, 0.4, 0.2)
   // =========================
 
   let riskPercent = 0;
   switch (regime) {
     case "TREND_EXPANSION":
-      riskPercent = 2.0; // 2% risk
+      riskPercent = 1.0;
       break;
     case "NEUTRAL":
-      riskPercent = 1.0; // 1% risk
+      riskPercent = 0.8;
       break;
     case "COMPRESSION":
-      riskPercent = 0.5; // 0.5% risk
+      riskPercent = 0.4;
       break;
     case "CHOPPY":
-      riskPercent = 0.25; // 0.25% risk
+      riskPercent = 0.2;
       break;
     default:
-      riskPercent = 1.0;
+      riskPercent = 0.5;
   }
 
   return {
