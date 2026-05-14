@@ -176,25 +176,25 @@ export function calculateMarketRegime(
   }
 
   // =========================
-  // RISK MODEL (More aggressive allocation)
+  // RISK MODEL (Absolute percentages: 2%, 1%, 0.5%, 0.25%)
   // =========================
 
   let riskPercent = 0;
   switch (regime) {
     case "TREND_EXPANSION":
-      riskPercent = 1.0; // 100% risk trong xu hướng mạnh
+      riskPercent = 2.0; // 2% risk
       break;
     case "NEUTRAL":
-      riskPercent = 0.8; // 80% risk trong thị trường bình thường (tăng từ 50%)
+      riskPercent = 1.0; // 1% risk
       break;
     case "COMPRESSION":
-      riskPercent = 0.4; // 40% risk khi tích lũy (tăng từ 0%)
+      riskPercent = 0.5; // 0.5% risk
       break;
     case "CHOPPY":
-      riskPercent = 0.2; // 20% risk khi thị trường nhiễu (tăng từ 0%)
+      riskPercent = 0.25; // 0.25% risk
       break;
     default:
-      riskPercent = 0.5;
+      riskPercent = 1.0;
   }
 
   return {

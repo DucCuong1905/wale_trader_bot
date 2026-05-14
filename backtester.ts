@@ -70,6 +70,13 @@ interface BacktestResult {
   totalProfitR: number;
   monthlySnapshots: any[];
   marketRegime?: any;
+  regimeStats: {
+    [key: string]: {
+      trades: number;
+      wins: number;
+      pnlR: number;
+    }
+  };
 }
 
 let results: BacktestResult = {
@@ -94,7 +101,13 @@ let results: BacktestResult = {
   displaceWins: 0,
   totalProfitR: 0,
   monthlySnapshots: [],
-  marketRegime: null
+  marketRegime: null,
+  regimeStats: {
+    "TREND_EXPANSION": { trades: 0, wins: 0, pnlR: 0 },
+    "NEUTRAL": { trades: 0, wins: 0, pnlR: 0 },
+    "COMPRESSION": { trades: 0, wins: 0, pnlR: 0 },
+    "CHOPPY": { trades: 0, wins: 0, pnlR: 0 }
+  }
 };
 
 // --- LOGIC FUNCTIONS (COPIED & ADAPTED FROM SERVER.TS) ---
@@ -493,7 +506,13 @@ export async function runBacktest(
     displaceTrades: 0,
     displaceWins: 0,
     totalProfitR: 0,
-    monthlySnapshots: []
+    monthlySnapshots: [],
+    regimeStats: {
+      "TREND_EXPANSION": { trades: 0, wins: 0, pnlR: 0 },
+      "NEUTRAL": { trades: 0, wins: 0, pnlR: 0 },
+      "COMPRESSION": { trades: 0, wins: 0, pnlR: 0 },
+      "CHOPPY": { trades: 0, wins: 0, pnlR: 0 }
+    }
   };
 
   let lastMonth = -1;
@@ -692,25 +711,35 @@ export async function runBacktest(
       
       results.displaceTrades++;
       
-      results.totalPnL += dollarPnL;
-      results.totalProfitR += (pnlR * regimeData.riskPercent); 
+    results.totalPnL += dollarPnL;
+    const effectiveR = pnlR * regimeData.riskPercent;
+    results.totalProfitR += effectiveR;
 
-      results.trades.push({ 
-        time, 
-        type, 
-        entryPrice, 
-        exitPrice, 
-        status, 
-        pnlR, 
-        dollarPnL, 
-        estimatedFee,
-        estimatedSlippage,
-        currentBalance: results.finalBalance,
-        reason: `TA Entry`
-      });
-      
-      const effectiveR = pnlR * regimeData.riskPercent;
-      console.log(`[TRADE] ${status} | PnL: ${pnlR}R (Eff: ${effectiveR.toFixed(1)}R) | $${dollarPnL.toFixed(2)} | Balance: $${results.finalBalance.toFixed(2)}`);
+    // Track regime stats
+    if (results.regimeStats[regimeData.regime]) {
+      results.regimeStats[regimeData.regime].trades++;
+      results.regimeStats[regimeData.regime].pnlR += effectiveR;
+      if (status === "WIN") {
+        results.regimeStats[regimeData.regime].wins++;
+      }
+    }
+
+    results.trades.push({ 
+      time, 
+      type, 
+      entryPrice, 
+      exitPrice, 
+      status, 
+      pnlR, 
+      dollarPnL, 
+      estimatedFee,
+      estimatedSlippage,
+      currentBalance: results.finalBalance,
+      reason: `TA Entry`,
+      regime: regimeData.regime
+    });
+    
+    console.log(`[TRADE] ${status} | PnL: ${pnlR}R (Eff: ${effectiveR.toFixed(1)}R) | $${dollarPnL.toFixed(2)} | Balance: $${results.finalBalance.toFixed(2)}`);
       
       // Nhảy vòng lặp đến điểm nến hiện tại
     }
