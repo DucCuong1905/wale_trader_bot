@@ -815,7 +815,36 @@ export default function App() {
                     </div>
                   )}
                   <div className="lg:col-span-4 space-y-6">
-                    <div className="flex flex-col gap-3">
+                    <div className="flex flex-col gap-4">
+                       <div className="bg-[#161625] p-6 rounded-[1.5rem] border border-white/5 flex items-center justify-between shadow-lg">
+                          <p className="text-[11px] text-slate-400 font-black uppercase tracking-[0.15em]">TRUNG BÌNH PNL</p>
+                          <p className="text-2xl font-mono font-black text-blue-500 glow-blue">
+                             {backtestStatus.lastResult.totalTrades > 0 
+                               ? (backtestStatus.lastResult.totalPnL / backtestStatus.lastResult.totalTrades).toFixed(2) 
+                               : 0}R
+                          </p>
+                       </div>
+
+                       <div className={cn(
+                          "bg-[#12121c] p-10 rounded-[2.5rem] border-2 transition-all flex flex-col justify-center min-h-[220px]",
+                          backtestStatus.lastResult.totalPnL >= 0 
+                            ? "border-emerald-500/30 glow-green shadow-[0_0_40px_rgba(16,185,129,0.1)]" 
+                            : "border-red-500/30 glow-red shadow-[0_0_40px_rgba(239,68,68,0.1)]"
+                        )}>
+                         <p className={cn(
+                            "text-xs font-black uppercase mb-6 tracking-widest",
+                            backtestStatus.lastResult.totalPnL >= 0 ? "text-emerald-400" : "text-red-400"
+                         )}>TỔNG TỶ LỆ LỢI NHUẬN: {(backtestStatus.lastResult.totalPnL || 0).toFixed(1)}R</p>
+                         <div className="flex items-center">
+                            <p className={cn(
+                              "text-7xl font-mono font-black tracking-tighter",
+                              backtestStatus.lastResult.totalPnL >= 0 ? "text-emerald-400" : "text-red-400"
+                            )}>
+                              {backtestStatus.lastResult.totalPnL > 0 ? '+' : ''}{backtestStatus.lastResult.totalPnL.toFixed(1)}R
+                            </p>
+                         </div>
+                      </div>
+
                        <div className="bg-[#12121c] p-4 rounded-2xl border border-white/5 flex items-center justify-between">
                           <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Tổng Giao Dịch</p>
                           <p className="text-xl font-mono font-black">{backtestStatus.lastResult.totalTrades}</p>
@@ -827,32 +856,6 @@ export default function App() {
                                ? Math.round((backtestStatus.lastResult.wins / backtestStatus.lastResult.totalTrades) * 100) 
                                : 0}%
                           </p>
-                       </div>
-                       <div className="bg-[#12121c] p-4 rounded-2xl border border-white/5 flex items-center justify-between">
-                          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Trung Bình PnL</p>
-                          <p className="text-xl font-mono font-black text-blue-400">
-                             {backtestStatus.lastResult.totalTrades > 0 
-                               ? (backtestStatus.lastResult.totalPnL / backtestStatus.lastResult.totalTrades).toFixed(2) 
-                               : 0}R
-                          </p>
-                       </div>
-                    </div>
-
-                    <div className={cn(
-                        "bg-[#12121c] p-8 rounded-[2rem] border transition-all",
-                        backtestStatus.lastResult.totalPnL >= 0 
-                          ? "border-emerald-500/20 glow-green" 
-                          : "border-red-500/20 glow-red"
-                      )}>
-                       <p className={cn(
-                          "text-[10px] font-black uppercase mb-4 tracking-widest",
-                          backtestStatus.lastResult.totalPnL >= 0 ? "text-emerald-500" : "text-red-500"
-                       )}>Tổng Tỷ Lệ Lợi Nhuận: {(backtestStatus.lastResult.totalPnL || 0).toFixed(1)}R</p>
-                       <div className="flex items-end gap-3">
-                          <p className={cn(
-                            "text-6xl font-mono font-black",
-                            backtestStatus.lastResult.totalPnL >= 0 ? "text-emerald-400" : "text-red-400"
-                          )}>{backtestStatus.lastResult.totalPnL > 0 ? '+' : ''}{backtestStatus.lastResult.totalPnL.toFixed(1)}R</p>
                        </div>
                     </div>
 

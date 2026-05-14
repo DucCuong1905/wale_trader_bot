@@ -94,13 +94,23 @@ export function calculateMarketRegime(
 
     const bodyEfficiency = bodySum / rangeSum;
     const directionalConsistency = Math.max(bullish, bearish) / recent.length;
-    // vwapRespect: càng ít cắt VWAP thì điểm càng cao. Ngưỡng 2-12 lần cắt.
-    const vwapRespect = 1 - normalize(vwapCrosses, 2, 12);
+    // vwapRespect: Cực kỳ gắt, quá 8 lần cắt là coi như choppy.
+    const vwapRespect = 1 - normalize(vwapCrosses, 1, 8);
+
+    // Tính ATR Ratio để xem volatility có expansion không
+    const atr14 = atr(recent, 14);
+    const atrHistory: number[] = [];
+    for (let j = 15; j <= recent.length; j++) {
+      atrHistory.push(atr(recent.slice(0, j), 14));
+    }
+    const atrMA20 = sma(atrHistory, 20);
+    const atrRatio = atr14 / (atrMA20 || 1);
 
     const score =
-      normalize(bodyEfficiency, 0.2, 0.7) * 40 +
-      normalize(directionalConsistency, 0.45, 0.8) * 35 +
-      vwapRespect * 25;
+      normalize(bodyEfficiency, 0.3, 0.75) * 30 +        // Thân nến phải chiếm >30% range
+      normalize(directionalConsistency, 0.55, 0.85) * 30 + // Tỉ lệ nến cùng màu >55%
+      vwapRespect * 25 +                                  // Tôn trọng VWAP
+      normalize(atrRatio, 0.9, 1.5) * 15;                // Volatility phải duy trì hoặc tăng
 
     return Number((score * 100).toFixed(1));
   };
@@ -110,14 +120,14 @@ export function calculateMarketRegime(
   const totalScore = tqs5m * 0.6 + tqs1m * 0.4;
 
   let regime = "NEUTRAL";
-  let riskPercent = 0.5; // Mặc định khớp lệnh nhẹ
+  let riskPercent = 0.5;
 
-  if (totalScore > 65) {
+  if (totalScore > 75) {
     regime = "TREND_EXPANSION";
-    riskPercent = 1.0; // Xu hướng đẹp: Full risk
-  } else if (totalScore < 35) {
+    riskPercent = 1.0; 
+  } else if (totalScore < 40) {
     regime = "CHOPPY";
-    riskPercent = 0.1; // Chợ búa: Đánh cực nhỏ hoặc nghỉ
+    riskPercent = 0.1;
   }
 
   return {

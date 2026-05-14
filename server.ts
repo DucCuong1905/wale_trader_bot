@@ -66,6 +66,17 @@ let backtestStatus = {
   lastResult: null as any
 };
 
+// Load last backtest result on startup
+if (fs.existsSync(BACKTEST_RESULTS_FILE)) {
+  try {
+    const data = fs.readFileSync(BACKTEST_RESULTS_FILE, "utf-8");
+    backtestStatus.lastResult = JSON.parse(data);
+    console.log("📊 Đã tải kết quả backtest gần nhất từ file.");
+  } catch (e) {
+    console.error("Lỗi khi tải kết quả backtest:", e);
+  }
+}
+
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR);
 }
