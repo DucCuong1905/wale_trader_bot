@@ -848,8 +848,8 @@ async function startServer() {
       if (r.monthlySnapshots && r.monthlySnapshots.length > 0) {
         console.log("\n📊 --- THỐNG KÊ CHI TIẾT 2022-2024 ---");
         r.monthlySnapshots.forEach((m: any) => {
-          const wr = m.totalTrades > 0 ? ((m.wins / m.totalTrades) * 100).toFixed(1) : "0";
-          console.log(`• Tháng ${m.month}/${m.year}: PnL: ${m.pnlRaw.toFixed(2)}$ (${m.pnlR.toFixed(1)}R) | WR: ${wr}% (${m.totalTrades} trades) (L: ${m.longs}, WL: ${m.longWins} -- S: ${m.shorts}, WS: ${m.shortWins})`);
+          const wr = m.trades > 0 ? ((m.wins / m.trades) * 100).toFixed(1) : "0";
+          console.log(`• Tháng ${m.month}/${m.year}: PnL: $${m.monthlyProfit.toFixed(2)} (${m.monthlyProfitR.toFixed(1)}R) | WR: ${wr}% (${m.trades} trades) (L: ${m.longTrades}, WL: ${m.longWins} -- S: ${m.shortTrades}, WS: ${m.shortWins})`);
         });
         console.log("--------------------------------------\n");
       }

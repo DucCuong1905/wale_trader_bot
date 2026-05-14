@@ -582,6 +582,8 @@ export async function runBacktest(
       const monthWinRate = totalMonthTrades > 0 ? (monthlyWins / totalMonthTrades * 100) : 0;
       
       monthlySnapshots.push({
+        month: lastMonth + 1,
+        year: lastYear,
         date: `Tháng ${lastMonth + 1}/${lastYear}`,
         balance: results.finalBalance,
         monthlyProfit: monthlyPnL,
@@ -589,6 +591,8 @@ export async function runBacktest(
         totalProfitR: results.totalProfitR,
         winRate: monthWinRate.toFixed(1),
         trades: totalMonthTrades,
+        wins: monthlyWins,
+        losses: monthlyLosses,
         longTrades: monthlyLongTrades,
         longWins: monthlyLongWins,
         shortTrades: monthlyShortTrades,
@@ -688,8 +692,8 @@ export async function runBacktest(
       
       results.displaceTrades++;
       
-      results.totalPnL += pnlR;
-      results.totalProfitR += pnlR;
+      results.totalPnL += dollarPnL;
+      results.totalProfitR += (pnlR * regimeData.riskPercent); 
 
       results.trades.push({ 
         time, 
@@ -705,7 +709,8 @@ export async function runBacktest(
         reason: `TA Entry`
       });
       
-      console.log(`[TRADE] ${status} | PnL: ${pnlR}R ($${dollarPnL.toFixed(2)}) | Balance: $${results.finalBalance.toFixed(2)}`);
+      const effectiveR = pnlR * regimeData.riskPercent;
+      console.log(`[TRADE] ${status} | PnL: ${pnlR}R (Eff: ${effectiveR.toFixed(1)}R) | $${dollarPnL.toFixed(2)} | Balance: $${results.finalBalance.toFixed(2)}`);
       
       // Nhảy vòng lặp đến điểm nến hiện tại
     }
