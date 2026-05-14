@@ -4,6 +4,7 @@ import fs from "fs";
 import path from "path";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
+import { calculateMarketRegime, Candle } from "./regime.ts";
 
 dotenv.config();
 
@@ -22,6 +23,7 @@ let backtestDataCache: {
 } | null = null;
 
 const SPECIAL_CACHE_FILE = path.join(DATA_DIR, "backtest_data_2026_special_v2.json");
+const CACHE_22_24_FILE = path.join(DATA_DIR, "backtest_data_2022_2024.json");
 
 function getCleanEnv(key: string) {
   const val = process.env[key];
@@ -378,6 +380,7 @@ export async function runBacktest(
 
   // KIỂM TRA PHẠM VI ĐẶC BIỆT (Tháng 1 -> Tháng 5 năm 2026) ĐỂ CACHE VĨNH VIỄN
   const isSpecialRange = (startDate.startsWith("2026-01-01") && endDate.startsWith("2026-05-01"));
+  const is2224Range = (startDate.startsWith("2022-01-01") && endDate.startsWith("2024-01-01"));
 
   if (isSpecialRange && fs.existsSync(SPECIAL_CACHE_FILE)) {
     try {
@@ -388,6 +391,16 @@ export async function runBacktest(
       console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
     } catch (e) {
       console.error("[BACKTEST] ❌ Lỗi khi đọc cache vĩnh viễn, sẽ fetch lại:", e);
+    }
+  } else if (is2224Range && fs.existsSync(CACHE_22_24_FILE)) {
+    try {
+      console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ 2022-2024`);
+      console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE 2022-2024 từ ổ đĩa...`);
+      const rawData = fs.readFileSync(CACHE_22_24_FILE, "utf-8");
+      allKlines = JSON.parse(rawData);
+      console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
+    } catch (e) {
+      console.error("[BACKTEST] ❌ Lỗi khi đọc cache 22-24, sẽ fetch lại:", e);
     }
   }
 
@@ -439,6 +452,14 @@ export async function runBacktest(
             console.log(`[BACKTEST] ✅ Hoàn tất lưu cache vĩnh viễn.`);
           } catch (e) {
             console.error("[BACKTEST] ❌ Lỗi khi ghi cache vĩnh viễn:", e);
+          }
+        } else if (is2224Range) {
+          try {
+            console.log(`[BACKTEST] 💾 Đang lưu dữ liệu CACHE 2022-2024 vào ổ đĩa...`);
+            fs.writeFileSync(CACHE_22_24_FILE, JSON.stringify(allKlines));
+            console.log(`[BACKTEST] ✅ Hoàn tất lưu cache 2022-2024.`);
+          } catch (e) {
+            console.error("[BACKTEST] ❌ Lỗi khi ghi cache 2022-2024:", e);
           }
         }
       }
@@ -512,6 +533,22 @@ export async function runBacktest(
     const bars5m = aggregateCandles(calcWindow5mRaw, 5);
     const vwma5m = calculateVWMA(bars5m, 20);
 
+    // --- MARKET REGIME FILTER ---
+    const calcWindowDailyRaw = allKlines.slice(Math.max(0, i - 1440 * 100), i + 1);
+    const bars1d = aggregateCandles(calcWindowDailyRaw, 1440);
+    
+    const toCandle = (b: any): Candle => ({
+      open: b[1],
+      high: b[2],
+      low: b[3],
+      close: b[4],
+      volume: b[5]
+    });
+
+    const d1Candles = bars1d.map(toCandle);
+    const m5CandlesBacktest = bars5m.map(toCandle);
+    const regimeData = calculateMarketRegime(d1Candles, m5CandlesBacktest);
+
     // --- KHUNG 1P (ENTRIES) ---
     const currentPrice = allKlines[i][4];
     const calcWindow = allKlines.slice(Math.max(0, i - 100), i + 1);
@@ -565,8 +602,8 @@ export async function runBacktest(
     lastMonth = currentMonth;
     lastYear = currentYear;
 
-    let isLong = !isOverExtendedLong && currentPrice > vwma5m && currentPrice > vwapM1 && adxM1.adx >= adxThreshold && isInSession && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI;
-    let isShort = !isOverExtendedShort && currentPrice < vwma5m && currentPrice < vwapM1 && adxM1.adx >= adxThreshold && isInSession && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI;
+    let isLong = (regimeData.riskPercent > 0) && !isOverExtendedLong && currentPrice > vwma5m && currentPrice > vwapM1 && adxM1.adx >= adxThreshold && isInSession && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI;
+    let isShort = (regimeData.riskPercent > 0) && !isOverExtendedShort && currentPrice < vwma5m && currentPrice < vwapM1 && adxM1.adx >= adxThreshold && isInSession && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
@@ -576,7 +613,9 @@ export async function runBacktest(
       const sl = type === "LONG" ? (sweep.low - atrM1 * 0.2) : (sweep.high + atrM1 * 0.2);
       const tp = entryPrice + (entryPrice - sl > 0 ? (entryPrice - sl) * rr : (sl - entryPrice) * -rr);
 
-      console.log(`[SIGNAL] ${type} Market Entry at ${time} ($${entryPrice.toFixed(2)})`);
+      const riskPercentForTrade = RISK_PER_TRADE * regimeData.riskPercent;
+
+      console.log(`[SIGNAL] ${type} Market Entry at ${time} ($${entryPrice.toFixed(2)}) | Regime: ${regimeData.regime} (Risk: ${regimeData.riskPercent}x)`);
       
       // Tìm kết quả trong các nến tiếp theo
       let exitPrice = 0;
@@ -597,7 +636,7 @@ export async function runBacktest(
       if (exitPrice === 0) exitPrice = allKlines[Math.min(i + 99, allKlines.length - 1)][4];
       pnlR = status === "WIN" ? rr : -1.0; 
       
-      const dollarPnL = results.finalBalance * RISK_PER_TRADE * pnlR;
+      const dollarPnL = results.finalBalance * riskPercentForTrade * pnlR;
       
       // Tính phí và trượt giá dự kiến (Để thống kê, ko trừ túi)
       const feeRate = 0.0005; // 0.05% taker

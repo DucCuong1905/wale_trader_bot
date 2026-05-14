@@ -8,6 +8,7 @@ import * as ccxt from "ccxt";
 import WebSocket from "ws";
 import cors from "cors";
 import { runBacktest, stopBacktestExecution } from "./backtester.ts";
+import { calculateMarketRegime, Candle } from "./regime.ts";
 
 dotenv.config();
 
@@ -133,6 +134,13 @@ let botState = {
   lastReportKey: "",
   latestSweepStatus: "None" as "None" | "Low" | "High",
   latestSweepCandle: -1,
+  marketRegime: {
+    expansionScore: 0,
+    trendQualityScore: 0,
+    compressionScore: 0,
+    regime: "NEUTRAL",
+    riskPercent: 0.5
+  }
 };
 
 // --- HELPERS ---
@@ -537,18 +545,35 @@ async function traderLoop() {
     // 3. LẤY DỮ LIỆU NẾN (OHLCV)
     let bars: any[] = [];
     let bars5m: any[] = [];
+    let bars1d: any[] = [];
     try {
       bars = await fetchOHLCVWithRetry(ex, PAIR, TIMEFRAME, undefined, 100);
-      bars5m = await fetchOHLCVWithRetry(ex, PAIR, "5m", undefined, 50);
+      bars5m = await fetchOHLCVWithRetry(ex, PAIR, "5m", undefined, 100);
+      bars1d = await fetchOHLCVWithRetry(ex, PAIR, "1d", undefined, 100);
     } catch (ohlcvErr: any) {
       console.error("❌ Lỗi fetchOHLCV (sau khi retry):", ohlcvErr.message);
       setTimeout(traderLoop, 10000);
       return;
     }
-    if (!bars || bars.length < 50 || !bars5m || bars5m.length < 20) { 
+    if (!bars || bars.length < 50 || !bars5m || bars5m.length < 50 || !bars1d || bars1d.length < 35) { 
       setTimeout(traderLoop, 10000); 
       return; 
     }
+
+    // 3.1 CALCULATE MARKET REGIME
+    const toCandle = (b: any): Candle => ({
+      open: b[1],
+      high: b[2],
+      low: b[3],
+      close: b[4],
+      volume: b[5]
+    });
+
+    const d1Candles = bars1d.map(toCandle);
+    const m5Candles = bars5m.map(toCandle);
+
+    const regimeData = calculateMarketRegime(d1Candles, m5Candles);
+    botState.marketRegime = regimeData;
 
     // 4. TÍNH TOÁN CÁC CHỈ BÁO KỸ THUẬT
     // --- Khung M1 ---
@@ -574,7 +599,7 @@ async function traderLoop() {
     // THÔNG BÁO KHI SẴN SÀNG
     if (!botState.isInitNotified) {
       botState.isInitNotified = true;
-      console.log(`🤖 WHALE BOT (M1 ONLY STRATEGY) SẴN SÀNG! VWMA 5m: ${vwma5m.toFixed(2)}`);
+      console.log(`🤖 WHALE BOT SẴN SÀNG! Regime: ${regimeData.regime} (Exp: ${regimeData.expansionScore}%, Trend: ${regimeData.trendQualityScore}%, Comp: ${regimeData.compressionScore}%)`);
     }
 
     const lastCandle = bars[bars.length - 1];
@@ -597,6 +622,7 @@ async function traderLoop() {
     // 5. ĐIỀU KIỆN VÀO LỆNH LONG (MUA)
     // ========================================================
     if (
+      regimeData.riskPercent > 0 &&
       isWithinTradingSessions() &&       
       !isOverExtendedLong &&                 // 0. Không quá xa VWMA (2*ATR)
       currentPrice > vwma5m &&           // 0.2 Giá nằm trên VWMA 5m
@@ -614,6 +640,7 @@ async function traderLoop() {
     // 6. ĐIỀU KIỆN VÀO LỆNH SHORT (BÁN)
     // ========================================================
     if (
+      regimeData.riskPercent > 0 &&
       isWithinTradingSessions() &&
       !isOverExtendedShort &&                 // 0. Không quá xa VWMA (2*ATR)
       currentPrice < vwma5m &&           // 0.2 Giá nằm dưới VWMA 5m
@@ -634,7 +661,7 @@ async function traderLoop() {
       const tp = e + (e - sl > 0 ? (e - sl) * RR : (sl - e) * -RR);
       
       if (!IS_LIVE_TRADING_ENABLED) { 
-        const riskAmount = paperBalance * RISK_PER_TRADE;
+        const riskAmount = paperBalance * RISK_PER_TRADE * regimeData.riskPercent;
         const positionSize = riskAmount; 
 
         paperPosition = {
@@ -650,6 +677,7 @@ async function traderLoop() {
         botState.lastTradeTime = Date.now(); 
 
         const conditions = [
+          `0. Regime: ${regimeData.regime} (Risk: ${regimeData.riskPercent}x)`,
           `1. Khoảng cách VWMA: ${sig === 'LONG' ? (!isOverExtendedLong ? '✅ Ok' : '❌ Quá xa') : (!isOverExtendedShort ? '✅ Ok' : '❌ Quá xa')} (${distFromVWMA.toFixed(2)})`,
           `2. Giá vs VWMA 5m: ${currentPrice > vwma5m ? '✅ Trên' : '❌ Dưới'}`,
           `3. Giá vs VWAP: ${currentPrice > vwapM1 ? '✅ Above' : '❌ Below'}`,
@@ -668,7 +696,8 @@ async function traderLoop() {
       } else {
         // Chế độ Trade thật trên sàn
         try {
-          const size = (botState.balance * RISK_PER_TRADE) / Math.abs(e - sl);
+          const riskAmount = botState.balance * RISK_PER_TRADE * regimeData.riskPercent;
+          const size = riskAmount / Math.abs(e - sl);
           const amt = ex.amountToPrecision(PAIR, Math.max(size, 0.001));
           await ex.createMarketOrder(PAIR, sig === 'LONG' ? 'buy' : 'sell', parseFloat(amt));
           botState.lastTradeTime = Date.now();
@@ -770,7 +799,8 @@ async function startServer() {
       signals: botState.signals.slice(0, 10), balance: botState.balance, ai_reasoning: botState.aiReasoning,
       adx: botState.adx.toFixed(1), whale_trades: { buy: b.toFixed(0), sell: s.toFixed(0), count: botState.recentWhaleTrades.length },
       enable_session_filter: ENABLE_SESSION_FILTER, vwma_period: VWMA_PERIOD, adx_threshold: ADX_THRESHOLD,
-      is_ws_connected: botState.isWsConnected
+      is_ws_connected: botState.isWsConnected,
+      market_regime: botState.marketRegime
     });
   });
   app.post("/api/trading/toggle-session", (req, res) => {
@@ -804,6 +834,20 @@ async function startServer() {
 
     startWS(); 
     traderLoop(); 
+
+    // AUTO RUN BACKTEST 2022-2024 ON START
+    console.log("🚀 [AUTO] Bắt đầu tự động chạy backtest 2022-2024...");
+    backtestStatus.isRunning = true;
+    runBacktest("2022-01-01T00:00:00Z", "2024-01-01T00:00:00Z", 1.0, "1m", true, 20, p => {
+      backtestStatus.progress = p;
+    }, 10).then(r => {
+      backtestStatus.isRunning = false;
+      backtestStatus.lastResult = r;
+      console.log("✅ [AUTO] Hoàn tất backtest 2022-2024.");
+    }).catch(err => {
+      console.error("❌ [AUTO] Lỗi backtest 2022-2024:", err);
+      backtestStatus.isRunning = false;
+    });
   });
 }
 
