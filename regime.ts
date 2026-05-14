@@ -112,7 +112,7 @@ export function calculateMarketRegime(
       vwapRespect * 25 +                                  // Tôn trọng VWAP
       normalize(atrRatio, 0.9, 1.5) * 15;                // Volatility phải duy trì hoặc tăng
 
-    return Number((score * 100).toFixed(1));
+    return Number(score.toFixed(1));
   };
 
   const tqs5m = calculateTQS(m5Candles);
