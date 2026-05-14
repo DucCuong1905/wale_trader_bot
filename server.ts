@@ -835,25 +835,25 @@ async function startServer() {
     startWS(); 
     traderLoop(); 
 
-    // AUTO RUN BACKTEST 2024-2026 ON START
-    console.log("🚀 [AUTO] Bắt đầu tự động chạy backtest 2024-2026...");
+    // AUTO RUN BACKTEST 2022-2024 ON START
+    console.log("🚀 [AUTO] Bắt đầu tự động chạy backtest 2022-2024...");
     backtestStatus.isRunning = true;
-    runBacktest("2024-01-01T00:00:00Z", "2026-01-01T00:00:00Z", 1.0, "1m", true, 20, p => {
+    runBacktest("2022-01-01T00:00:00Z", "2024-01-01T00:00:00Z", 1.0, "1m", true, 20, p => {
       backtestStatus.progress = p;
     }, 10).then(r => {
       backtestStatus.isRunning = false;
       backtestStatus.lastResult = r;
-      console.log("✅ [AUTO] Hoàn tất backtest 2024-2026.");
+      console.log("✅ [AUTO] Hoàn tất backtest 2022-2024.");
       
       if (r.monthlySnapshots && r.monthlySnapshots.length > 0) {
-        console.log("\n📊 --- THỐNG KÊ CHI TIẾT 2024-2026 (THEO THÁNG) ---");
+        console.log("\n📊 --- THỐNG KÊ CHI TIẾT 2022-2024 (THEO THÁNG) ---");
         r.monthlySnapshots.forEach((m: any) => {
           const wr = m.trades > 0 ? ((m.wins / m.trades) * 100).toFixed(1) : "0";
           console.log(`• Tháng ${m.month}/${m.year}: PnL: $${m.monthlyProfit.toFixed(2)} (${m.monthlyProfitR.toFixed(1)}R) | WR: ${wr}% (${m.trades} trades) (L: ${m.longTrades}, WL: ${m.longWins} -- S: ${m.shortTrades}, WS: ${m.shortWins})`);
         });
         
         if (r.regimeStats) {
-          console.log("\n📈 --- TỔNG KẾT THEO REGIME (2024-2026) ---");
+          console.log("\n📈 --- TỔNG KẾT THEO REGIME (2022-2024) ---");
           Object.entries(r.regimeStats).forEach(([regime, stats]: [string, any]) => {
             const wr = stats.trades > 0 ? ((stats.wins / stats.trades) * 100).toFixed(1) : "0";
             console.log(`• ${regime}: ${stats.trades} trades | WR: ${wr}% | PnL: ${stats.pnlR.toFixed(1)}R`);
@@ -862,7 +862,7 @@ async function startServer() {
         console.log("--------------------------------------\n");
       }
     }).catch(err => {
-      console.error("❌ [AUTO] Lỗi backtest 2024-2026:", err);
+      console.error("❌ [AUTO] Lỗi backtest 2022-2024:", err);
       backtestStatus.isRunning = false;
     });
   });
