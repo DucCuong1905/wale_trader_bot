@@ -682,34 +682,34 @@ export async function runBacktest(
 
     // LONG CONTINUATION
     const isContinuationLong = 
-      regimeData.totalScore >= 70 &&
+      regimeData.totalScore >= 60 && // Nới lỏng từ 70 -> 60
       currentPrice > vwma5m &&
       currentPrice > vwapM1 &&
       slopeM1 > 0 &&
-      adxM1.adx >= 25 &&
+      adxM1.adx >= 20 &&              // Nới lỏng ADX từ 25 -> 20
       adxM1.pDI > adxM1.mDI &&
-      distFromVWMA < (atrM1 * 1.5) && // Exhaustion Filter
-      compRange < (atrM1 * 1.2) &&    // Mini Compression
-      recentLow > vwma5m &&           // Healthy Pullback
-      currentPrice > recentHigh &&    // Breakout
-      bodySize > (atrM1 * 0.6) &&     // Strong Body
-      allKlines[i][5] > volMA &&      // Volume Expansion
+      distFromVWMA < (atrM1 * 2.0) && // Nới lỏng filter kiệt sức 1.5 -> 2.0
+      compRange < (atrM1 * 1.5) &&    // Nới lỏng nén 1.2 -> 1.5
+      recentLow > vwapM1 &&           // Pullback chỉ cần trên VWAP thay vì VWMA 5m
+      currentPrice > recentHigh &&    
+      bodySize > (atrM1 * 0.4) &&     // Thân nến breakout chỉ cần > 0.4 ATR
+      allKlines[i][5] > volMA * 0.9 && // Volume chỉ cần gần bằng trung bình
       currentPrice > prevHigh;        // Momentum
 
     // SHORT CONTINUATION
     const isContinuationShort = 
-      regimeData.totalScore >= 70 &&
+      regimeData.totalScore >= 60 &&
       currentPrice < vwma5m &&
       currentPrice < vwapM1 &&
       slopeM1 < 0 &&
-      adxM1.adx >= 25 &&
+      adxM1.adx >= 20 &&
       adxM1.mDI > adxM1.pDI &&
-      distFromVWMA < (atrM1 * 1.5) &&
-      compRange < (atrM1 * 1.2) &&
-      recentHigh < vwma5m &&
+      distFromVWMA < (atrM1 * 2.0) &&
+      compRange < (atrM1 * 1.5) &&
+      recentHigh < vwapM1 &&
       currentPrice < recentLow &&
-      bodySize > (atrM1 * 0.6) &&
-      allKlines[i][5] > volMA &&
+      bodySize > (atrM1 * 0.4) &&
+      allKlines[i][5] > volMA * 0.9 &&
       currentPrice < prevLow;
 
     // --- ENTRY DECISION (SWEP OR CONTINUATION) ---
