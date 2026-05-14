@@ -67,21 +67,21 @@ export function calculateMarketRegime(
     atrHistory.push(atr(d1Candles.slice(0, i), 14));
   }
 
-  const atrMA20 = sma(atrHistory, 20);
+  const atrMA10 = sma(atrHistory, 10);
   const lastD1 = d1Candles[d1Candles.length - 1];
   const dailyRange = lastD1.high - lastD1.low;
 
   const volumeHistory = d1Candles.map(c => c.volume);
-  const volumeMA20 = sma(volumeHistory, 20);
+  const volumeMA10 = sma(volumeHistory, 10);
 
-  const atrRatio = atr14 / (atrMA20 || 1);
+  const atrRatio = atr14 / (atrMA10 || 1);
   const rangeRatio = dailyRange / (atr14 || 1);
-  const volumeRatio = lastD1.volume / (volumeMA20 || 1);
+  const volumeRatio = lastD1.volume / (volumeMA10 || 1);
 
   const expansionScore =
-    normalize(atrRatio, 0.7, 1.3) * 40 +
-    normalize(rangeRatio, 0.7, 1.8) * 35 +
-    normalize(volumeRatio, 0.7, 1.6) * 25;
+    normalize(atrRatio, 0.65, 1.15) * 40 +
+    normalize(rangeRatio, 0.65, 1.6) * 35 +
+    normalize(volumeRatio, 0.65, 1.4) * 25;
 
   // =========================
   // TREND QUALITY SCORE
@@ -126,11 +126,11 @@ export function calculateMarketRegime(
 
   const bodyEfficiency = bodySum / (rangeSum || 1);
   const directionalConsistency = Math.max(bullish, bearish) / recentM5.length;
-  const vwapRespect = 1 - normalize(vwapCrosses, 4, 18);
+  const vwapRespect = 1 - normalize(vwapCrosses, 5, 20);
 
   const trendQualityScore =
-    normalize(bodyEfficiency, 0.2, 0.7) * 40 +
-    normalize(directionalConsistency, 0.45, 0.8) * 35 +
+    normalize(bodyEfficiency, 0.15, 0.6) * 40 +
+    normalize(directionalConsistency, 0.4, 0.75) * 35 +
     vwapRespect * 25;
 
   // =========================
@@ -148,8 +148,8 @@ export function calculateMarketRegime(
     }
   }
 
-  const atrCompression = 1 - normalize(atrRatio, 0.8, 1.5);
-  const rangeCompression = 1 - normalize(rangeRatio, 0.8, 2.0);
+  const atrCompression = 1 - normalize(atrRatio, 0.7, 1.3);
+  const rangeCompression = 1 - normalize(rangeRatio, 0.7, 1.8);
   const insideBarScore = normalize(insideBars, 1, 5);
 
   const compressionScore =
@@ -158,18 +158,18 @@ export function calculateMarketRegime(
     insideBarScore * 25;
 
   // =========================
-  // FINAL DECISION (Nới lỏng để dễ kích hoạt TREND_EXPANSION)
+  // FINAL DECISION (Nối lỏng tối đa để kích hoạt TREND_EXPANSION)
   // =========================
 
   let regime = "NEUTRAL";
 
   if (
-    expansionScore > 50 &&
-    trendQualityScore > 45 &&
-    compressionScore < 60
+    expansionScore > 40 &&
+    trendQualityScore > 40 &&
+    compressionScore < 65
   ) {
     regime = "TREND_EXPANSION";
-  } else if (compressionScore > 70) {
+  } else if (compressionScore > 75) {
     regime = "COMPRESSION";
   } else if (trendQualityScore < 30) {
     regime = "CHOPPY";
