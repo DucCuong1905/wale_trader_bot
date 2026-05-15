@@ -780,7 +780,7 @@ export async function runBacktest(
       }
       const tp = entryPrice + (entryPrice - sl > 0 ? (entryPrice - sl) * rr : (sl - entryPrice) * -rr);
 
-      const riskPercentForTrade = RISK_PER_TRADE * regimeData.riskPercent;
+      const riskPercentForTrade = isContTrade ? 0.05 : (RISK_PER_TRADE * regimeData.riskPercent);
 
       console.log(`[SIGNAL] ${type} Market Entry at ${time} ($${entryPrice.toFixed(2)}) | Regime: ${regimeData.regime} (Risk: ${regimeData.riskPercent}x)`);
       
@@ -803,13 +803,14 @@ export async function runBacktest(
       if (exitPrice === 0) exitPrice = allKlines[Math.min(i + 99, allKlines.length - 1)][4];
       pnlR = status === "WIN" ? rr : -1.0; 
       
-      const dollarPnL = results.finalBalance * riskPercentForTrade * pnlR;
+      const currentRiskPercent = isContTrade ? 0.05 : (RISK_PER_TRADE * regimeData.riskPercent);
+      const dollarPnL = results.finalBalance * currentRiskPercent * pnlR;
       
       // Tính phí và trượt giá dự kiến (Để thống kê, ko trừ túi)
       const feeRate = 0.0005; // 0.05% taker
       const slippageRate = 0.0002; // 0.02% slippage
       
-      const riskAmount = results.finalBalance * RISK_PER_TRADE;
+      const riskAmount = results.finalBalance * currentRiskPercent;
       const stopLossDistPct = Math.abs(entryPrice - sl) / entryPrice;
       const positionNotional = stopLossDistPct > 0 ? riskAmount / stopLossDistPct : 0;
       
