@@ -682,34 +682,34 @@ export async function runBacktest(
 
     // LONG CONTINUATION
     const isContinuationLong = 
-      regimeData.totalScore >= 60 && // Nới lỏng từ 70 -> 60
+      regimeData.totalScore >= 70 && // Chỉ đánh khi xu hướng cực mạnh
       currentPrice > vwma5m &&
       currentPrice > vwapM1 &&
       slopeM1 > 0 &&
-      adxM1.adx >= 20 &&              // Nới lỏng ADX từ 25 -> 20
+      adxM1.adx >= 25 &&              // Cần ADX mạnh (>25)
       adxM1.pDI > adxM1.mDI &&
-      distFromVWMA < (atrM1 * 2.0) && // Nới lỏng filter kiệt sức 1.5 -> 2.0
-      compRange < (atrM1 * 1.5) &&    // Nới lỏng nén 1.2 -> 1.5
-      recentLow > vwapM1 &&           // Pullback chỉ cần trên VWAP thay vì VWMA 5m
+      distFromVWMA < (atrM1 * 1.5) && // Không mua đuổi quá xa (1.5 ATR)
+      compRange < (atrM1 * 1.1) &&    // Độ nén phải cực chặt (1.1 ATR)
+      recentLow > vwma5m &&           // Pullback lành mạnh (giữ được VWMA 5m)
       currentPrice > recentHigh &&    
-      bodySize > (atrM1 * 0.4) &&     // Thân nến breakout chỉ cần > 0.4 ATR
-      allKlines[i][5] > volMA * 0.9 && // Volume chỉ cần gần bằng trung bình
-      currentPrice > prevHigh;        // Momentum
+      bodySize > (atrM1 * 0.7) &&     // Nến breakout phải dài và đặc (>0.7 ATR)
+      allKlines[i][5] > volMA &&      // Volume phải bùng nổ thực sự (> MA20)
+      currentPrice > prevHigh;
 
     // SHORT CONTINUATION
     const isContinuationShort = 
-      regimeData.totalScore >= 60 &&
+      regimeData.totalScore >= 70 &&
       currentPrice < vwma5m &&
       currentPrice < vwapM1 &&
       slopeM1 < 0 &&
-      adxM1.adx >= 20 &&
+      adxM1.adx >= 25 &&
       adxM1.mDI > adxM1.pDI &&
-      distFromVWMA < (atrM1 * 2.0) &&
-      compRange < (atrM1 * 1.5) &&
-      recentHigh < vwapM1 &&
+      distFromVWMA < (atrM1 * 1.5) &&
+      compRange < (atrM1 * 1.1) &&
+      recentHigh < vwma5m &&
       currentPrice < recentLow &&
-      bodySize > (atrM1 * 0.4) &&
-      allKlines[i][5] > volMA * 0.9 &&
+      bodySize > (atrM1 * 0.7) &&
+      allKlines[i][5] > volMA &&
       currentPrice < prevLow;
 
     // --- ENTRY DECISION (SWEP OR CONTINUATION) ---
