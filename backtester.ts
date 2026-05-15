@@ -26,6 +26,7 @@ const SPECIAL_CACHE_FILE = path.join(DATA_DIR, "backtest_data_2026_special_v2.js
 const CACHE_22_24_FILE = path.join(DATA_DIR, "backtest_data_2022_2024.json");
 const CACHE_24_26_FILE = path.join(DATA_DIR, "backtest_data_2024_2026.json");
 const CACHE_20_22_FILE = path.join(DATA_DIR, "backtest_data_2020_2022.json");
+const CACHE_18_20_FILE = path.join(DATA_DIR, "backtest_data_2018_2020.json");
 
 function getCleanEnv(key: string) {
   const val = process.env[key];
@@ -400,6 +401,7 @@ export async function runBacktest(
   const is2224Range = (startDate.startsWith("2022-01-01") && endDate.startsWith("2024-01-01"));
   const is2426Range = (startDate.startsWith("2024-01-01") && endDate.startsWith("2026-01-01"));
   const is2022Range = (startDate.startsWith("2020-01-01") && endDate.startsWith("2022-01-01"));
+  const is1820Range = (startDate.startsWith("2018-01-01") && endDate.startsWith("2020-01-01"));
 
   if (isSpecialRange && fs.existsSync(SPECIAL_CACHE_FILE)) {
     try {
@@ -440,6 +442,16 @@ export async function runBacktest(
       console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
     } catch (e) {
       console.error("[BACKTEST] ❌ Lỗi khi đọc cache 24-26, sẽ fetch lại:", e);
+    }
+  } else if (is1820Range && fs.existsSync(CACHE_18_20_FILE)) {
+    try {
+      console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ 2018-2020`);
+      console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE 2018-2020 từ ổ đĩa...`);
+      const rawData = fs.readFileSync(CACHE_18_20_FILE, "utf-8");
+      allKlines = JSON.parse(rawData);
+      console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
+    } catch (e) {
+      console.error("[BACKTEST] ❌ Lỗi khi đọc cache 18-20, sẽ fetch lại:", e);
     }
   }
 
@@ -515,6 +527,14 @@ export async function runBacktest(
             console.log(`[BACKTEST] ✅ Hoàn tất lưu cache 2020-2022.`);
           } catch (e) {
             console.error("[BACKTEST] ❌ Lỗi khi ghi cache 2020-2022:", e);
+          }
+        } else if (is1820Range) {
+          try {
+            console.log(`[BACKTEST] 💾 Đang lưu dữ liệu CACHE 2018-2020 vào ổ đĩa...`);
+            fs.writeFileSync(CACHE_18_20_FILE, JSON.stringify(allKlines));
+            console.log(`[BACKTEST] ✅ Hoàn tất lưu cache 2018-2020.`);
+          } catch (e) {
+            console.error("[BACKTEST] ❌ Lỗi khi ghi cache 18-20:", e);
           }
         }
       }
