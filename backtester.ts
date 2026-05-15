@@ -682,34 +682,34 @@ export async function runBacktest(
 
     // LONG CONTINUATION
     const isContinuationLong = 
-      regimeData.totalScore >= 70 && // Chỉ đánh khi xu hướng cực mạnh
+      regimeData.totalScore >= 65 && // Nới lỏng từ 70 -> 65
       currentPrice > vwma5m &&
       currentPrice > vwapM1 &&
       slopeM1 > 0 &&
-      adxM1.adx >= 25 &&              // Cần ADX mạnh (>25)
+      adxM1.adx >= 22 &&              // Nới lỏng ADX từ 25 -> 22
       adxM1.pDI > adxM1.mDI &&
-      distFromVWMA < (atrM1 * 1.5) && // Không mua đuổi quá xa (1.5 ATR)
-      compRange < (atrM1 * 1.1) &&    // Độ nén phải cực chặt (1.1 ATR)
-      recentLow > vwma5m &&           // Pullback lành mạnh (giữ được VWMA 5m)
+      distFromVWMA < (atrM1 * 1.7) && // Nới lỏng filter kiệt sức lên 1.7 ATR
+      compRange < (atrM1 * 1.3) &&    // Nới lỏng nén từ 1.1 -> 1.3 ATR
+      recentLow > vwma5m &&           
       currentPrice > recentHigh &&    
-      bodySize > (atrM1 * 0.7) &&     // Nến breakout phải dài và đặc (>0.7 ATR)
-      allKlines[i][5] > volMA &&      // Volume phải bùng nổ thực sự (> MA20)
+      bodySize > (atrM1 * 0.5) &&     // Nến breakout thân > 0.5 ATR
+      allKlines[i][5] > volMA * 0.95 && // Volume đạt 95% trung bình
       currentPrice > prevHigh;
 
     // SHORT CONTINUATION
     const isContinuationShort = 
-      regimeData.totalScore >= 70 &&
+      regimeData.totalScore >= 65 &&
       currentPrice < vwma5m &&
       currentPrice < vwapM1 &&
       slopeM1 < 0 &&
-      adxM1.adx >= 25 &&
+      adxM1.adx >= 22 &&
       adxM1.mDI > adxM1.pDI &&
-      distFromVWMA < (atrM1 * 1.5) &&
-      compRange < (atrM1 * 1.1) &&
+      distFromVWMA < (atrM1 * 1.7) &&
+      compRange < (atrM1 * 1.3) &&
       recentHigh < vwma5m &&
       currentPrice < recentLow &&
-      bodySize > (atrM1 * 0.7) &&
-      allKlines[i][5] > volMA &&
+      bodySize > (atrM1 * 0.5) &&
+      allKlines[i][5] > volMA * 0.95 &&
       currentPrice < prevLow;
 
     // --- ENTRY DECISION (SWEP OR CONTINUATION) ---
