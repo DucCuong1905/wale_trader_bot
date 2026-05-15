@@ -633,46 +633,64 @@ async function traderLoop() {
     const isOverExtendedLong = distFromVWMA > (atrM1 * 2);
     const isOverExtendedShort = distFromVWMA > (atrM1 * 2);
 
-    // --- MINI COMPRESSION & CONTINUATION LOGIC ---
+    // --- MINI COMPRESSION & CONTINUATION LOGIC (COMPRESSION -> EXPANSION) ---
     const recent5 = bars.slice(-6, -1);
     const recentHigh = Math.max(...recent5.map(b => b[2]));
     const recentLow = Math.min(...recent5.map(b => b[3]));
     const compRange = recentHigh - recentLow;
     const volMA = bars.slice(-21, -1).reduce((s, b) => s + b[5], 0) / 20;
+    const atrMA = bars.slice(-15, -1).reduce((s, b) => s + (b[2] - b[3]), 0) / 14;
+    const atrPrev = bars.length >= 2 ? (bars[bars.length - 2][2] - bars[bars.length - 2][3]) : atrM1;
     const bodySize = Math.abs(bars[bars.length - 1][4] - bars[bars.length - 1][1]);
     const prevHigh = bars[bars.length - 2][2];
     const prevLow = bars[bars.length - 2][3];
 
-    // LONG CONTINUATION V2
+    // Detect mini compression (Overlap Count)
+    let overlapCount = 0;
+    for (let j = 0; j < recent5.length - 1; j++) {
+      const h1 = recent5[j][2];
+      const l1 = recent5[j][3];
+      const h2 = recent5[j+1][2];
+      const l2 = recent5[j+1][3];
+      if (l1 <= h2 && h1 >= l2) overlapCount++;
+    }
+
+    const isAtrExpansion = (atrM1 > atrPrev) || (atrM1 > atrMA * 1.03);
+
+    // LONG CONTINUATION V3 (Compression -> Expansion)
     const isContinuationLong = 
-      regimeData.totalScore >= 70 &&
+      regimeData.totalScore >= 68 &&
       currentPrice > vwma5m &&
       currentPrice > vwapM1 &&
       slopeM1 > 0 &&
-      adxM1.adx >= 25 &&
+      adxM1.adx >= 22 &&
       adxM1.pDI > adxM1.mDI &&
-      distFromVWMA < (atrM1 * 1.5) &&
-      compRange < (atrM1 * 1.0) &&
+      distFromVWMA < (atrM1 * 1.8) &&
+      compRange < (atrM1 * 1.5) &&
+      overlapCount >= 2 &&
       recentLow > vwma5m &&
+      isAtrExpansion &&
       currentPrice > recentHigh &&
-      bodySize > (atrM1 * 0.7) &&
-      bars[bars.length - 1][5] > volMA * 1.2 &&
+      bodySize > (atrM1 * 0.45) &&
+      bars[bars.length - 1][5] > volMA * 1.05 &&
       currentPrice > prevHigh;
 
-    // SHORT CONTINUATION V2
+    // SHORT CONTINUATION V3
     const isContinuationShort = 
-      regimeData.totalScore >= 70 &&
+      regimeData.totalScore >= 68 &&
       currentPrice < vwma5m &&
       currentPrice < vwapM1 &&
       slopeM1 < 0 &&
-      adxM1.adx >= 25 &&
+      adxM1.adx >= 22 &&
       adxM1.mDI > adxM1.pDI &&
-      distFromVWMA < (atrM1 * 1.5) &&
-      compRange < (atrM1 * 1.0) &&
+      distFromVWMA < (atrM1 * 1.8) &&
+      compRange < (atrM1 * 1.5) &&
+      overlapCount >= 2 &&
       recentHigh < vwma5m &&
+      isAtrExpansion &&
       currentPrice < recentLow &&
-      bodySize > (atrM1 * 0.7) &&
-      bars[bars.length - 1][5] > volMA * 1.2 &&
+      bodySize > (atrM1 * 0.45) &&
+      bars[bars.length - 1][5] > volMA * 1.05 &&
       currentPrice < prevLow;
 
     // LONG ENTRY

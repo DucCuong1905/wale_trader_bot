@@ -669,50 +669,66 @@ export async function runBacktest(
     lastMonth = currentMonth;
     lastYear = currentYear;
 
-    // --- MINI COMPRESSION & CONTINUATION LOGIC ---
+    // --- MINI COMPRESSION & CONTINUATION LOGIC (COMPRESSION -> EXPANSION) ---
     const recent5 = allKlines.slice(Math.max(0, i - 5), i);
     const recentHigh = Math.max(...recent5.map(b => b[2]));
     const recentLow = Math.min(...recent5.map(b => b[3]));
     const compRange = recentHigh - recentLow;
     
     const volMA = allKlines.slice(Math.max(0, i - 20), i).reduce((s, b) => s + b[5], 0) / 20;
+    const atrMA = allKlines.slice(Math.max(0, i - 14), i).reduce((s, b) => s + (b[2] - b[3]), 0) / 14; // Đơn giản hóa ATR MA
+    const atrPrev = i > 0 ? (allKlines[i-1][2] - allKlines[i-1][3]) : atrM1;
+    
     const bodySize = Math.abs(allKlines[i][4] - allKlines[i][1]);
     const prevHigh = allKlines[i-1][2];
     const prevLow = allKlines[i-1][3];
 
-    // LONG CONTINUATION V2
-    const adxRisingLong = adxM1.adx > (allKlines[i-1] ? /* logic for prev adx would be complex here, using simple threshold for now */ adxM1.adx : 20); 
-    // Note: I will use a slightly higher ADX threshold and stricter volume instead of a complex lookback here for efficiency
-    
+    // Detect mini compression (Overlap Count)
+    let overlapCount = 0;
+    for (let j = 0; j < recent5.length - 1; j++) {
+      const h1 = recent5[j][2];
+      const l1 = recent5[j][3];
+      const h2 = recent5[j+1][2];
+      const l2 = recent5[j+1][3];
+      if (l1 <= h2 && h1 >= l2) overlapCount++;
+    }
+
+    const isAtrExpansion = (atrM1 > atrPrev) || (atrM1 > atrMA * 1.03);
+
+    // LONG CONTINUATION V3 (Compression -> Expansion)
     const isContinuationLong = 
-      regimeData.totalScore >= 70 &&   // Cần trend rõ ràng hơn (65 -> 70)
+      regimeData.totalScore >= 68 &&
       currentPrice > vwma5m &&
       currentPrice > vwapM1 &&
       slopeM1 > 0 &&
-      adxM1.adx >= 25 &&              // Tăng ADX tối thiểu lên 25
+      adxM1.adx >= 22 &&
       adxM1.pDI > adxM1.mDI &&
-      distFromVWMA < (atrM1 * 1.5) && // Chặt chẽ hơn về khoảng cách (1.7 -> 1.5)
-      compRange < (atrM1 * 1.0) &&    // Nén cực chặt (1.3 -> 1.0)
-      recentLow > vwma5m &&           
-      currentPrice > recentHigh &&    
-      bodySize > (atrM1 * 0.7) &&     // Nến breakout mạnh mẽ hơn (0.5 -> 0.7)
-      allKlines[i][5] > volMA * 1.2 && // Volume bùng nổ rõ rệt (0.95 -> 1.2)
+      distFromVWMA < (atrM1 * 1.8) &&
+      compRange < (atrM1 * 1.5) &&
+      overlapCount >= 2 &&            // Edge: Có sự nén giá thực sự
+      recentLow > vwma5m &&           // Giữ được cấu trúc trend
+      isAtrExpansion &&               // Bắt đầu bùng nổ biên độ
+      currentPrice > recentHigh &&    // Breakout range nén
+      bodySize > (atrM1 * 0.45) &&
+      allKlines[i][5] > volMA * 1.05 &&
       currentPrice > prevHigh;
 
-    // SHORT CONTINUATION V2
+    // SHORT CONTINUATION V3
     const isContinuationShort = 
-      regimeData.totalScore >= 70 &&
+      regimeData.totalScore >= 68 &&
       currentPrice < vwma5m &&
       currentPrice < vwapM1 &&
       slopeM1 < 0 &&
-      adxM1.adx >= 25 &&
+      adxM1.adx >= 22 &&
       adxM1.mDI > adxM1.pDI &&
-      distFromVWMA < (atrM1 * 1.5) &&
-      compRange < (atrM1 * 1.0) &&
+      distFromVWMA < (atrM1 * 1.8) &&
+      compRange < (atrM1 * 1.5) &&
+      overlapCount >= 2 &&
       recentHigh < vwma5m &&
+      isAtrExpansion &&
       currentPrice < recentLow &&
-      bodySize > (atrM1 * 0.7) &&
-      allKlines[i][5] > volMA * 1.2 &&
+      bodySize > (atrM1 * 0.45) &&
+      allKlines[i][5] > volMA * 1.05 &&
       currentPrice < prevLow;
 
     // --- ENTRY DECISION (SWEP OR CONTINUATION) ---
