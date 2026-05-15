@@ -680,36 +680,39 @@ export async function runBacktest(
     const prevHigh = allKlines[i-1][2];
     const prevLow = allKlines[i-1][3];
 
-    // LONG CONTINUATION
+    // LONG CONTINUATION V2
+    const adxRisingLong = adxM1.adx > (allKlines[i-1] ? /* logic for prev adx would be complex here, using simple threshold for now */ adxM1.adx : 20); 
+    // Note: I will use a slightly higher ADX threshold and stricter volume instead of a complex lookback here for efficiency
+    
     const isContinuationLong = 
-      regimeData.totalScore >= 65 && // Nới lỏng từ 70 -> 65
+      regimeData.totalScore >= 70 &&   // Cần trend rõ ràng hơn (65 -> 70)
       currentPrice > vwma5m &&
       currentPrice > vwapM1 &&
       slopeM1 > 0 &&
-      adxM1.adx >= 22 &&              // Nới lỏng ADX từ 25 -> 22
+      adxM1.adx >= 25 &&              // Tăng ADX tối thiểu lên 25
       adxM1.pDI > adxM1.mDI &&
-      distFromVWMA < (atrM1 * 1.7) && // Nới lỏng filter kiệt sức lên 1.7 ATR
-      compRange < (atrM1 * 1.3) &&    // Nới lỏng nén từ 1.1 -> 1.3 ATR
+      distFromVWMA < (atrM1 * 1.5) && // Chặt chẽ hơn về khoảng cách (1.7 -> 1.5)
+      compRange < (atrM1 * 1.0) &&    // Nén cực chặt (1.3 -> 1.0)
       recentLow > vwma5m &&           
       currentPrice > recentHigh &&    
-      bodySize > (atrM1 * 0.5) &&     // Nến breakout thân > 0.5 ATR
-      allKlines[i][5] > volMA * 0.95 && // Volume đạt 95% trung bình
+      bodySize > (atrM1 * 0.7) &&     // Nến breakout mạnh mẽ hơn (0.5 -> 0.7)
+      allKlines[i][5] > volMA * 1.2 && // Volume bùng nổ rõ rệt (0.95 -> 1.2)
       currentPrice > prevHigh;
 
-    // SHORT CONTINUATION
+    // SHORT CONTINUATION V2
     const isContinuationShort = 
-      regimeData.totalScore >= 65 &&
+      regimeData.totalScore >= 70 &&
       currentPrice < vwma5m &&
       currentPrice < vwapM1 &&
       slopeM1 < 0 &&
-      adxM1.adx >= 22 &&
+      adxM1.adx >= 25 &&
       adxM1.mDI > adxM1.pDI &&
-      distFromVWMA < (atrM1 * 1.7) &&
-      compRange < (atrM1 * 1.3) &&
+      distFromVWMA < (atrM1 * 1.5) &&
+      compRange < (atrM1 * 1.0) &&
       recentHigh < vwma5m &&
       currentPrice < recentLow &&
-      bodySize > (atrM1 * 0.5) &&
-      allKlines[i][5] > volMA * 0.95 &&
+      bodySize > (atrM1 * 0.7) &&
+      allKlines[i][5] > volMA * 1.2 &&
       currentPrice < prevLow;
 
     // --- ENTRY DECISION (SWEP OR CONTINUATION) ---

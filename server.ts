@@ -643,36 +643,36 @@ async function traderLoop() {
     const prevHigh = bars[bars.length - 2][2];
     const prevLow = bars[bars.length - 2][3];
 
-    // LONG CONTINUATION
+    // LONG CONTINUATION V2
     const isContinuationLong = 
-      regimeData.totalScore >= 65 &&
+      regimeData.totalScore >= 70 &&
       currentPrice > vwma5m &&
       currentPrice > vwapM1 &&
       slopeM1 > 0 &&
-      adxM1.adx >= 22 &&
+      adxM1.adx >= 25 &&
       adxM1.pDI > adxM1.mDI &&
-      distFromVWMA < (atrM1 * 1.7) &&
-      compRange < (atrM1 * 1.3) &&
+      distFromVWMA < (atrM1 * 1.5) &&
+      compRange < (atrM1 * 1.0) &&
       recentLow > vwma5m &&
       currentPrice > recentHigh &&
-      bodySize > (atrM1 * 0.5) &&
-      bars[bars.length - 1][5] > volMA * 0.95 &&
+      bodySize > (atrM1 * 0.7) &&
+      bars[bars.length - 1][5] > volMA * 1.2 &&
       currentPrice > prevHigh;
 
-    // SHORT CONTINUATION
+    // SHORT CONTINUATION V2
     const isContinuationShort = 
-      regimeData.totalScore >= 65 &&
+      regimeData.totalScore >= 70 &&
       currentPrice < vwma5m &&
       currentPrice < vwapM1 &&
       slopeM1 < 0 &&
-      adxM1.adx >= 22 &&
+      adxM1.adx >= 25 &&
       adxM1.mDI > adxM1.pDI &&
-      distFromVWMA < (atrM1 * 1.7) &&
-      compRange < (atrM1 * 1.3) &&
+      distFromVWMA < (atrM1 * 1.5) &&
+      compRange < (atrM1 * 1.0) &&
       recentHigh < vwma5m &&
       currentPrice < recentLow &&
-      bodySize > (atrM1 * 0.5) &&
-      bars[bars.length - 1][5] > volMA * 0.95 &&
+      bodySize > (atrM1 * 0.7) &&
+      bars[bars.length - 1][5] > volMA * 1.2 &&
       currentPrice < prevLow;
 
     // LONG ENTRY
