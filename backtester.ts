@@ -715,40 +715,42 @@ export async function runBacktest(
 
     const isAtrExpansion = (atrM1 > atrPrev) || (atrM1 > atrMA * 1.03);
 
-    // LONG CONTINUATION V3 (Compression -> Expansion)
+    // LONG CONTINUATION V4 (High Quality)
     const isContinuationLong = 
-      regimeData.totalScore >= 68 &&
+      regimeData.totalScore >= 70 &&   // Yêu cầu trend mạnh hơn (68 -> 70)
       currentPrice > vwma5m &&
       currentPrice > vwapM1 &&
       slopeM1 > 0 &&
-      adxM1.adx >= 22 &&
+      adxM1.adx >= 25 &&              // ADX tối thiểu 25 để đảm bảo momentum
       adxM1.pDI > adxM1.mDI &&
-      distFromVWMA < (atrM1 * 1.8) &&
-      compRange < (atrM1 * 1.5) &&
-      overlapCount >= 2 &&            // Edge: Có sự nén giá thực sự
-      recentLow > vwma5m &&           // Giữ được cấu trúc trend
-      isAtrExpansion &&               // Bắt đầu bùng nổ biên độ
-      currentPrice > recentHigh &&    // Breakout range nén
-      bodySize > (atrM1 * 0.45) &&
-      allKlines[i][5] > volMA * 1.05 &&
+      distFromVWMA < (atrM1 * 1.6) && // Không mua quá xa VWMA (1.8 -> 1.6)
+      compRange < (atrM1 * 1.2) &&    // Nén chặt hơn (1.5 -> 1.2)
+      overlapCount >= 3 &&            // Nén lâu hơn (2 -> 3 nến chồng lấn)
+      recentLow > vwma5m &&           
+      allKlines.slice(i-3, i).every(b => b[4] > vwma5m) && // Pullback không được đóng nến dưới VWMA 5m
+      isAtrExpansion &&               
+      currentPrice > recentHigh &&    
+      bodySize > (atrM1 * 0.6) &&     // Nến phá vỡ phải mạnh hơn (0.45 -> 0.6)
+      allKlines[i][5] > volMA * 1.2 && // Volume bùng nổ (1.05 -> 1.2)
       currentPrice > prevHigh;
 
-    // SHORT CONTINUATION V3
+    // SHORT CONTINUATION V4 (High Quality)
     const isContinuationShort = 
-      regimeData.totalScore >= 68 &&
+      regimeData.totalScore >= 70 &&
       currentPrice < vwma5m &&
       currentPrice < vwapM1 &&
       slopeM1 < 0 &&
-      adxM1.adx >= 22 &&
+      adxM1.adx >= 25 &&
       adxM1.mDI > adxM1.pDI &&
-      distFromVWMA < (atrM1 * 1.8) &&
-      compRange < (atrM1 * 1.5) &&
-      overlapCount >= 2 &&
+      distFromVWMA < (atrM1 * 1.6) &&
+      compRange < (atrM1 * 1.2) &&
+      overlapCount >= 3 &&
       recentHigh < vwma5m &&
+      allKlines.slice(i-3, i).every(b => b[4] < vwma5m) &&
       isAtrExpansion &&
       currentPrice < recentLow &&
-      bodySize > (atrM1 * 0.45) &&
-      allKlines[i][5] > volMA * 1.05 &&
+      bodySize > (atrM1 * 0.6) &&
+      allKlines[i][5] > volMA * 1.2 &&
       currentPrice < prevLow;
 
     // --- ENTRY DECISION (SWEP OR CONTINUATION) ---
@@ -821,7 +823,13 @@ export async function runBacktest(
       results.totalSlippage += estimatedSlippage;
       results.finalBalance += dollarPnL; 
       monthlyPnL += dollarPnL;
-      monthlyProfitR += (pnlR * regimeData.riskPercent);
+
+      // Chuẩn hóa Profit R: Nếu Risk 5% và thắng 2R, thì số R so với Risk cơ bản (ví dụ 1%) sẽ là 10R
+      // Điều này giúp bạn thấy giá trị thực tế mà chiến lược 5% mang lại.
+      const multiplier = isContTrade ? (0.05 / RISK_PER_TRADE) : regimeData.riskPercent;
+      const effectiveR = pnlR * multiplier;
+      
+      monthlyProfitR += effectiveR;
 
       results.totalTrades++;
       if (type === "LONG") {
@@ -851,7 +859,6 @@ export async function runBacktest(
       results.displaceTrades++;
       
     results.totalPnL += dollarPnL;
-    const effectiveR = pnlR * regimeData.riskPercent;
     results.totalProfitR += effectiveR;
     
     // Track Continuation stats
