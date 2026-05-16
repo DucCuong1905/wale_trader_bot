@@ -729,8 +729,7 @@ async function traderLoop() {
       if (isContTrade) {
         sl = sig === "LONG" ? (currentPrice - atrM1 * 1.5) : (currentPrice + atrM1 * 1.5);
       } else {
-        // Whale Sweep: SL dưới chân nến xác nhận + một chút ATR
-        sl = sig === "LONG" ? (sweep.confirmLow - atrM1 * 0.2) : (sweep.confirmHigh + atrM1 * 0.2);
+        sl = sig === "LONG" ? (sweep.low - atrM1 * 0.2) : (sweep.high + atrM1 * 0.2);
       }
       const tp = e + (e - sl > 0 ? (e - sl) * currentRR : (sl - e) * -currentRR);
 

@@ -785,8 +785,7 @@ export async function runBacktest(
       if (isContinuationLong || isContinuationShort) {
          sl = type === "LONG" ? (currentPrice - atrM1 * 1.5) : (currentPrice + atrM1 * 1.5);
       } else {
-         // Whale Sweep: SL tại chân nến xác nhận + ATR offset
-         sl = type === "LONG" ? (sweep.confirmLow - atrM1 * 0.2) : (sweep.confirmHigh + atrM1 * 0.2);
+         sl = type === "LONG" ? (sweep.low - atrM1 * 0.2) : (sweep.high + atrM1 * 0.2);
       }
       const tp = entryPrice + (entryPrice - sl > 0 ? (entryPrice - sl) * currentRR : (sl - entryPrice) * -currentRR);
 
