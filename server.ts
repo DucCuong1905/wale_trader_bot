@@ -715,7 +715,7 @@ async function traderLoop() {
     }
 
     const isContTrade = (sig === "LONG" && isContinuationLong) || (sig === "SHORT" && isContinuationShort);
-    const currentRR = isContTrade ? 1.5 : 1.0;
+    const currentRR = isContTrade ? 1.2 : 1.0;
 
     // 7. XỬ LÝ LỆNH (MARKET ENTRY)
     if (sig && isWithinTradingSessions()) {
