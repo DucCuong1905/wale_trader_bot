@@ -785,7 +785,8 @@ export async function runBacktest(
 
       const riskPercentForTrade = isContTrade ? 0.05 : 0.01; // Cố định 1% cho Whale Sweep
 
-      console.log(`[SIGNAL] ${type} Market Entry at ${time} ($${entryPrice.toFixed(2)}) | Regime: ${regimeData.regime} (Risk: ${regimeData.riskPercent}x)`);
+      const strategyLabel = isContTrade ? "CONTINUATION" : "WHALE SWEEP";
+      console.log(`[SIGNAL] ${type} | ${strategyLabel} | Entry: $${entryPrice.toFixed(2)} | SL: $${sl.toFixed(2)} | TP: $${tp.toFixed(2)}`);
       
       // Tìm kết quả trong các nến tiếp theo
       let exitPrice = 0;
@@ -894,7 +895,8 @@ export async function runBacktest(
       regime: regimeData.regime
     });
     
-    console.log(`[TRADE] ${status} | PnL: ${pnlR}R (Eff: ${effectiveR.toFixed(1)}R) | $${dollarPnL.toFixed(2)} | Balance: $${results.finalBalance.toFixed(2)}`);
+    const strategyLabelResult = isContTrade ? "CONTINUATION" : "WHALE SWEEP";
+    console.log(`[TRADE] ${status} | ${strategyLabelResult} | PnL: ${pnlR.toFixed(1)}R (Eff: ${effectiveR.toFixed(1)}R) | $${dollarPnL.toFixed(2)} | Balance: $${results.finalBalance.toFixed(2)}`);
       
       // Nhảy vòng lặp đến điểm nến hiện tại
     }

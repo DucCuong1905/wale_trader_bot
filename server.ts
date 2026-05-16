@@ -39,6 +39,7 @@ let paperPosition: {
   sl: number;
   tp: number;
   size: number;
+  strategy: string;
   startTime: number;
 } | null = null;
 
@@ -530,10 +531,12 @@ async function traderLoop() {
         }
 
         if (closed) {
-          const pnlR = status === "WIN" ? RR : -1.0;
+          const pnlR = status === "WIN" ? (paperPosition.strategy === "CONTINUATION" ? 1.2 : 1.0) : -1.0;
           const pnlDollar = paperPosition.size * pnlR;
           paperBalance += pnlDollar;
           const vnTime = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
+          
+          console.log(`[TRADE] ${status} | ${paperPosition.strategy} | PnL: ${pnlR.toFixed(1)}R | Balance: $${paperBalance.toFixed(2)}`);
           
           await sendTelegram(`✅ [PAPER CLOSED] ${status === "WIN" ? "CHỐT LỜI" : "CẮT LỖ"}\n` +
             `💰 PnL: ${pnlDollar.toFixed(2)}$ (${pnlR}R)\n` +
@@ -716,6 +719,7 @@ async function traderLoop() {
 
     const isContTrade = (sig === "LONG" && isContinuationLong) || (sig === "SHORT" && isContinuationShort);
     const currentRR = isContTrade ? 1.2 : 1.0;
+    const strategyLabel = isContTrade ? "CONTINUATION" : "WHALE SWEEP";
 
     // 7. XỬ LÝ LỆNH (MARKET ENTRY)
     if (sig && isWithinTradingSessions()) {
@@ -728,6 +732,8 @@ async function traderLoop() {
         sl = sig === "LONG" ? (sweep.low - atrM1 * 0.2) : (sweep.high + atrM1 * 0.2);
       }
       const tp = e + (e - sl > 0 ? (e - sl) * currentRR : (sl - e) * -currentRR);
+
+      console.log(`\n[SIGNAL] ${sig} | ${strategyLabel} | Price: $${e.toFixed(2)}`);
       
       if (!IS_LIVE_TRADING_ENABLED) { 
         const riskPercent = isContTrade ? 0.05 : 0.01; // Whale Sweep cố định 1%
@@ -740,6 +746,7 @@ async function traderLoop() {
           sl: sl,
           tp: tp,
           size: positionSize,
+          strategy: strategyLabel,
           startTime: Date.now()
         };
 
@@ -750,7 +757,6 @@ async function traderLoop() {
 
         const conditions = [
           `📡 Chiến lược: **${strategyName}**`,
-          `0. Regime: ${regimeData.regime} (Risk: ${regimeData.riskPercent}x)`,
           `1. Khoảng cách VWMA: ${sig === 'LONG' ? (!isOverExtendedLong ? '✅ Ok' : '❌ Quá xa') : (!isOverExtendedShort ? '✅ Ok' : '❌ Quá xa')} (${distFromVWMA.toFixed(2)})`,
           `2. Giá vs VWMA 5m: ${currentPrice > vwma5m ? '✅ Trên' : '❌ Dưới'}`,
           `3. Giá vs VWAP: ${currentPrice > vwapM1 ? '✅ Above' : '❌ Below'}`,
