@@ -727,10 +727,7 @@ async function traderLoop() {
       } else {
         sl = sig === "LONG" ? (sweep.low - atrM1 * 0.2) : (sweep.high + atrM1 * 0.2);
       }
-      const tp = e + (e - sl > 0 ? (e - sl) * RR : (sl - e) * -RR);
-      
-      const isContTrade = (sig === "LONG" && isContinuationLong) || (sig === "SHORT" && isContinuationShort);
-      const currentRR = isContTrade ? 1.5 : 1.0;
+      const tp = e + (e - sl > 0 ? (e - sl) * currentRR : (sl - e) * -currentRR);
       
       if (!IS_LIVE_TRADING_ENABLED) { 
         const riskPercent = isContTrade ? 0.05 : 0.01; // Whale Sweep cố định 1%
@@ -741,7 +738,7 @@ async function traderLoop() {
           type: sig,
           entry: e,
           sl: sl,
-          tp: e + (e - sl > 0 ? (e - sl) * currentRR : (sl - e) * -currentRR),
+          tp: tp,
           size: positionSize,
           startTime: Date.now()
         };

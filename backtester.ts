@@ -804,7 +804,7 @@ export async function runBacktest(
       }
 
       if (exitPrice === 0) exitPrice = allKlines[Math.min(i + 99, allKlines.length - 1)][4];
-      pnlR = status === "WIN" ? rr : -1.0; 
+      pnlR = status === "WIN" ? currentRR : -1.0; 
       
       const currentRiskPercent = isContTrade ? 0.05 : 0.01;
       const dollarPnL = results.finalBalance * currentRiskPercent * pnlR;
