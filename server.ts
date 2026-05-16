@@ -21,7 +21,7 @@ const SYMBOL_ID = "btcusdt"; // ID ký hiệu cho WebSocket
 const TIMEFRAME = "1m"; // Khung thời gian nến (1 phút)
 const IS_LIVE_TRADING_ENABLED = false; // Chế độ giao dịch thật (true = bật, false = test)
 const RISK_PER_TRADE = 0.01; // Rủi ro trên mỗi lệnh (1% tài khoản)
-const RR = 1.0; // Tỷ lệ Risk/Reward 1.0 theo yêu cầu
+const RR = 1.5; // Tỷ lệ Risk/Reward 1.5 theo yêu cầu
 const COOLDOWN_MS = 30000; // Thời gian chờ giữa các lệnh (30 giây)
 const MAX_DAILY_LOSS = 0.06; // Giới hạn lỗ tối đa trong ngày (6%)
 
@@ -633,7 +633,7 @@ async function traderLoop() {
     const isOverExtendedLong = distFromVWMA > (atrM1 * 2);
     const isOverExtendedShort = distFromVWMA > (atrM1 * 2);
 
-    // --- MINI COMPRESSION & CONTINUATION LOGIC (COMPRESSION -> EXPANSION) ---
+    // --- MINI COMPRESSION & CONTINUATION LOGIC ---
     const recent5 = bars.slice(-6, -1);
     const recentHigh = Math.max(...recent5.map(b => b[2]));
     const recentLow = Math.min(...recent5.map(b => b[3]));
@@ -645,7 +645,6 @@ async function traderLoop() {
     const prevHigh = bars[bars.length - 2][2];
     const prevLow = bars[bars.length - 2][3];
 
-    // Detect mini compression (Overlap Count)
     let overlapCount = 0;
     for (let j = 0; j < recent5.length - 1; j++) {
       const h1 = recent5[j][2];
@@ -657,7 +656,7 @@ async function traderLoop() {
 
     const isAtrExpansion = (atrM1 > atrPrev) || (atrM1 > atrMA * 1.03);
 
-    // LONG CONTINUATION V5 (Balanced High Quality)
+    // LONG CONTINUATION V5
     const isContinuationLong = 
       regimeData.totalScore >= 69 &&   
       currentPrice > vwma5m &&
@@ -676,7 +675,7 @@ async function traderLoop() {
       bars[bars.length - 1][5] > volMA * 1.15 && 
       currentPrice > prevHigh;
 
-    // SHORT CONTINUATION V5 (Balanced High Quality)
+    // SHORT CONTINUATION V5
     const isContinuationShort = 
       regimeData.totalScore >= 69 &&
       currentPrice < vwma5m &&
@@ -697,10 +696,9 @@ async function traderLoop() {
 
     // LONG ENTRY
     if (
-      regimeData.riskPercent > 0 &&
       isWithinTradingSessions() && (
         (!isOverExtendedLong && currentPrice > vwma5m && currentPrice > vwapM1 && slopeM1 > 0 && adxM1.adx >= ADX_THRESHOLD && adxM1.pDI > adxM1.mDI && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm) ||
-        isContinuationLong
+        (regimeData.riskPercent > 0 && isContinuationLong)
       )
     ) {
       sig = "LONG";
@@ -708,14 +706,16 @@ async function traderLoop() {
 
     // SHORT ENTRY
     if (
-      regimeData.riskPercent > 0 &&
       isWithinTradingSessions() && (
         (!isOverExtendedShort && currentPrice < vwma5m && currentPrice < vwapM1 && slopeM1 < 0 && adxM1.adx >= ADX_THRESHOLD && adxM1.mDI > adxM1.pDI && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm) ||
-        isContinuationShort
+        (regimeData.riskPercent > 0 && isContinuationShort)
       )
     ) {
       sig = "SHORT";
     }
+
+    const isContTrade = (sig === "LONG" && isContinuationLong) || (sig === "SHORT" && isContinuationShort);
+    const currentRR = isContTrade ? 1.5 : 1.0;
 
     // 7. XỬ LÝ LỆNH (MARKET ENTRY)
     if (sig && isWithinTradingSessions()) {
@@ -730,9 +730,10 @@ async function traderLoop() {
       const tp = e + (e - sl > 0 ? (e - sl) * RR : (sl - e) * -RR);
       
       const isContTrade = (sig === "LONG" && isContinuationLong) || (sig === "SHORT" && isContinuationShort);
-
+      const currentRR = isContTrade ? 1.5 : 1.0;
+      
       if (!IS_LIVE_TRADING_ENABLED) { 
-        const riskPercent = isContTrade ? 0.05 : (RISK_PER_TRADE * regimeData.riskPercent);
+        const riskPercent = isContTrade ? 0.05 : 0.01; // Whale Sweep cố định 1%
         const riskAmount = paperBalance * riskPercent;
         const positionSize = riskAmount; 
 
@@ -740,7 +741,7 @@ async function traderLoop() {
           type: sig,
           entry: e,
           sl: sl,
-          tp: tp,
+          tp: e + (e - sl > 0 ? (e - sl) * currentRR : (sl - e) * -currentRR),
           size: positionSize,
           startTime: Date.now()
         };
@@ -771,7 +772,7 @@ async function traderLoop() {
       } else {
         // Chế độ Trade thật trên sàn
         try {
-          const riskPercent = isContTrade ? 0.05 : (RISK_PER_TRADE * regimeData.riskPercent);
+          const riskPercent = isContTrade ? 0.05 : 0.01;
           const riskAmount = botState.balance * riskPercent;
           const size = riskAmount / Math.abs(e - sl);
           const amt = ex.amountToPrecision(PAIR, Math.max(size, 0.001));
@@ -911,7 +912,7 @@ async function startServer() {
     startWS(); 
     traderLoop(); 
     
-    // Tự động chạy backtest 2024-2026 khi start
+    // Tự động chạy backtest 2022-2024 khi start
     setTimeout(() => {
       autoRunInitialBacktest();
     }, 5000);
@@ -921,8 +922,8 @@ async function startServer() {
 async function autoRunInitialBacktest() {
   if (backtestStatus.isRunning) return;
   
-  const startDate = "2024-01-01T00:00:00Z";
-  const endDate = "2026-01-01T00:00:00Z";
+  const startDate = "2022-01-01T00:00:00Z";
+  const endDate = "2024-01-01T00:00:00Z";
   
   console.log(`[AUTO-BACKTEST] 🔄 Đang tự động chạy backtest từ ${startDate} đến ${endDate}...`);
   
@@ -936,11 +937,11 @@ async function autoRunInitialBacktest() {
     if (r && !r.error) {
       const winRate = r.totalTrades > 0 ? (r.wins / r.totalTrades * 100).toFixed(1) : "0.0";
       console.log(`\n✅ [AUTO-BACKTEST] HOÀN TẤT`);
-      console.log(`• Giai đoạn: 2024 - 2026`);
+      console.log(`• Giai đoạn: 2022 - 2024`);
       console.log(`• Tổng lệnh: ${r.totalTrades} | Winrate: ${winRate}% | Profit: ${r.totalProfitR.toFixed(1)}R`);
       
       await sendTelegram(`🤖 **TỰ ĐỘNG BACKTEST KHI LÊN SÀN**\n\n` +
-        `🗓 Giai đoạn: 2024 - 2026\n` +
+        `🗓 Giai đoạn: 2022 - 2024\n` +
         `🔄 Tổng lệnh: ${r.totalTrades}\n` +
         `🎯 Win Rate: ${winRate}%\n` +
         `💰 Profit: ${r.totalProfitR.toFixed(2)}R`);

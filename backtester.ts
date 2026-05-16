@@ -41,7 +41,7 @@ const modelName = "gemini-2.0-flash";
 const PAIR = "BTC/USDT";
 const START_DATE = "2026-01-01T00:00:00Z"; 
 const END_DATE = "2026-04-01T00:00:00Z";
-const RR = 1.0; 
+const RR = 1.5; 
 const INITIAL_BALANCE = 5000;
 const RISK_PER_TRADE = 0.01; // 1%
 
@@ -754,19 +754,20 @@ export async function runBacktest(
       currentPrice < prevLow;
 
     // --- ENTRY DECISION (SWEP OR CONTINUATION) ---
-    let isLong = (regimeData.riskPercent > 0) && isInSession && (
+    let isLong = isInSession && (
       (!isOverExtendedLong && currentPrice > vwma5m && currentPrice > vwapM1 && adxM1.adx >= adxThreshold && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI) ||
-      isContinuationLong
+      (regimeData.riskPercent > 0 && isContinuationLong)
     );
 
-    let isShort = (regimeData.riskPercent > 0) && isInSession && (
+    let isShort = isInSession && (
       (!isOverExtendedShort && currentPrice < vwma5m && currentPrice < vwapM1 && adxM1.adx >= adxThreshold && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI) ||
-      isContinuationShort
+      (regimeData.riskPercent > 0 && isContinuationShort)
     );
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
       const isContTrade = (type === "LONG" ? isContinuationLong : isContinuationShort);
+      const currentRR = isContTrade ? 1.5 : 1.0;
       const entryPrice = currentPrice; 
       
       const time = new Date(allKlines[i][0]).toISOString();
@@ -780,9 +781,9 @@ export async function runBacktest(
          // Lệnh Sweep vẫn dùng SL cũ
          sl = type === "LONG" ? (sweep.low - atrM1 * 0.2) : (sweep.high + atrM1 * 0.2);
       }
-      const tp = entryPrice + (entryPrice - sl > 0 ? (entryPrice - sl) * rr : (sl - entryPrice) * -rr);
+      const tp = entryPrice + (entryPrice - sl > 0 ? (entryPrice - sl) * currentRR : (sl - entryPrice) * -currentRR);
 
-      const riskPercentForTrade = isContTrade ? 0.05 : (RISK_PER_TRADE * regimeData.riskPercent);
+      const riskPercentForTrade = isContTrade ? 0.05 : 0.01; // Cố định 1% cho Whale Sweep
 
       console.log(`[SIGNAL] ${type} Market Entry at ${time} ($${entryPrice.toFixed(2)}) | Regime: ${regimeData.regime} (Risk: ${regimeData.riskPercent}x)`);
       
@@ -805,7 +806,7 @@ export async function runBacktest(
       if (exitPrice === 0) exitPrice = allKlines[Math.min(i + 99, allKlines.length - 1)][4];
       pnlR = status === "WIN" ? rr : -1.0; 
       
-      const currentRiskPercent = isContTrade ? 0.05 : (RISK_PER_TRADE * regimeData.riskPercent);
+      const currentRiskPercent = isContTrade ? 0.05 : 0.01;
       const dollarPnL = results.finalBalance * currentRiskPercent * pnlR;
       
       // Tính phí và trượt giá dự kiến (Để thống kê, ko trừ túi)
@@ -824,9 +825,8 @@ export async function runBacktest(
       results.finalBalance += dollarPnL; 
       monthlyPnL += dollarPnL;
 
-      // Chuẩn hóa Profit R: Nếu Risk 5% và thắng 2R, thì số R so với Risk cơ bản (ví dụ 1%) sẽ là 10R
-      // Điều này giúp bạn thấy giá trị thực tế mà chiến lược 5% mang lại.
-      const multiplier = isContTrade ? (0.05 / RISK_PER_TRADE) : regimeData.riskPercent;
+      // Chuẩn hóa Profit R: 
+      const multiplier = isContTrade ? (0.05 / RISK_PER_TRADE) : 1.0; 
       const effectiveR = pnlR * multiplier;
       
       monthlyProfitR += effectiveR;
