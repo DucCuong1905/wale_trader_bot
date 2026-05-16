@@ -885,29 +885,62 @@ export default function App() {
 
                     {/* Monthly Stats */}
                     {backtestStatus.lastResult.monthlySnapshots && backtestStatus.lastResult.monthlySnapshots.length > 0 && (
-                      <div className="bg-[#12121c] p-8 rounded-[2rem] border border-purple-500/20 glow-purple">
-                        <p className="text-[10px] font-black uppercase mb-6 tracking-widest text-purple-400">Hiệu Suất Theo Tháng</p>
-                        <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                           {backtestStatus.lastResult.monthlySnapshots.map((m: any, idx: number) => (
-                             <div key={idx} className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5 hover:border-purple-500/30 transition-all">
-                               <div className="flex-1">
-                                 <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{m.date}</p>
-                                 <p className="text-sm font-mono font-black text-white">${m.balance.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+                      <div className="space-y-6">
+                        <div className="bg-[#12121c] p-8 rounded-[2rem] border border-purple-500/20 glow-purple">
+                          <p className="text-[10px] font-black uppercase mb-6 tracking-widest text-purple-400 font-sans">Hiệu Suất Tổng Thể Theo Tháng</p>
+                          <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                             {backtestStatus.lastResult.monthlySnapshots.map((m: any, idx: number) => (
+                               <div key={idx} className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5 hover:border-purple-500/30 transition-all">
+                                 <div className="flex-1">
+                                   <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{m.date}</p>
+                                   <p className="text-sm font-mono font-black text-white">${m.balance.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+                                 </div>
+                                 <div className="flex-1 text-center border-x border-white/5 mx-2">
+                                   <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Win Rate</p>
+                                   <p className="text-sm font-mono font-black text-purple-400">{m.winRate}%</p>
+                                   <p className="text-[9px] text-slate-600 font-bold">({m.trades} lệnh)</p>
+                                 </div>
+                                 <div className="flex-1 text-right">
+                                   <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Lợi Nhuận</p>
+                                   <p className={cn(
+                                     "text-sm font-mono font-black",
+                                     (m.monthlyProfitR || 0) >= 0 ? "text-green-400" : "text-red-400"
+                                   )}>{(m.monthlyProfitR || 0) > 0 ? '+' : ''}{(m.monthlyProfitR || 0).toFixed(1)}R</p>
+                                 </div>
                                </div>
-                               <div className="flex-1 text-center border-x border-white/5 mx-2">
-                                 <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Win Rate</p>
-                                 <p className="text-sm font-mono font-black text-purple-400">{m.winRate}%</p>
-                                 <p className="text-[9px] text-slate-600 font-bold">({m.trades} lệnh)</p>
+                             ))}
+                          </div>
+                        </div>
+
+                        {/* CONTINUATION STRATEGY ONLY TABLE */}
+                        <div className="bg-blue-950/20 p-8 rounded-[2rem] border border-blue-500/30 glow-blue">
+                          <div className="flex items-center gap-2 mb-6">
+                            <Zap className="w-4 h-4 text-blue-400" />
+                            <p className="text-[10px] font-black uppercase tracking-widest text-blue-400 font-sans">Chiến Lược: CONTINUATION (Monthly)</p>
+                          </div>
+                          <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                             {backtestStatus.lastResult.monthlySnapshots.map((m: any, idx: number) => (
+                               <div key={idx} className="flex items-center justify-between p-4 bg-blue-500/10 rounded-2xl border border-blue-500/10 hover:border-blue-400/30 transition-all">
+                                 <div className="flex-1">
+                                   <p className="text-[10px] text-blue-500/70 font-bold uppercase tracking-wider">{m.date}</p>
+                                   <p className="text-sm font-mono font-black text-white">{m.continuationTrades || 0} Trades</p>
+                                 </div>
+                                 <div className="flex-1 text-center border-x border-white/5 mx-2">
+                                   <p className="text-[10px] text-blue-500/70 font-bold uppercase tracking-wider">Win Rate</p>
+                                   <p className="text-sm font-mono font-black text-blue-400">
+                                      {m.continuationTrades > 0 ? ((m.continuationWins / m.continuationTrades) * 100).toFixed(1) : '0'}%
+                                   </p>
+                                 </div>
+                                 <div className="flex-1 text-right">
+                                   <p className="text-[10px] text-blue-500/70 font-bold uppercase tracking-wider">Profit R</p>
+                                   <p className={cn(
+                                     "text-sm font-mono font-black",
+                                     (m.continuationPnLR || 0) >= 0 ? "text-green-400" : "text-red-400"
+                                   )}>{(m.continuationPnLR || 0) > 0 ? '+' : ''}{(m.continuationPnLR || 0).toFixed(1)}R</p>
+                                 </div>
                                </div>
-                               <div className="flex-1 text-right">
-                                 <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Lợi Nhuận</p>
-                                 <p className={cn(
-                                   "text-sm font-mono font-black",
-                                   (m.monthlyProfitR || 0) >= 0 ? "text-green-400" : "text-red-400"
-                                 )}>{(m.monthlyProfitR || 0) > 0 ? '+' : ''}{(m.monthlyProfitR || 0).toFixed(1)}R</p>
-                               </div>
-                             </div>
-                           ))}
+                             ))}
+                          </div>
                         </div>
                       </div>
                     )}

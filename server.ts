@@ -914,11 +914,6 @@ async function startServer() {
 
     startWS(); 
     traderLoop(); 
-    
-    // Tự động chạy backtest 2022-2024 khi start
-    setTimeout(() => {
-      autoRunInitialBacktest();
-    }, 5000);
   });
 }
 

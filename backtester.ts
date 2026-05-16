@@ -585,6 +585,9 @@ export async function runBacktest(
   let monthlyShortWins = 0;
   let monthlyPnL = 0;
   let monthlyProfitR = 0;
+  let monthlyContTrades = 0;
+  let monthlyContWins = 0;
+  let monthlyContPnLR = 0;
   let monthlySnapshots: any[] = [];
   
   // Tracking for NEW Continuation strategy
@@ -680,11 +683,16 @@ export async function runBacktest(
         longTrades: monthlyLongTrades,
         longWins: monthlyLongWins,
         shortTrades: monthlyShortTrades,
-        shortWins: monthlyShortWins
+        shortWins: monthlyShortWins,
+        // Continuation stats for UI
+        continuationTrades: monthlyContTrades,
+        continuationWins: monthlyContWins,
+        continuationPnLR: monthlyContPnLR
       });
 
       monthlyWins = 0; monthlyLosses = 0; monthlyLongTrades = 0; monthlyLongWins = 0;
       monthlyShortTrades = 0; monthlyShortWins = 0; monthlyPnL = 0; monthlyProfitR = 0;
+      monthlyContTrades = 0; monthlyContWins = 0; monthlyContPnLR = 0;
     }
     lastMonth = currentMonth;
     lastYear = currentYear;
@@ -866,8 +874,11 @@ export async function runBacktest(
     if (isContTrade) {
       continuationTrades++;
       continuationPnLR += effectiveR;
+      monthlyContTrades++;
+      monthlyContPnLR += effectiveR;
       if (status === "WIN") {
         continuationWins++;
+        monthlyContWins++;
       }
     }
 
