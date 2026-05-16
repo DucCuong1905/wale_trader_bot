@@ -1,6 +1,6 @@
 {
   "name": "WhaleTrade Dashboard",
-  "description": "A professional crypto trading dashboard for monitoring whale liquidity sweeps and orderbook imbalances.",
+  "description": "A professional crypto trading dashboard for monitoring whale liquidity sweeps and high-probability trend continuation strategies.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

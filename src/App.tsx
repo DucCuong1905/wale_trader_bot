@@ -38,7 +38,6 @@ import { cn } from './lib/utils';
 export default function App() {
   const [data, setData] = useState<any>(null);
   const [lastPrice, setLastPrice] = useState(0);
-  const [bidRatio, setBidRatio] = useState(1);
   const [signals, setSignals] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,7 +76,6 @@ export default function App() {
         
         setData(json);
         setLastPrice(json.last_price);
-        setBidRatio(parseFloat(json.bid_ratio));
         setSignals(json.signals);
 
         // Fetch history silently
@@ -371,69 +369,7 @@ export default function App() {
                   />
                 </div>
 
-              {/* Whale Real-time Trades Section */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-[#12121c] border border-emerald-500/20 p-6 rounded-[2rem] glow-green group hover:bg-emerald-500/5 transition-all">
-                  <div className="flex items-center justify-between mb-4">
-                    <p className="text-[10px] text-emerald-500 font-black uppercase tracking-[0.2em]">Whale Buy (5m)</p>
-                    <div className="p-2 bg-emerald-500/10 rounded-lg">
-                      <ArrowUpRight className="w-4 h-4 text-emerald-500" />
-                    </div>
-                  </div>
-                  <p className="text-2xl font-mono text-emerald-400 font-black tracking-tighter">
-                    ${(parseFloat((data as any)?.whale_trades?.buy || "0") / 1000000).toFixed(2)}M
-                  </p>
-                </div>
-                <div className="bg-[#12121c] border border-red-500/20 p-6 rounded-[2rem] glow-red group hover:bg-red-500/5 transition-all">
-                  <div className="flex items-center justify-between mb-4">
-                    <p className="text-[10px] text-red-500 font-black uppercase tracking-[0.2em]">Whale Sell (5m)</p>
-                    <div className="p-2 bg-red-500/10 rounded-lg">
-                      <ArrowDownRight className="w-4 h-4 text-red-500" />
-                    </div>
-                  </div>
-                  <p className="text-2xl font-mono text-red-400 font-black tracking-tighter">
-                    ${(parseFloat((data as any)?.whale_trades?.sell || "0") / 1000000).toFixed(2)}M
-                  </p>
-                </div>
-                <div className={cn(
-                  "p-6 rounded-[2rem] group transition-all border",
-                  (parseFloat((data as any)?.whale_trades?.buy || "0") - parseFloat((data as any)?.whale_trades?.sell || "0")) >= 0
-                    ? "bg-[#12121c] border-blue-500/20 glow-blue hover:bg-blue-500/5"
-                    : "bg-[#12121c] border-orange-500/20 glow-orange hover:bg-orange-500/5"
-                )}>
-                  <div className="flex items-center justify-between mb-4">
-                    <p className={cn(
-                      "text-[10px] font-black uppercase tracking-[0.2em]",
-                      (parseFloat((data as any)?.whale_trades?.buy || "0") - parseFloat((data as any)?.whale_trades?.sell || "0")) >= 0
-                        ? "text-blue-400"
-                        : "text-orange-400"
-                    )}>Whale Net (5m)</p>
-                    <div className={cn(
-                      "p-2 rounded-lg",
-                      (parseFloat((data as any)?.whale_trades?.buy || "0") - parseFloat((data as any)?.whale_trades?.sell || "0")) >= 0
-                        ? "bg-blue-500/10"
-                        : "bg-orange-500/10"
-                    )}>
-                      <Activity className={cn(
-                        "w-4 h-4",
-                        (parseFloat((data as any)?.whale_trades?.buy || "0") - parseFloat((data as any)?.whale_trades?.sell || "0")) >= 0
-                          ? "text-blue-400"
-                          : "text-orange-400"
-                      )} />
-                    </div>
-                  </div>
-                  <p className={cn(
-                    "text-2xl font-mono font-black tracking-tighter",
-                    (parseFloat((data as any)?.whale_trades?.buy || "0") - parseFloat((data as any)?.whale_trades?.sell || "0")) >= 0
-                      ? "text-blue-400"
-                      : "text-orange-400"
-                  )}>
-                    {((parseFloat((data as any)?.whale_trades?.buy || "0") - parseFloat((data as any)?.whale_trades?.sell || "0")) / 1000000).toFixed(2)}M
-                  </p>
-                </div>
-              </div>
-
-              {/* Win/Loss Statistics Chart */}
+               {/* Win/Loss Statistics Chart */}
               <TradeStats trades={history} />
 
               {/* Main Balance Chart */}
@@ -547,53 +483,8 @@ export default function App() {
               </section>
             </div>
 
-            {/* Right Column: Order Book & Signal Log */}
+            {/* Right Column: Signal Log */}
             <div className="lg:col-span-4 space-y-6">
-              {/* Orderbook Analysis */}
-              <section className="glass-card rounded-[2rem] p-8 glow-blue">
-                <div className="flex items-center justify-between mb-8">
-                  <h3 className="text-lg font-black uppercase tracking-tight flex items-center gap-3">
-                    <Shield className="w-6 h-6 text-blue-400" />
-                    Chỉ Báo Tâm Lý
-                  </h3>
-                  <span className="text-[10px] text-slate-500 font-mono font-bold tracking-widest">BINANCE.WS.FUTURES</span>
-                </div>
-
-                <div className="space-y-8">
-                  <div className="flex justify-between text-[10px] font-black uppercase tracking-[0.2em]">
-                    <span className="text-green-400 glow-green">Lực Mua</span>
-                    <span className="text-red-400 glow-red">Lực Bán</span>
-                  </div>
-                  <div className="h-6 w-full bg-white/5 rounded-full flex overflow-hidden ring-4 ring-white/5 shadow-inner">
-                    <motion.div 
-                      className="bg-gradient-to-r from-green-600 to-green-400 h-full shadow-[0_0_15px_rgba(34,197,94,0.3)]"
-                      initial={false}
-                      animate={{ width: `${(bidRatio / (bidRatio + 1)) * 100}%` }}
-                    />
-                    <motion.div 
-                      className="bg-gradient-to-l from-red-600 to-red-400 h-full shadow-[0_0_15px_rgba(239,68,68,0.3)]"
-                      initial={false}
-                      animate={{ width: `${(1 / (bidRatio + 1)) * 100}%` }}
-                    />
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-5xl font-black font-mono tracking-tighter text-white glow-blue">{(bidRatio).toFixed(2)}</span>
-                    <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Tỷ Lệ Sổ Lệnh</span>
-                  </div>
-                  {bidRatio > 1.5 && (
-                    <div className="p-5 bg-green-500/10 border border-green-500/20 rounded-2xl flex items-center gap-4 glow-green">
-                      <div className="p-2 bg-green-500 rounded-lg">
-                        <TrendingUp className="w-5 h-5 text-white" />
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-black text-green-400 uppercase tracking-widest">Tích Lũy Mạnh</h4>
-                        <p className="text-[10px] text-green-400/70 font-semibold">Phát hiện cá voi đang gom hàng quyết liệt</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </section>
-
               {/* Real-time Signals */}
               <section className="glass-card rounded-[2rem] p-8 glow-blue">
                 <div className="flex items-center justify-between mb-8">

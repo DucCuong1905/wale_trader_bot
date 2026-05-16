@@ -133,7 +133,6 @@ let botState = {
   trades: loadTrades() as any[],
   signals: [] as any[],
   lastNotifiedCandle: -1,
-  obRatioEMA: 1.0,
   adx: 0,
   plusDI: 0,
   minusDI: 0,
@@ -142,7 +141,6 @@ let botState = {
   isWsConnected: false,
   isInitNotified: false, 
   apiError: "",
-  recentWhaleTrades: [] as WhaleTrade[],
   lastReportKey: "",
   latestSweepStatus: "None" as "None" | "Low" | "High",
   latestSweepCandle: -1,
@@ -412,7 +410,7 @@ function isWithinTradingSessions(timestamp?: number): boolean {
 
 // --- WS ---
 function startWS() {
-  const streams = `${SYMBOL_ID}@aggtrade/${SYMBOL_ID}@trade/${SYMBOL_ID}@miniticker/${SYMBOL_ID}@depth20`;
+  const streams = `${SYMBOL_ID}@aggtrade/${SYMBOL_ID}@trade/${SYMBOL_ID}@miniticker`;
   const ws = new WebSocket(`wss://fstream.binance.com/stream?streams=${streams}`);
   ws.on('open', () => { botState.isWsConnected = true; });
   ws.on('message', (data) => {
@@ -421,18 +419,6 @@ function startWS() {
       const d = p.data; if (!d) return;
       if (d.p) botState.lastPrice = parseFloat(d.p);
       else if (d.c) botState.lastPrice = parseFloat(d.c);
-      if (p.stream.includes('@depth')) {
-        botState.bid = (d.b || d.bids).reduce((s: number, x: any) => s + parseFloat(x[1]), 0);
-        botState.ask = (d.a || d.asks).reduce((s: number, x: any) => s + parseFloat(x[1]), 0);
-        const r = botState.ask !== 0 ? botState.bid / botState.ask : 1.0;
-        botState.obRatioEMA = (r * 0.1) + (botState.obRatioEMA * 0.9);
-      } else if (p.stream.includes('trade')) {
-        const amount = parseFloat(d.q) * parseFloat(d.p);
-        if (amount > 30000) {
-          botState.recentWhaleTrades.push({ time: Date.now(), side: d.m ? 'sell' : 'buy', amount, price: parseFloat(d.p) });
-          botState.recentWhaleTrades = botState.recentWhaleTrades.filter(t => t.time > Date.now() - 300000);
-        }
-      }
     } catch (e) {}
   });
   ws.on('error', () => { botState.isWsConnected = false; });
@@ -719,7 +705,7 @@ async function traderLoop() {
     }
 
     const isContTrade = (sig === "LONG" && isContinuationLong) || (sig === "SHORT" && isContinuationShort);
-    const currentRR = isContTrade ? 2.0 : 1.0;
+    const currentRR = isContTrade ? 1.5 : 1.0;
     const strategyLabel = isContTrade ? "CONTINUATION" : "WHALE SWEEP";
 
     // 7. XỬ LÝ LỆNH (MARKET ENTRY)
@@ -873,12 +859,10 @@ async function startServer() {
 
   app.get("/api/backtest/status", (req, res) => res.json(backtestStatus));
   app.get("/api/trading/status", (req, res) => {
-    const b = botState.recentWhaleTrades.filter(t => t.side === 'buy').reduce((s, t) => s + t.amount, 0);
-    const s = botState.recentWhaleTrades.filter(t => t.side === 'sell').reduce((s, t) => s + t.amount, 0);
     res.json({
-      symbol: PAIR, last_price: botState.lastPrice, bid_ratio: botState.obRatioEMA.toFixed(2), in_position: botState.inPosition,
+      symbol: PAIR, last_price: botState.lastPrice, in_position: botState.inPosition,
       signals: botState.signals.slice(0, 10), balance: botState.balance, ai_reasoning: botState.aiReasoning,
-      adx: botState.adx.toFixed(1), whale_trades: { buy: b.toFixed(0), sell: s.toFixed(0), count: botState.recentWhaleTrades.length },
+      adx: botState.adx.toFixed(1), 
       enable_session_filter: ENABLE_SESSION_FILTER, vwma_period: VWMA_PERIOD, adx_threshold: ADX_THRESHOLD,
       is_ws_connected: botState.isWsConnected,
       market_regime: botState.marketRegime
