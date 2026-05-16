@@ -39,8 +39,8 @@ const ai = new GoogleGenAI({ apiKey: aiString });
 const modelName = "gemini-2.0-flash";
 
 const PAIR = "BTC/USDT";
-const START_DATE = "2020-01-01T00:00:00Z"; 
-const END_DATE = "2022-01-01T00:00:00Z";
+const START_DATE = "2022-01-01T00:00:00Z"; 
+const END_DATE = "2024-01-01T00:00:00Z";
 const RR = 1.5; 
 const INITIAL_BALANCE = 5000;
 const RISK_PER_TRADE = 0.01; // 1%
