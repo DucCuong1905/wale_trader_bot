@@ -209,20 +209,25 @@ function getExchange() {
       options: { defaultType: 'future', adjustForTimeDifference: true } 
     });
     
-    // Set leverage and margin once
-    (async () => {
-      try {
-        await exchange!.setLeverage(10, PAIR);
-        await exchange!.setMarginMode('CROSSED', PAIR);
-        botState.apiError = null; // Clear error if success
-      } catch (e: any) {
-        if (e.name === 'AuthenticationError') {
-          botState.apiError = "Lỗi xác thực: API Key sai hoặc thiếu quyền Futures.";
-        }
-      }
-    })();
+    // Lazy init leverage and margin mode
   }
   return exchange;
+}
+
+// Separate function to initialize exchange settings
+async function initExchangeSettings(ex: ccxt.binance) {
+  if (botState.apiError) return;
+  try {
+    if (!ex.apiKey || !ex.secret) return;
+    await ex.setLeverage(10, PAIR);
+    await ex.setMarginMode('CROSSED', PAIR);
+    botState.apiError = null;
+  } catch (e: any) {
+    console.error("[EXCHANGE INIT ERROR]", e.message);
+    if (e.name === 'AuthenticationError' || e.message.includes("-2015")) {
+      botState.apiError = "Lỗi xác thực: API Key sai hoặc thiếu quyền Futures.";
+    }
+  }
 }
 
 function getAvgRange(bars: any[], period: number = 20) {
@@ -699,20 +704,16 @@ async function traderLoop() {
 
     // LONG ENTRY
     if (
-      isWithinTradingSessions() && (
-        (!isOverExtendedLong && currentPrice > vwma5m && currentPrice > vwapM1 && slopeM1 > 0 && adxM1.adx >= ADX_THRESHOLD && adxM1.pDI > adxM1.mDI && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm) ||
-        (regimeData.riskPercent > 0 && isContinuationLong)
-      )
+      (!isOverExtendedLong && currentPrice > vwma5m && currentPrice > vwapM1 && slopeM1 > 0 && adxM1.adx >= ADX_THRESHOLD && adxM1.pDI > adxM1.mDI && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isWithinTradingSessions()) ||
+      (regimeData.riskPercent > 0 && isContinuationLong)
     ) {
       sig = "LONG";
     }
 
     // SHORT ENTRY
     if (
-      isWithinTradingSessions() && (
-        (!isOverExtendedShort && currentPrice < vwma5m && currentPrice < vwapM1 && slopeM1 < 0 && adxM1.adx >= ADX_THRESHOLD && adxM1.mDI > adxM1.pDI && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm) ||
-        (regimeData.riskPercent > 0 && isContinuationShort)
-      )
+      (!isOverExtendedShort && currentPrice < vwma5m && currentPrice < vwapM1 && slopeM1 < 0 && adxM1.adx >= ADX_THRESHOLD && adxM1.mDI > adxM1.pDI && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isWithinTradingSessions()) ||
+      (regimeData.riskPercent > 0 && isContinuationShort)
     ) {
       sig = "SHORT";
     }
@@ -722,7 +723,7 @@ async function traderLoop() {
     const strategyLabel = isContTrade ? "CONTINUATION" : "WHALE SWEEP";
 
     // 7. XỬ LÝ LỆNH (MARKET ENTRY)
-    if (sig && isWithinTradingSessions()) {
+    if (sig) {
       const e = currentPrice; 
       // Set SL cho Continuation
       let sl = sig === "LONG" ? (currentPrice - atrM1 * 2) : (currentPrice + atrM1 * 2);
@@ -899,17 +900,11 @@ async function startServer() {
   app.get("/api/trading/history", (req, res) => res.json(botState.trades));
 
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
+    const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
+    const dist = path.join(process.cwd(), "dist");
+    if (fs.existsSync(dist)) { app.use(express.static(dist)); app.get("*", (req, res) => res.sendFile(path.join(dist, "index.html"))); }
   }
 
   app.listen(3000, "0.0.0.0", async () => { 
