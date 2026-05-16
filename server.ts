@@ -915,7 +915,7 @@ async function startServer() {
     startWS(); 
     traderLoop(); 
     
-    // Tự động chạy backtest 2024-2026 khi start
+    // Tự động chạy backtest 2020-2022 khi start
     setTimeout(() => {
       autoRunInitialBacktest();
     }, 5000);
@@ -925,8 +925,8 @@ async function startServer() {
 async function autoRunInitialBacktest() {
   if (backtestStatus.isRunning) return;
   
-  const startDate = "2024-01-01T00:00:00Z";
-  const endDate = "2026-01-01T00:00:00Z";
+  const startDate = "2020-01-01T00:00:00Z";
+  const endDate = "2022-01-01T00:00:00Z";
   
   console.log(`[AUTO-BACKTEST] 🔄 Đang tự động chạy backtest từ ${startDate} đến ${endDate}...`);
   
@@ -940,11 +940,11 @@ async function autoRunInitialBacktest() {
     if (r && !r.error) {
       const winRate = r.totalTrades > 0 ? (r.wins / r.totalTrades * 100).toFixed(1) : "0.0";
       console.log(`\n✅ [AUTO-BACKTEST] HOÀN TẤT`);
-      console.log(`• Giai đoạn: 2024 - 2026`);
+      console.log(`• Giai đoạn: 2020 - 2022`);
       console.log(`• Tổng lệnh: ${r.totalTrades} | Winrate: ${winRate}% | Profit: ${r.totalProfitR.toFixed(1)}R`);
       
       await sendTelegram(`🤖 **TỰ ĐỘNG BACKTEST KHI LÊN SÀN**\n\n` +
-        `🗓 Giai đoạn: 2024 - 2026\n` +
+        `🗓 Giai đoạn: 2020 - 2022\n` +
         `🔄 Tổng lệnh: ${r.totalTrades}\n` +
         `🎯 Win Rate: ${winRate}%\n` +
         `💰 Profit: ${r.totalProfitR.toFixed(2)}R`);
