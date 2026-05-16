@@ -775,7 +775,7 @@ export async function runBacktest(
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
       const isContTrade = (type === "LONG" ? isContinuationLong : isContinuationShort);
-      const currentRR = isContTrade ? 1.5 : 1.0;
+      const currentRR = isContTrade ? 1.2 : 1.0;
       const entryPrice = currentPrice; 
       
       const time = new Date(allKlines[i][0]).toISOString();
