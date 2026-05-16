@@ -725,11 +725,12 @@ async function traderLoop() {
     if (sig && isWithinTradingSessions()) {
       const e = currentPrice; 
       // Set SL cho Continuation
-      let sl = sig === "LONG" ? (sweep.low || (currentPrice - atrM1 * 2)) : (sweep.high || (currentPrice + atrM1 * 2));
-      if (isContinuationLong || isContinuationShort) {
+      let sl = sig === "LONG" ? (currentPrice - atrM1 * 2) : (currentPrice + atrM1 * 2);
+      if (isContTrade) {
         sl = sig === "LONG" ? (currentPrice - atrM1 * 1.5) : (currentPrice + atrM1 * 1.5);
       } else {
-        sl = sig === "LONG" ? (sweep.low - atrM1 * 0.2) : (sweep.high + atrM1 * 0.2);
+        // Whale Sweep: SL dưới chân nến xác nhận + một chút ATR
+        sl = sig === "LONG" ? (sweep.confirmLow - atrM1 * 0.2) : (sweep.confirmHigh + atrM1 * 0.2);
       }
       const tp = e + (e - sl > 0 ? (e - sl) * currentRR : (sl - e) * -currentRR);
 

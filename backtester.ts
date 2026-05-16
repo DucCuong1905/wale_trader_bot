@@ -780,14 +780,13 @@ export async function runBacktest(
       
       const time = new Date(allKlines[i][0]).toISOString();
       // Nếu là lệnh Continuation, ta dùng ATR để đặt SL thay vì dùng nến Sweep (vì Sweep có thể ko tồn tại)
-      let sl = type === "LONG" ? (sweep.low || (currentPrice - atrM1 * 2)) : (sweep.high || (currentPrice + atrM1 * 2));
+      let sl = type === "LONG" ? (currentPrice - atrM1 * 2) : (currentPrice + atrM1 * 2);
       
-      // Fine-tune SL cho Continuation: Nếu SL Sweep quá xa hoặc ko có, dùng 1.5 ATR
       if (isContinuationLong || isContinuationShort) {
          sl = type === "LONG" ? (currentPrice - atrM1 * 1.5) : (currentPrice + atrM1 * 1.5);
       } else {
-         // Lệnh Sweep vẫn dùng SL cũ
-         sl = type === "LONG" ? (sweep.low - atrM1 * 0.2) : (sweep.high + atrM1 * 0.2);
+         // Whale Sweep: SL tại chân nến xác nhận + ATR offset
+         sl = type === "LONG" ? (sweep.confirmLow - atrM1 * 0.2) : (sweep.confirmHigh + atrM1 * 0.2);
       }
       const tp = entryPrice + (entryPrice - sl > 0 ? (entryPrice - sl) * currentRR : (sl - entryPrice) * -currentRR);
 
