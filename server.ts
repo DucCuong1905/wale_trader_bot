@@ -588,6 +588,7 @@ async function traderLoop() {
     const vwmaM1Prev = calculateVWMA(bars.slice(0, -1), 20);
     const slopeM1 = vwmaM1 - vwmaM1Prev;
     const adxM1 = calcADX(bars, 14);
+    const prevAdxM1 = calcADX(bars.slice(0, -1), 14);
     const currentPrice = bars[bars.length - 1][4];
     
     // --- Khung M5 Filter ---
@@ -656,10 +657,10 @@ async function traderLoop() {
       currentPrice > vwma5m &&
       currentPrice > vwapM1 &&
       slopeM1 > 0 &&
-      adxM1.adx >= 14 &&              
+      (adxM1.adx >= 20 || (adxM1.adx >= 14 && adxM1.adx > prevAdxM1.adx)) &&              
       adxM1.pDI > adxM1.mDI &&
       distFromVWMA < (atrM1 * 1.7) && 
-      compRange < (atrM1 * 1.6) &&    
+      compRange < (atrM1 * 1.35) &&    
       overlapCount >= 2 &&            
       recentLow > vwma5m &&           
       bars.slice(-4, -1).every(b => b[4] > vwma5m) && 
@@ -675,10 +676,10 @@ async function traderLoop() {
       currentPrice < vwma5m &&
       currentPrice < vwapM1 &&
       slopeM1 < 0 &&
-      adxM1.adx >= 14 &&
+      (adxM1.adx >= 20 || (adxM1.adx >= 14 && adxM1.adx > prevAdxM1.adx)) &&
       adxM1.mDI > adxM1.pDI &&
       distFromVWMA < (atrM1 * 1.7) &&
-      compRange < (atrM1 * 1.6) &&
+      compRange < (atrM1 * 1.35) &&
       overlapCount >= 2 &&
       recentHigh < vwma5m &&
       bars.slice(-4, -1).every(b => b[4] < vwma5m) &&
@@ -705,7 +706,7 @@ async function traderLoop() {
     }
 
     const isContTrade = (sig === "LONG" && isContinuationLong) || (sig === "SHORT" && isContinuationShort);
-    const currentRR = isContTrade ? 1.2 : 1.0;
+    const currentRR = isContTrade ? 1.5 : 1.0;
     const strategyLabel = isContTrade ? "CONTINUATION" : "WHALE SWEEP";
 
     // 7. XỬ LÝ LỆNH (MARKET ENTRY)

@@ -659,6 +659,7 @@ export async function runBacktest(
     const vwmaM1Prev = calculateVWMA(allKlines.slice(Math.max(0, i - 101), i), 20);
     const slopeM1 = vwmaM1 - vwmaM1Prev;
     const adxM1 = calcADX(calcWindow);
+    const prevAdxM1 = calcADX(allKlines.slice(Math.max(0, i - 101), i));
     const sweep = detectSweep(calcWindow);
     const atrM1 = calculateATR(calcWindow, 14);
     const isInSession = isWithinSessions(allKlines[i][0]);
@@ -738,10 +739,10 @@ export async function runBacktest(
       currentPrice > vwma5m &&
       currentPrice > vwapM1 &&
       slopeM1 > 0 &&
-      adxM1.adx >= 14 &&              // Nhạy hơn một chút (25 -> 23 -> 14)
+      (adxM1.adx >= 20 || (adxM1.adx >= 14 && adxM1.adx > prevAdxM1.adx)) &&              
       adxM1.pDI > adxM1.mDI &&
       distFromVWMA < (atrM1 * 1.7) && // Nới lỏng khoảng cách (1.6 -> 1.7)
-      compRange < (atrM1 * 1.6) &&   // Nới lỏng vùng nén (1.35 -> 1.6)
+      compRange < (atrM1 * 1.35) &&   // Siết lại vùng nén (1.6 -> 1.35)
       overlapCount >= 2 &&            // Nén tối thiểu 2 nến chồng lấn
       recentLow > vwma5m &&           
       allKlines.slice(Math.max(0, i-3), i).every(b => b[4] > vwma5m) && // Pullback lành mạnh
@@ -757,10 +758,10 @@ export async function runBacktest(
       currentPrice < vwma5m &&
       currentPrice < vwapM1 &&
       slopeM1 < 0 &&
-      adxM1.adx >= 14 &&
+      (adxM1.adx >= 20 || (adxM1.adx >= 14 && adxM1.adx > prevAdxM1.adx)) &&
       adxM1.mDI > adxM1.pDI &&
       distFromVWMA < (atrM1 * 1.7) &&
-      compRange < (atrM1 * 1.6) &&
+      compRange < (atrM1 * 1.35) &&
       overlapCount >= 2 &&
       recentHigh < vwma5m &&
       allKlines.slice(Math.max(0, i-3), i).every(b => b[4] < vwma5m) &&
@@ -784,7 +785,7 @@ export async function runBacktest(
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
       const isContTrade = (type === "LONG" ? isContinuationLong : isContinuationShort);
-      const currentRR = isContTrade ? 1.2 : 1.0;
+      const currentRR = isContTrade ? 1.5 : 1.0;
       const entryPrice = currentPrice; 
       
       const time = new Date(allKlines[i][0]).toISOString();
