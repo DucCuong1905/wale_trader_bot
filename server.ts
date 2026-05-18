@@ -562,10 +562,8 @@ async function traderLoop() {
 
         if (paperPosition.type === "LONG") {
           if (cL <= paperPosition.sl) { closed = true; status = currentPrice >= paperPosition.entry ? "WIN" : "LOSS"; }
-          else if (cH >= paperPosition.tp) { closed = true; status = "WIN"; }
         } else {
           if (cH >= paperPosition.sl) { closed = true; status = currentPrice <= paperPosition.entry ? "WIN" : "LOSS"; }
-          else if (cL <= paperPosition.tp) { closed = true; status = "WIN"; }
         }
 
         if (closed) {
@@ -751,9 +749,9 @@ async function traderLoop() {
       } else {
         sl = sig === "LONG" ? (sweep.low - atrM1 * 0.2) : (sweep.high + atrM1 * 0.2);
       }
-      const tp = e + (e - sl > 0 ? (e - sl) * currentRR : (sl - e) * -currentRR);
+      const tp = sig === "LONG" ? e * 10 : e / 10; // Đặt TP cực xa (không giới hạn)
 
-      console.log(`\n[SIGNAL] ${sig} | ${strategyLabel} | Price: $${e.toFixed(2)}`);
+      console.log(`\n[SIGNAL] ${sig} | ${strategyLabel} | Price: $${e.toFixed(2)} | SL: $${sl.toFixed(2)} (NO TP)`);
       
       if (!IS_LIVE_TRADING_ENABLED) { 
         const riskPercent = 0.01; // Cố định 1% cho mọi loại lệnh
