@@ -27,6 +27,7 @@ const MAX_DAILY_LOSS = 0.06; // Giới hạn lỗ tối đa trong ngày (6%)
 
 // CẤU HÌNH PHIÊN GIAO DỊCH (LONDON & NEW YORK)
 let ENABLE_SESSION_FILTER = true; 
+let ENABLE_WHALE_SWEEP = true; 
 const VWMA_PERIOD = 20; // Cố định VWMA 20
 let ADX_THRESHOLD = 10; // Ngưỡng ADX mặc định
 const SESSION_START_GMT = 8;  // 08:00 GMT (Mở phiên Âu)
@@ -691,6 +692,7 @@ async function traderLoop() {
 
     // LONG ENTRY
     if (
+      (ENABLE_WHALE_SWEEP && !isOverExtendedLong && currentPrice > vwma5m && currentPrice > vwapM1 && slopeM1 > 0 && adxM1.adx >= ADX_THRESHOLD && adxM1.pDI > adxM1.mDI && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isWithinTradingSessions()) ||
       (regimeData.riskPercent > 0 && isContinuationLong && isWithinTradingSessions())
     ) {
       sig = "LONG";
@@ -698,6 +700,7 @@ async function traderLoop() {
 
     // SHORT ENTRY
     if (
+      (ENABLE_WHALE_SWEEP && !isOverExtendedShort && currentPrice < vwma5m && currentPrice < vwapM1 && slopeM1 < 0 && adxM1.adx >= ADX_THRESHOLD && adxM1.mDI > adxM1.pDI && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isWithinTradingSessions()) ||
       (regimeData.riskPercent > 0 && isContinuationShort && isWithinTradingSessions())
     ) {
       sig = "SHORT";
@@ -859,7 +862,9 @@ async function startServer() {
       symbol: PAIR, last_price: botState.lastPrice, in_position: botState.inPosition,
       signals: botState.signals.slice(0, 10), balance: botState.balance, ai_reasoning: botState.aiReasoning,
       adx: botState.adx.toFixed(1), 
-      enable_session_filter: ENABLE_SESSION_FILTER, vwma_period: VWMA_PERIOD, adx_threshold: ADX_THRESHOLD,
+      enable_session_filter: ENABLE_SESSION_FILTER,
+      enable_whale_sweep: ENABLE_WHALE_SWEEP,
+      vwma_period: VWMA_PERIOD,
       is_ws_connected: botState.isWsConnected,
       market_regime: botState.marketRegime
     });
@@ -867,6 +872,10 @@ async function startServer() {
   app.post("/api/trading/toggle-session", (req, res) => {
     ENABLE_SESSION_FILTER = !ENABLE_SESSION_FILTER;
     res.json({ success: true, enabled: ENABLE_SESSION_FILTER });
+  });
+  app.post("/api/trading/toggle-whale", (req, res) => {
+    ENABLE_WHALE_SWEEP = !ENABLE_WHALE_SWEEP;
+    res.json({ success: true, enabled: ENABLE_WHALE_SWEEP });
   });
   app.post("/api/trading/set-adx", (req, res) => {
     const { threshold } = req.body;

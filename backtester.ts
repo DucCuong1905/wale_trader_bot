@@ -771,12 +771,14 @@ export async function runBacktest(
       allKlines[i][5] > volMA * 1.1 &&
       currentPrice < prevLow;
 
-    // --- ENTRY DECISION (CONTINUATION ONLY - SWEEP DISABLED) ---
+    // --- ENTRY DECISION (CONTINUATION & WHALE SWEEP) ---
     let isLong = (
+      (!isOverExtendedLong && currentPrice > vwma5m && currentPrice > vwapM1 && adxM1.adx >= adxThreshold && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI && isInSession) ||
       (regimeData.riskPercent > 0 && isContinuationLong && isInSession)
     );
 
     let isShort = (
+      (!isOverExtendedShort && currentPrice < vwma5m && currentPrice < vwapM1 && adxM1.adx >= adxThreshold && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI && isInSession) ||
       (regimeData.riskPercent > 0 && isContinuationShort && isInSession)
     );
 
