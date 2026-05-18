@@ -773,19 +773,17 @@ export async function runBacktest(
 
     // --- ENTRY DECISION (SWEP OR CONTINUATION) ---
     let isLong = (
-      (!isOverExtendedLong && currentPrice > vwma5m && currentPrice > vwapM1 && adxM1.adx >= adxThreshold && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI && isInSession) ||
       (regimeData.riskPercent > 0 && isContinuationLong)
     );
 
     let isShort = (
-      (!isOverExtendedShort && currentPrice < vwma5m && currentPrice < vwapM1 && adxM1.adx >= adxThreshold && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI && isInSession) ||
       (regimeData.riskPercent > 0 && isContinuationShort)
     );
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
       const isContTrade = (type === "LONG" ? isContinuationLong : isContinuationShort);
-      const currentRR = isContTrade ? 1.2 : 1.0;
+      const currentRR = isContTrade ? 1.5 : 1.0;
       const entryPrice = currentPrice; 
       
       const time = new Date(allKlines[i][0]).toISOString();

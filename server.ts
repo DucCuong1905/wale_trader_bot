@@ -691,7 +691,6 @@ async function traderLoop() {
 
     // LONG ENTRY
     if (
-      (!isOverExtendedLong && currentPrice > vwma5m && currentPrice > vwapM1 && slopeM1 > 0 && adxM1.adx >= ADX_THRESHOLD && adxM1.pDI > adxM1.mDI && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isWithinTradingSessions()) ||
       (regimeData.riskPercent > 0 && isContinuationLong)
     ) {
       sig = "LONG";
@@ -699,14 +698,13 @@ async function traderLoop() {
 
     // SHORT ENTRY
     if (
-      (!isOverExtendedShort && currentPrice < vwma5m && currentPrice < vwapM1 && slopeM1 < 0 && adxM1.adx >= ADX_THRESHOLD && adxM1.mDI > adxM1.pDI && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isWithinTradingSessions()) ||
       (regimeData.riskPercent > 0 && isContinuationShort)
     ) {
       sig = "SHORT";
     }
 
     const isContTrade = (sig === "LONG" && isContinuationLong) || (sig === "SHORT" && isContinuationShort);
-    const currentRR = isContTrade ? 1.2 : 1.0;
+    const currentRR = isContTrade ? 1.5 : 1.0;
     const strategyLabel = isContTrade ? "CONTINUATION" : "WHALE SWEEP";
 
     // 7. XỬ LÝ LỆNH (MARKET ENTRY)
