@@ -562,8 +562,10 @@ async function traderLoop() {
 
         if (paperPosition.type === "LONG") {
           if (cL <= paperPosition.sl) { closed = true; status = currentPrice >= paperPosition.entry ? "WIN" : "LOSS"; }
+          else if (cH >= paperPosition.tp) { closed = true; status = "WIN"; }
         } else {
           if (cH >= paperPosition.sl) { closed = true; status = currentPrice <= paperPosition.entry ? "WIN" : "LOSS"; }
+          else if (cL <= paperPosition.tp) { closed = true; status = "WIN"; }
         }
 
         if (closed) {
@@ -687,7 +689,7 @@ async function traderLoop() {
       currentPrice > vwma5m &&
       currentPrice > vwapM1 &&
       slopeM1 > 0 &&
-      (adxM1.adx >= 12 && adxM1.adx > prevAdxM1.adx) &&              
+      adxM1.adx >= 10 &&              
       adxM1.pDI > adxM1.mDI &&
       distFromVWMA < (atrM1 * 1.8) && 
       compRange < (atrM1 * 1.45) &&    
@@ -706,7 +708,7 @@ async function traderLoop() {
       currentPrice < vwma5m &&
       currentPrice < vwapM1 &&
       slopeM1 < 0 &&
-      (adxM1.adx >= 12 && adxM1.adx > prevAdxM1.adx) &&
+      adxM1.adx >= 10 &&
       adxM1.mDI > adxM1.pDI &&
       distFromVWMA < (atrM1 * 1.8) &&
       compRange < (atrM1 * 1.45) &&
@@ -749,9 +751,11 @@ async function traderLoop() {
       } else {
         sl = sig === "LONG" ? (sweep.low - atrM1 * 0.2) : (sweep.high + atrM1 * 0.2);
       }
-      const tp = sig === "LONG" ? e * 10 : e / 10; // Đặt TP cực xa (không giới hạn)
+      
+      const risk = Math.abs(e - sl);
+      const tp = sig === "LONG" ? e + risk * 1.5 : e - risk * 1.5;
 
-      console.log(`\n[SIGNAL] ${sig} | ${strategyLabel} | Price: $${e.toFixed(2)} | SL: $${sl.toFixed(2)} (NO TP)`);
+      console.log(`\n[SIGNAL] ${sig} | ${strategyLabel} | Price: $${e.toFixed(2)} | SL: $${sl.toFixed(2)} | TP: $${tp.toFixed(2)}`);
       
       if (!IS_LIVE_TRADING_ENABLED) { 
         const riskPercent = 0.01; // Cố định 1% cho mọi loại lệnh

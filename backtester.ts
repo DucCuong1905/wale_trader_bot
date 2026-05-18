@@ -740,7 +740,7 @@ export async function runBacktest(
       currentPrice > vwma5m &&
       currentPrice > vwapM1 &&
       slopeM1 > 0 &&
-      (adxM1.adx >= 12 && adxM1.adx > prevAdxM1.adx) &&              
+      adxM1.adx >= 10 &&              
       adxM1.pDI > adxM1.mDI &&
       distFromVWMA < (atrM1 * 1.8) && 
       compRange < (atrM1 * 1.45) &&   
@@ -759,7 +759,7 @@ export async function runBacktest(
       currentPrice < vwma5m &&
       currentPrice < vwapM1 &&
       slopeM1 < 0 &&
-      (adxM1.adx >= 12 && adxM1.adx > prevAdxM1.adx) &&
+      adxM1.adx >= 10 &&
       adxM1.mDI > adxM1.pDI &&
       distFromVWMA < (atrM1 * 1.8) &&
       compRange < (atrM1 * 1.45) &&
@@ -798,12 +798,13 @@ export async function runBacktest(
       } else {
          sl = type === "LONG" ? (sweep.low - atrM1 * 0.2) : (sweep.high + atrM1 * 0.2);
       }
-      const tp = type === "LONG" ? entryPrice * 10 : entryPrice / 10; // No TP
+      const risk = Math.abs(entryPrice - sl);
+      const tp = type === "LONG" ? entryPrice + risk * 1.5 : entryPrice - risk * 1.5;
 
       const riskPercentForTrade = 0.01; // 1% cho mọi loại lệnh
 
       const strategyLabel = isContTrade ? "CONTINUATION" : "WHALE SWEEP";
-      console.log(`[SIGNAL] ${type} | ${strategyLabel} | Entry: $${entryPrice.toFixed(2)} | SL: $${sl.toFixed(2)} (NO TP)`);
+      console.log(`[SIGNAL] ${type} | ${strategyLabel} | Entry: $${entryPrice.toFixed(2)} | SL: $${sl.toFixed(2)} | TP: $${tp.toFixed(2)}`);
       
       // Tìm kết quả trong các nến tiếp theo (Có thêm logic Trailing Stop cho Continuation)
       let exitPrice = 0;
@@ -848,12 +849,14 @@ export async function runBacktest(
             status = exitPrice >= entryPrice ? "WIN" : "LOSS";
             break; 
           }
+          if (h >= tp) { exitPrice = tp; status = "WIN"; break; }
         } else {
           if (h >= currentSl) { 
             exitPrice = currentSl; 
             status = exitPrice <= entryPrice ? "WIN" : "LOSS";
             break; 
           }
+          if (l <= tp) { exitPrice = tp; status = "WIN"; break; }
         }
       }
 
