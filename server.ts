@@ -691,14 +691,14 @@ async function traderLoop() {
 
     // LONG ENTRY
     if (
-      (regimeData.riskPercent > 0 && isContinuationLong)
+      (regimeData.riskPercent > 0 && isContinuationLong && isWithinTradingSessions())
     ) {
       sig = "LONG";
     }
 
     // SHORT ENTRY
     if (
-      (regimeData.riskPercent > 0 && isContinuationShort)
+      (regimeData.riskPercent > 0 && isContinuationShort && isWithinTradingSessions())
     ) {
       sig = "SHORT";
     }

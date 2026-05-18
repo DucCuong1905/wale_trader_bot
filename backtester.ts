@@ -771,13 +771,13 @@ export async function runBacktest(
       allKlines[i][5] > volMA * 1.1 &&
       currentPrice < prevLow;
 
-    // --- ENTRY DECISION (SWEP OR CONTINUATION) ---
+    // --- ENTRY DECISION (CONTINUATION ONLY - SWEEP DISABLED) ---
     let isLong = (
-      (regimeData.riskPercent > 0 && isContinuationLong)
+      (regimeData.riskPercent > 0 && isContinuationLong && isInSession)
     );
 
     let isShort = (
-      (regimeData.riskPercent > 0 && isContinuationShort)
+      (regimeData.riskPercent > 0 && isContinuationShort && isInSession)
     );
 
     if (isLong || isShort) {
