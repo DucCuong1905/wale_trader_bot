@@ -73,6 +73,9 @@ interface BacktestResult {
   totalProfitR: number;
   monthlySnapshots: any[];
   marketRegime?: any;
+  continuationTrades: number;
+  continuationWins: number;
+  continuationPnLR: number;
   regimeStats: {
     [key: string]: {
       trades: number;
@@ -105,6 +108,9 @@ let results: BacktestResult = {
   totalProfitR: 0,
   monthlySnapshots: [],
   marketRegime: null,
+  continuationTrades: 0,
+  continuationWins: 0,
+  continuationPnLR: 0,
   regimeStats: {
     "TREND_EXPANSION": { trades: 0, wins: 0, pnlR: 0 },
     "NEUTRAL": { trades: 0, wins: 0, pnlR: 0 },
@@ -567,6 +573,9 @@ export async function runBacktest(
     displaceWins: 0,
     totalProfitR: 0,
     monthlySnapshots: [],
+    continuationTrades: 0,
+    continuationWins: 0,
+    continuationPnLR: 0,
     regimeStats: {
       "TREND_EXPANSION": { trades: 0, wins: 0, pnlR: 0 },
       "NEUTRAL": { trades: 0, wins: 0, pnlR: 0 },
@@ -729,7 +738,7 @@ export async function runBacktest(
       currentPrice > vwma5m &&
       currentPrice > vwapM1 &&
       slopeM1 > 0 &&
-      adxM1.adx >= 23 &&              // Nhạy hơn một chút (25 -> 23)
+      adxM1.adx >= 14 &&              // Nhạy hơn một chút (25 -> 23 -> 14)
       adxM1.pDI > adxM1.mDI &&
       distFromVWMA < (atrM1 * 1.7) && // Nới lỏng khoảng cách (1.6 -> 1.7)
       compRange < (atrM1 * 1.35) &&   // Vùng nén thực tế hơn (1.2 -> 1.35)
@@ -748,7 +757,7 @@ export async function runBacktest(
       currentPrice < vwma5m &&
       currentPrice < vwapM1 &&
       slopeM1 < 0 &&
-      adxM1.adx >= 23 &&
+      adxM1.adx >= 14 &&
       adxM1.mDI > adxM1.pDI &&
       distFromVWMA < (atrM1 * 1.7) &&
       compRange < (atrM1 * 1.35) &&
@@ -912,6 +921,9 @@ export async function runBacktest(
   }
 
   results.monthlySnapshots = monthlySnapshots;
+  results.continuationTrades = continuationTrades;
+  results.continuationWins = continuationWins;
+  results.continuationPnLR = continuationPnLR;
   fs.writeFileSync(RESULTS_FILE, JSON.stringify(results, null, 2));
   console.log(`[DONE] Backtest complete. Results: ${RESULTS_FILE}`);
 
