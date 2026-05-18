@@ -740,7 +740,7 @@ export async function runBacktest(
       currentPrice > vwma5m &&
       currentPrice > vwapM1 &&
       slopeM1 > 0 &&
-      (adxM1.adx >= 17 || (adxM1.adx >= 12 && adxM1.adx > prevAdxM1.adx)) &&              
+      (adxM1.adx >= 12 && adxM1.adx > prevAdxM1.adx) &&              
       adxM1.pDI > adxM1.mDI &&
       distFromVWMA < (atrM1 * 1.8) && 
       compRange < (atrM1 * 1.45) &&   
@@ -759,7 +759,7 @@ export async function runBacktest(
       currentPrice < vwma5m &&
       currentPrice < vwapM1 &&
       slopeM1 < 0 &&
-      (adxM1.adx >= 17 || (adxM1.adx >= 12 && adxM1.adx > prevAdxM1.adx)) &&
+      (adxM1.adx >= 12 && adxM1.adx > prevAdxM1.adx) &&
       adxM1.mDI > adxM1.pDI &&
       distFromVWMA < (atrM1 * 1.8) &&
       compRange < (atrM1 * 1.45) &&
