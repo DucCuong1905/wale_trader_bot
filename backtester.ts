@@ -843,7 +843,7 @@ export async function runBacktest(
       monthlyPnL += dollarPnL;
 
       // Chuẩn hóa Profit R: 
-      const multiplier = isContTrade ? (0.05 / RISK_PER_TRADE) : 1.0; 
+      const multiplier = 1.0; 
       const effectiveR = pnlR * multiplier;
       
       monthlyProfitR += effectiveR;

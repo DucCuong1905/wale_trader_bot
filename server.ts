@@ -763,7 +763,7 @@ async function traderLoop() {
       } else {
         // Chế độ Trade thật trên sàn
         try {
-          const riskPercent = isContTrade ? 0.05 : 0.01;
+          const riskPercent = 0.01; // 1% cho mọi loại lệnh
           const riskAmount = botState.balance * riskPercent;
           const size = riskAmount / Math.abs(e - sl);
           const amt = ex.amountToPrecision(PAIR, Math.max(size, 0.001));
