@@ -39,8 +39,8 @@ const ai = new GoogleGenAI({ apiKey: aiString });
 const modelName = "gemini-2.0-flash";
 
 const PAIR = "BTC/USDT";
-const START_DATE = "2022-01-01T00:00:00Z"; 
-const END_DATE = "2024-01-01T00:00:00Z";
+const START_DATE = "2024-01-01T00:00:00Z"; 
+const END_DATE = "2026-01-01T00:00:00Z";
 const RR = 1.5; 
 const INITIAL_BALANCE = 5000;
 const RISK_PER_TRADE = 0.01; // 1%
@@ -733,42 +733,42 @@ export async function runBacktest(
 
     const isAtrExpansion = (atrM1 > atrPrev) || (atrM1 > atrMA * 1.03);
 
-    // LONG CONTINUATION V5 (Balanced High Quality)
+    // LONG CONTINUATION V11 (Targeting 10-15 trades/month - Balanced)
     const isContinuationLong = 
-      regimeData.totalScore >= 60 &&   // Chấp nhận trend sớm hơn (69 -> 60)
+      regimeData.totalScore >= 65 &&   
       currentPrice > vwma5m &&
       currentPrice > vwapM1 &&
       slopeM1 > 0 &&
-      (adxM1.adx >= 15 || (adxM1.adx >= 10 && adxM1.adx > prevAdxM1.adx)) &&              
+      (adxM1.adx >= 17 || (adxM1.adx >= 12 && adxM1.adx > prevAdxM1.adx)) &&              
       adxM1.pDI > adxM1.mDI &&
-      distFromVWMA < (atrM1 * 2.2) && // Nới lỏng khoảng cách (1.7 -> 2.2)
-      compRange < (atrM1 * 1.8) &&   // Nới lỏng vùng nén (1.35 -> 1.8)
-      overlapCount >= 2 &&            // Nén tối thiểu 2 nến chồng lấn
+      distFromVWMA < (atrM1 * 1.8) && 
+      compRange < (atrM1 * 1.45) &&   
+      overlapCount >= 2 &&            
       recentLow > vwma5m &&           
-      allKlines.slice(Math.max(0, i-2), i).every(b => b[4] > vwma5m) && // Giảm từ 3 nến xuống 2 nến
+      allKlines.slice(Math.max(0, i-3), i).every(b => b[4] > vwma5m) && 
       isAtrExpansion &&               
       currentPrice > recentHigh &&    
-      bodySize > (atrM1 * 0.45) &&    // Breakout nhạy hơn (0.55 -> 0.45)
-      allKlines[i][5] > volMA * 1.05 && // Volume bùng nổ (1.15 -> 1.05)
+      bodySize > (atrM1 * 0.5) &&    
+      allKlines[i][5] > volMA * 1.1 && 
       currentPrice > prevHigh;
 
-    // SHORT CONTINUATION V5 (Balanced High Quality)
+    // SHORT CONTINUATION V11 (Targeting 10-15 trades/month - Balanced)
     const isContinuationShort = 
-      regimeData.totalScore >= 60 &&
+      regimeData.totalScore >= 65 &&
       currentPrice < vwma5m &&
       currentPrice < vwapM1 &&
       slopeM1 < 0 &&
-      (adxM1.adx >= 15 || (adxM1.adx >= 10 && adxM1.adx > prevAdxM1.adx)) &&
+      (adxM1.adx >= 17 || (adxM1.adx >= 12 && adxM1.adx > prevAdxM1.adx)) &&
       adxM1.mDI > adxM1.pDI &&
-      distFromVWMA < (atrM1 * 2.2) &&
-      compRange < (atrM1 * 1.8) &&
+      distFromVWMA < (atrM1 * 1.8) &&
+      compRange < (atrM1 * 1.45) &&
       overlapCount >= 2 &&
       recentHigh < vwma5m &&
-      allKlines.slice(Math.max(0, i-2), i).every(b => b[4] < vwma5m) &&
+      allKlines.slice(Math.max(0, i-3), i).every(b => b[4] < vwma5m) &&
       isAtrExpansion &&
       currentPrice < recentLow &&
-      bodySize > (atrM1 * 0.45) &&
-      allKlines[i][5] > volMA * 1.05 &&
+      bodySize > (atrM1 * 0.5) &&
+      allKlines[i][5] > volMA * 1.1 &&
       currentPrice < prevLow;
 
     // --- ENTRY DECISION (SWEP OR CONTINUATION) ---
@@ -785,7 +785,7 @@ export async function runBacktest(
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
       const isContTrade = (type === "LONG" ? isContinuationLong : isContinuationShort);
-      const currentRR = isContTrade ? 1.5 : 1.0;
+      const currentRR = isContTrade ? 1.2 : 1.0;
       const entryPrice = currentPrice; 
       
       const time = new Date(allKlines[i][0]).toISOString();
@@ -799,7 +799,7 @@ export async function runBacktest(
       }
       const tp = entryPrice + (entryPrice - sl > 0 ? (entryPrice - sl) * currentRR : (sl - entryPrice) * -currentRR);
 
-      const riskPercentForTrade = isContTrade ? 0.05 : 0.01; // Cố định 1% cho Whale Sweep
+      const riskPercentForTrade = 0.01; // 1% cho mọi loại lệnh
 
       const strategyLabel = isContTrade ? "CONTINUATION" : "WHALE SWEEP";
       console.log(`[SIGNAL] ${type} | ${strategyLabel} | Entry: $${entryPrice.toFixed(2)} | SL: $${sl.toFixed(2)} | TP: $${tp.toFixed(2)}`);
@@ -823,7 +823,7 @@ export async function runBacktest(
       if (exitPrice === 0) exitPrice = allKlines[Math.min(i + 99, allKlines.length - 1)][4];
       pnlR = status === "WIN" ? currentRR : -1.0; 
       
-      const currentRiskPercent = isContTrade ? 0.05 : 0.01;
+      const currentRiskPercent = 0.01;
       const dollarPnL = results.finalBalance * currentRiskPercent * pnlR;
       
       // Tính phí và trượt giá dự kiến (Để thống kê, ko trừ túi)

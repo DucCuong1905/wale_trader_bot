@@ -651,42 +651,42 @@ async function traderLoop() {
 
     const isAtrExpansion = (atrM1 > atrPrev) || (atrM1 > atrMA * 1.03);
 
-    // LONG CONTINUATION V5
+    // LONG CONTINUATION V11 (Targeting 10-15 trades/month - Balanced)
     const isContinuationLong = 
-      regimeData.totalScore >= 60 &&   
+      regimeData.totalScore >= 65 &&   
       currentPrice > vwma5m &&
       currentPrice > vwapM1 &&
       slopeM1 > 0 &&
-      (adxM1.adx >= 15 || (adxM1.adx >= 10 && adxM1.adx > prevAdxM1.adx)) &&              
+      (adxM1.adx >= 17 || (adxM1.adx >= 12 && adxM1.adx > prevAdxM1.adx)) &&              
       adxM1.pDI > adxM1.mDI &&
-      distFromVWMA < (atrM1 * 2.2) && 
-      compRange < (atrM1 * 1.8) &&    
+      distFromVWMA < (atrM1 * 1.8) && 
+      compRange < (atrM1 * 1.45) &&    
       overlapCount >= 2 &&            
       recentLow > vwma5m &&           
       bars.slice(-3, -1).every(b => b[4] > vwma5m) && 
       isAtrExpansion &&               
       currentPrice > recentHigh &&    
-      bodySize > (atrM1 * 0.45) &&     
-      bars[bars.length - 1][5] > volMA * 1.05 && 
+      bodySize > (atrM1 * 0.5) &&     
+      bars[bars.length - 1][5] > volMA * 1.1 && 
       currentPrice > prevHigh;
 
-    // SHORT CONTINUATION V5
+    // SHORT CONTINUATION V11 (Targeting 10-15 trades/month - Balanced)
     const isContinuationShort = 
-      regimeData.totalScore >= 60 &&
+      regimeData.totalScore >= 65 &&
       currentPrice < vwma5m &&
       currentPrice < vwapM1 &&
       slopeM1 < 0 &&
-      (adxM1.adx >= 15 || (adxM1.adx >= 10 && adxM1.adx > prevAdxM1.adx)) &&
+      (adxM1.adx >= 17 || (adxM1.adx >= 12 && adxM1.adx > prevAdxM1.adx)) &&
       adxM1.mDI > adxM1.pDI &&
-      distFromVWMA < (atrM1 * 2.2) &&
-      compRange < (atrM1 * 1.8) &&
+      distFromVWMA < (atrM1 * 1.8) &&
+      compRange < (atrM1 * 1.45) &&
       overlapCount >= 2 &&
       recentHigh < vwma5m &&
       bars.slice(-3, -1).every(b => b[4] < vwma5m) &&
       isAtrExpansion &&
       currentPrice < recentLow &&
-      bodySize > (atrM1 * 0.45) &&
-      bars[bars.length - 1][5] > volMA * 1.05 &&
+      bodySize > (atrM1 * 0.5) &&
+      bars[bars.length - 1][5] > volMA * 1.1 &&
       currentPrice < prevLow;
 
     // LONG ENTRY
@@ -706,7 +706,7 @@ async function traderLoop() {
     }
 
     const isContTrade = (sig === "LONG" && isContinuationLong) || (sig === "SHORT" && isContinuationShort);
-    const currentRR = isContTrade ? 1.5 : 1.0;
+    const currentRR = isContTrade ? 1.2 : 1.0;
     const strategyLabel = isContTrade ? "CONTINUATION" : "WHALE SWEEP";
 
     // 7. XỬ LÝ LỆNH (MARKET ENTRY)
@@ -724,7 +724,7 @@ async function traderLoop() {
       console.log(`\n[SIGNAL] ${sig} | ${strategyLabel} | Price: $${e.toFixed(2)}`);
       
       if (!IS_LIVE_TRADING_ENABLED) { 
-        const riskPercent = isContTrade ? 0.05 : 0.01; // Whale Sweep cố định 1%
+        const riskPercent = 0.01; // Cố định 1% cho mọi loại lệnh
         const riskAmount = paperBalance * riskPercent;
         const positionSize = riskAmount; 
 
@@ -897,57 +897,6 @@ async function startServer() {
 
     startWS(); 
     traderLoop(); 
-    autoRunInitialBacktest();
-  });
-}
-
-async function autoRunInitialBacktest() {
-  if (backtestStatus.isRunning) return;
-  
-  const startDate = "2022-01-01T00:00:00Z";
-  const endDate = "2024-01-01T00:00:00Z";
-  
-  console.log(`[AUTO-BACKTEST] 🔄 Đang tự động chạy backtest từ ${startDate} đến ${endDate}...`);
-  
-  backtestStatus.isRunning = true;
-  runBacktest(startDate, endDate, RR, "1m", ENABLE_SESSION_FILTER, VWMA_PERIOD, (p) => {
-    backtestStatus.progress = p;
-  }, ADX_THRESHOLD).then(async (r: any) => {
-    backtestStatus.isRunning = false;
-    backtestStatus.lastResult = r;
-    
-    if (r && !r.error) {
-      // 1. Thống kê Continuation (Chi tiết từng tháng & Tổng kết)
-      let contMonthlyReport = "";
-      if (r.monthlySnapshots && r.monthlySnapshots.length > 0) {
-        contMonthlyReport = r.monthlySnapshots.map((m: any) => {
-          const wr = m.continuationTrades > 0 ? (m.continuationWins / m.continuationTrades * 100).toFixed(1) : "0";
-          return `• ${m.date}: ${m.continuationPnLR.toFixed(1)}R | WR: ${wr}% (${m.continuationTrades} lệnh)`;
-        }).join('\n');
-      }
-      const contTrades = r.continuationTrades || 0;
-      const contWins = r.continuationWins || 0;
-      const contPnLR = r.continuationPnLR || 0;
-      const contWR = contTrades > 0 ? (contWins / contTrades * 100).toFixed(1) : "0.0";
-      const contSummary = `• Tổng: ${contTrades} lệnh | WR: ${contWR}% | Lợi nhuận: ${contPnLR.toFixed(1)}R`;
-
-      // 2. Thống kê Whale Sweep (Gọn 1 dòng)
-      const whaleTrades = r.totalTrades - (r.continuationTrades || 0);
-      const whaleWins = r.wins - (r.continuationWins || 0);
-      const whalePnLR = r.totalProfitR - (r.continuationPnLR || 0);
-      const whaleWR = whaleTrades > 0 ? (whaleWins / whaleTrades * 100).toFixed(1) : "0.0";
-      const whaleReport = `• Tổng: ${whaleTrades} lệnh | WR: ${whaleWR}% | Lợi nhuận: ${whalePnLR.toFixed(1)}R`;
-
-      await sendTelegram(`🤖 **TỰ ĐỘNG BACKTEST KHI LÊN SÀN**\n\n` +
-        `🗓 **Giai đoạn:** 2022 - 2024\n\n` +
-        `🚀 **CONTINUATION (Chi tiết):**\n${contMonthlyReport}\n` +
-        `${contSummary}\n\n` +
-        `🐋 **WHALE SWEEP (Tổng kết):**\n${whaleReport}\n\n` +
-        `💰 **TỔNG LỢI NHUẬN:** ${r.totalProfitR.toFixed(2)}R`);
-    }
-  }).catch(err => {
-    console.error("[AUTO-BACKTEST] Lỗi:", err);
-    backtestStatus.isRunning = false;
   });
 }
 
