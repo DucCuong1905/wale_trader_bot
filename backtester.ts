@@ -372,12 +372,13 @@ export async function runBacktest(
   rr: number = RR,
   timeframe: string = "1m",
   enableSessionFilter: boolean = false,
-  vwmaPeriod: number = 20, // Thêm tham số vwmaPeriod
+  vwmaPeriod: number = 20, 
   onProgress?: (p: number) => void,
-  adxThreshold: number = 10 // Thêm tham số adxThreshold
+  adxThreshold: number = 10,
+  enableWhaleSweep: boolean = true
 ) {
   shouldStopBacktest = false;
-  console.log(`[BACKTEST] Start ${PAIR} from ${startDate} to ${endDate} (RR: ${rr}, TF: ${timeframe}, SessionFilter: ${enableSessionFilter}, VWMA: ${vwmaPeriod}, ADX: ${adxThreshold})`);
+  console.log(`[BACKTEST] Start ${PAIR} from ${startDate} to ${endDate} (RR: ${rr}, TF: ${timeframe}, SessionFilter: ${enableSessionFilter}, VWMA: ${vwmaPeriod}, ADX: ${adxThreshold}, WhaleSweep: ${enableWhaleSweep})`);
   const exchange = new ccxt.binance({ 
     timeout: 30000,
     options: { defaultType: 'future' } 
@@ -773,12 +774,12 @@ export async function runBacktest(
 
     // --- ENTRY DECISION (CONTINUATION & WHALE SWEEP) ---
     let isLong = (
-      (!isOverExtendedLong && currentPrice > vwma5m && currentPrice > vwapM1 && adxM1.adx >= adxThreshold && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI && isInSession) ||
+      (enableWhaleSweep && !isOverExtendedLong && currentPrice > vwma5m && currentPrice > vwapM1 && adxM1.adx >= adxThreshold && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI && isInSession) ||
       (regimeData.riskPercent > 0 && isContinuationLong && isInSession)
     );
 
     let isShort = (
-      (!isOverExtendedShort && currentPrice < vwma5m && currentPrice < vwapM1 && adxM1.adx >= adxThreshold && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI && isInSession) ||
+      (enableWhaleSweep && !isOverExtendedShort && currentPrice < vwma5m && currentPrice < vwapM1 && adxM1.adx >= adxThreshold && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI && isInSession) ||
       (regimeData.riskPercent > 0 && isContinuationShort && isInSession)
     );
 

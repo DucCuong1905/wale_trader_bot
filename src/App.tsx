@@ -51,6 +51,7 @@ export default function App() {
   const [backtestADX, setBacktestADX] = useState(10);
   const [backtestTimeframe, setBacktestTimeframe] = useState('1m');
   const [backtestSessionFilter, setBacktestSessionFilter] = useState(false);
+  const [backtestWhaleSweep, setBacktestWhaleSweep] = useState(true);
   const [vwmaPeriod, setVwmaPeriod] = useState(20);
 
   useEffect(() => {
@@ -135,6 +136,7 @@ export default function App() {
           rr: backtestRR,
           timeframe: backtestTimeframe,
           enableSessionFilter: backtestSessionFilter,
+          enableWhaleSweep: backtestWhaleSweep,
           vwmaPeriod: vwmaPeriod,
           adxThreshold: backtestADX
         })
@@ -656,6 +658,25 @@ export default function App() {
                             <div className={cn(
                                "w-4 h-4 bg-white rounded-full transition-transform duration-300",
                                backtestSessionFilter ? "translate-x-6" : "translate-x-0"
+                            )} />
+                         </button>
+                      </div>
+
+                      <div className="space-y-2 col-span-2 flex items-center gap-4 bg-white/5 p-4 rounded-xl border border-white/10">
+                         <div className="flex-1">
+                            <label className="text-[10px] font-black text-slate-300 uppercase tracking-widest block mb-1">Whale Sweep Strategy</label>
+                            <p className="text-[9px] text-slate-500 font-bold uppercase">Thử nghiệm chiến lược Whale Sweep</p>
+                         </div>
+                         <button 
+                            onClick={() => setBacktestWhaleSweep(!backtestWhaleSweep)}
+                            className={cn(
+                               "w-12 h-6 rounded-full p-1 transition-all duration-300",
+                               backtestWhaleSweep ? "bg-purple-600 shadow-[0_0_15px_rgba(147,51,234,0.3)]" : "bg-white/10"
+                            )}
+                         >
+                            <div className={cn(
+                               "w-4 h-4 bg-white rounded-full transition-transform duration-300",
+                               backtestWhaleSweep ? "translate-x-6" : "translate-x-0"
                             )} />
                          </button>
                       </div>

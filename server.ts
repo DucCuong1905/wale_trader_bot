@@ -835,12 +835,12 @@ async function startServer() {
   app.get("/api/health", (req, res) => res.json({ status: "ok" }));
   app.post("/api/backtest/run", async (req, res) => {
     if (backtestStatus.isRunning) return res.status(400).json({ error: "Running" });
-    const { startDate, endDate, rr, timeframe, enableSessionFilter, adxThreshold } = req.body;
-    console.log(`[SERVER] Received backtest request: sessionFilter=${enableSessionFilter}, adxThreshold=${adxThreshold}`);
+    const { startDate, endDate, rr, timeframe, enableSessionFilter, adxThreshold, enableWhaleSweep } = req.body;
+    console.log(`[SERVER] Received backtest request: sessionFilter=${enableSessionFilter}, adxThreshold=${adxThreshold}, enableWhaleSweep=${enableWhaleSweep}`);
     backtestStatus.isRunning = true;
     runBacktest(startDate, endDate, rr, timeframe, enableSessionFilter, 20, p => { 
       backtestStatus.progress = p; 
-    }, adxThreshold || 10).then(async (r: any) => { 
+    }, adxThreshold || 10, enableWhaleSweep !== undefined ? enableWhaleSweep : true).then(async (r: any) => { 
       backtestStatus.isRunning = false; 
       backtestStatus.lastResult = r; 
       
