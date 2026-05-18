@@ -804,24 +804,64 @@ export async function runBacktest(
       const strategyLabel = isContTrade ? "CONTINUATION" : "WHALE SWEEP";
       console.log(`[SIGNAL] ${type} | ${strategyLabel} | Entry: $${entryPrice.toFixed(2)} | SL: $${sl.toFixed(2)} | TP: $${tp.toFixed(2)}`);
       
-      // Tìm kết quả trong các nến tiếp theo
+      // Tìm kết quả trong các nến tiếp theo (Có thêm logic Trailing Stop cho Continuation)
       let exitPrice = 0;
       let pnlR = 0;
       let status = "LOSS";
-      
-      for (let j = i + 1; j < Math.min(i + 100, allKlines.length); j++) {
-        const [,, h, l, c] = allKlines[j];
+      let currentSl = sl;
+      let isBE = false;
+      const initialRiskDist = Math.abs(entryPrice - sl);
+
+      for (let j = i + 1; j < Math.min(i + 150, allKlines.length); j++) {
+        const [, , h, l, c] = allKlines[j];
+        
+        // 1. Cập nhật Trailing Stop nếu là Continuation
+        if (isContTrade) {
+          const currentProfitR = type === "LONG" 
+            ? (c - entryPrice) / initialRiskDist
+            : (entryPrice - c) / initialRiskDist;
+
+          // dời về BE tại 1R
+          if (!isBE && currentProfitR >= 1.0) {
+            currentSl = entryPrice;
+            isBE = true;
+          }
+
+          // ATR Trail sau khi đã ở BE
+          if (isBE) {
+            // Tính ATR động tại thời điểm j (xấp xỉ bằng nến hiện tại)
+            const candleAtr = h - l; 
+            if (type === "LONG") {
+              const trailSl = c - (candleAtr * 1.5);
+              if (trailSl > currentSl) currentSl = trailSl;
+            } else {
+              const trailSl = c + (candleAtr * 1.5);
+              if (trailSl < currentSl) currentSl = trailSl;
+            }
+          }
+        }
+
         if (type === "LONG") {
-          if (l <= sl) { exitPrice = sl; break; }
+          if (l <= currentSl) { 
+            exitPrice = currentSl; 
+            status = exitPrice >= entryPrice ? "WIN" : "LOSS";
+            break; 
+          }
           if (h >= tp) { exitPrice = tp; status = "WIN"; break; }
         } else {
-          if (h >= sl) { exitPrice = sl; break; }
+          if (h >= currentSl) { 
+            exitPrice = currentSl; 
+            status = exitPrice <= entryPrice ? "WIN" : "LOSS";
+            break; 
+          }
           if (l <= tp) { exitPrice = tp; status = "WIN"; break; }
         }
       }
 
-      if (exitPrice === 0) exitPrice = allKlines[Math.min(i + 99, allKlines.length - 1)][4];
-      pnlR = status === "WIN" ? currentRR : -1.0; 
+      if (exitPrice === 0) exitPrice = allKlines[Math.min(i + 149, allKlines.length - 1)][4];
+      
+      // Tính PnL R thực tế dựa trên rủi ro ban đầu
+      pnlR = (type === "LONG" ? (exitPrice - entryPrice) : (entryPrice - exitPrice)) / initialRiskDist;
       
       const currentRiskPercent = 0.01;
       const dollarPnL = results.finalBalance * currentRiskPercent * pnlR;

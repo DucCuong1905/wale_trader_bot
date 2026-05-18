@@ -42,6 +42,7 @@ let paperPosition: {
   size: number;
   strategy: string;
   startTime: number;
+  isBE?: boolean; // Đã dời về hòa vốn chưa
 } | null = null;
 
 let paperPendingOrder: {
@@ -452,6 +453,28 @@ async function traderLoop() {
   }
 
   try {
+    // 0. LẤY DỮ LIỆU NẾN TRƯỚC HẾT
+    let bars: any[] = [];
+    let bars5m: any[] = [];
+    let bars1d: any[] = [];
+    try {
+      bars = await fetchOHLCVWithRetry(ex, PAIR, TIMEFRAME, undefined, 100);
+      bars5m = await fetchOHLCVWithRetry(ex, PAIR, "5m", undefined, 100);
+      bars1d = await fetchOHLCVWithRetry(ex, PAIR, "1d", undefined, 100);
+    } catch (ohlcvErr: any) {
+      console.error("❌ Lỗi fetchOHLCV (sau khi retry):", ohlcvErr.message);
+      setTimeout(traderLoop, 10000);
+      return;
+    }
+    if (!bars || bars.length < 50 || !bars5m || bars5m.length < 50 || !bars1d || bars1d.length < 35) { 
+      setTimeout(traderLoop, 10000); 
+      return; 
+    }
+
+    const lastCandle = bars[bars.length - 1];
+    const [, , cH, cL, cC] = lastCandle;
+    const currentPrice = cC;
+
     // 1. KIỂM TRA SỐ DƯ VÀ QUẢN LÝ RỦI RO NGÀY
     let curr = 0;
     if (IS_LIVE_TRADING_ENABLED) {
@@ -498,41 +521,67 @@ async function traderLoop() {
       }
     } else {
       // PAPER POSITION TRACKING
-      let lastCandleSet;
-      try {
-        lastCandleSet = await fetchOHLCVWithRetry(ex, PAIR, TIMEFRAME, undefined, 1);
-      } catch (e: any) {
-        console.error("❌ Lỗi lấy nến cuối (paper):", e.message);
-        setTimeout(traderLoop, 10000);
-        return;
-      }
-      const lastCandle = lastCandleSet[0];
-      const [, , cH, cL, cC] = lastCandle;
-      const currentPrice = cC;
-
       if (paperPosition) {
         let closed = false;
         let status: "WIN" | "LOSS" = "WIN";
 
+        // Tỷ lệ RR ban đầu
+        const initialRR = paperPosition.strategy === "CONTINUATION" ? 1.5 : 1.0;
+        const initialRiskDist = Math.abs(paperPosition.tp - paperPosition.entry) / initialRR;
+
+        // Logic Trailing Stop cho Continuation
+        if (paperPosition.strategy === "CONTINUATION") {
+          const currentProfitR = paperPosition.type === "LONG" 
+            ? (currentPrice - paperPosition.entry) / initialRiskDist
+            : (paperPosition.entry - currentPrice) / initialRiskDist;
+
+          // 1. Dời về BE khi đạt 1R
+          if (!paperPosition.isBE && currentProfitR >= 1.0) {
+            paperPosition.sl = paperPosition.entry;
+            paperPosition.isBE = true;
+            console.log(`[TRAILING] Moved to BE for ${paperPosition.type} Continuation at 1R`);
+            sendTelegram(`🛡️ [TRAILING] Đã dời SL về **Hòa vốn (BE)** cho lệnh Continuation khi đạt 1R.`);
+          }
+
+          // 2. ATR Trail sau khi đã ở BE
+          if (paperPosition.isBE) {
+            const atr = calculateATR(bars, 14);
+            if (paperPosition.type === "LONG") {
+              const newSl = currentPrice - (atr * 1.5);
+              if (newSl > paperPosition.sl) {
+                paperPosition.sl = newSl;
+              }
+            } else {
+              const newSl = currentPrice + (atr * 1.5);
+              if (newSl < paperPosition.sl) {
+                paperPosition.sl = newSl;
+              }
+            }
+          }
+        }
+
         if (paperPosition.type === "LONG") {
-          if (cL <= paperPosition.sl) { closed = true; status = "LOSS"; }
+          if (cL <= paperPosition.sl) { closed = true; status = currentPrice >= paperPosition.entry ? "WIN" : "LOSS"; }
           else if (cH >= paperPosition.tp) { closed = true; status = "WIN"; }
         } else {
-          if (cH >= paperPosition.sl) { closed = true; status = "LOSS"; }
+          if (cH >= paperPosition.sl) { closed = true; status = currentPrice <= paperPosition.entry ? "WIN" : "LOSS"; }
           else if (cL <= paperPosition.tp) { closed = true; status = "WIN"; }
         }
 
         if (closed) {
-          const pnlR = status === "WIN" ? (paperPosition.strategy === "CONTINUATION" ? 1.2 : 1.0) : -1.0;
-          const pnlDollar = paperPosition.size * pnlR;
+          // Tính PnL dựa trên giá thoát thực tế
+          const exitPrice = status === "WIN" ? (paperPosition.type === "LONG" ? (cH >= paperPosition.tp ? paperPosition.tp : paperPosition.sl) : (cL <= paperPosition.tp ? paperPosition.tp : paperPosition.sl)) : paperPosition.sl;
+          const pnlActualR = (paperPosition.type === "LONG" ? (exitPrice - paperPosition.entry) : (paperPosition.entry - exitPrice)) / initialRiskDist;
+          
+          const pnlDollar = paperPosition.size * pnlActualR;
           paperBalance += pnlDollar;
           const vnTime = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
           
-          console.log(`[TRADE] ${status} | ${paperPosition.strategy} | PnL: ${pnlR.toFixed(1)}R | Balance: $${paperBalance.toFixed(2)}`);
+          console.log(`[TRADE] ${status} | ${paperPosition.strategy} | PnL: ${pnlActualR.toFixed(1)}R | Balance: $${paperBalance.toFixed(2)}`);
           
           await sendTelegram(`✅ [PAPER CLOSED] ${status === "WIN" ? "CHỐT LỜI" : "CẮT LỖ"}\n` +
-            `💰 PnL: ${pnlDollar.toFixed(2)}$ (${pnlR}R)\n` +
-            `🎯 Entry: ${paperPosition.entry.toFixed(2)} | Exit: ${status === "WIN" ? paperPosition.tp.toFixed(2) : paperPosition.sl.toFixed(2)}\n` +
+            `💰 PnL: ${pnlDollar.toFixed(2)}$ (${pnlActualR.toFixed(2)}R)\n` +
+            `🎯 Entry: ${paperPosition.entry.toFixed(2)} | Exit: ${exitPrice.toFixed(2)}\n` +
             `🏦 Số dư: ${paperBalance.toFixed(2)}$\n` +
             `⏰ Giờ VN: ${vnTime}`);
           
@@ -544,24 +593,6 @@ async function traderLoop() {
     }
 
     if (botState.inPosition || Date.now() - botState.lastTradeTime < COOLDOWN_MS) { 
-      setTimeout(traderLoop, 10000); 
-      return; 
-    }
-
-    // 3. LẤY DỮ LIỆU NẾN (OHLCV)
-    let bars: any[] = [];
-    let bars5m: any[] = [];
-    let bars1d: any[] = [];
-    try {
-      bars = await fetchOHLCVWithRetry(ex, PAIR, TIMEFRAME, undefined, 100);
-      bars5m = await fetchOHLCVWithRetry(ex, PAIR, "5m", undefined, 100);
-      bars1d = await fetchOHLCVWithRetry(ex, PAIR, "1d", undefined, 100);
-    } catch (ohlcvErr: any) {
-      console.error("❌ Lỗi fetchOHLCV (sau khi retry):", ohlcvErr.message);
-      setTimeout(traderLoop, 10000);
-      return;
-    }
-    if (!bars || bars.length < 50 || !bars5m || bars5m.length < 50 || !bars1d || bars1d.length < 35) { 
       setTimeout(traderLoop, 10000); 
       return; 
     }
@@ -590,7 +621,7 @@ async function traderLoop() {
     const slopeM1 = vwmaM1 - vwmaM1Prev;
     const adxM1 = calcADX(bars, 14);
     const prevAdxM1 = calcADX(bars.slice(0, -1), 14);
-    const currentPrice = bars[bars.length - 1][4];
+    // currentPrice already defined at top
     
     // --- Khung M5 Filter ---
     const vwma5m = calculateVWMA(bars5m, 20);
@@ -607,7 +638,7 @@ async function traderLoop() {
       console.log(`🤖 WHALE BOT SẴN SÀNG! Regime: ${regimeData.regime} (TQS 5m: ${regimeData.tqs5m}, TQS 1m: ${regimeData.tqs1m}, Tổng: ${regimeData.totalScore})`);
     }
 
-    const lastCandle = bars[bars.length - 1];
+    // lastCandle already defined at top
     const lastCandleTime = lastCandle[0];
     const lastCandleLow = lastCandle[3];
     const lastCandleHigh = lastCandle[2];
@@ -736,7 +767,8 @@ async function traderLoop() {
           tp: tp,
           size: positionSize,
           strategy: strategyLabel,
-          startTime: Date.now()
+          startTime: Date.now(),
+          isBE: false
         };
 
         const vnTime = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
