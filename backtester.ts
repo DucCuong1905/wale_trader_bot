@@ -735,40 +735,40 @@ export async function runBacktest(
 
     // LONG CONTINUATION V5 (Balanced High Quality)
     const isContinuationLong = 
-      regimeData.totalScore >= 69 &&   // Trend mạnh vừa đủ (70 -> 69)
+      regimeData.totalScore >= 60 &&   // Chấp nhận trend sớm hơn (69 -> 60)
       currentPrice > vwma5m &&
       currentPrice > vwapM1 &&
       slopeM1 > 0 &&
-      (adxM1.adx >= 20 || (adxM1.adx >= 14 && adxM1.adx > prevAdxM1.adx)) &&              
+      (adxM1.adx >= 15 || (adxM1.adx >= 10 && adxM1.adx > prevAdxM1.adx)) &&              
       adxM1.pDI > adxM1.mDI &&
-      distFromVWMA < (atrM1 * 1.7) && // Nới lỏng khoảng cách (1.6 -> 1.7)
-      compRange < (atrM1 * 1.35) &&   // Siết lại vùng nén (1.6 -> 1.35)
+      distFromVWMA < (atrM1 * 2.2) && // Nới lỏng khoảng cách (1.7 -> 2.2)
+      compRange < (atrM1 * 1.8) &&   // Nới lỏng vùng nén (1.35 -> 1.8)
       overlapCount >= 2 &&            // Nén tối thiểu 2 nến chồng lấn
       recentLow > vwma5m &&           
-      allKlines.slice(Math.max(0, i-3), i).every(b => b[4] > vwma5m) && // Pullback lành mạnh
+      allKlines.slice(Math.max(0, i-2), i).every(b => b[4] > vwma5m) && // Giảm từ 3 nến xuống 2 nến
       isAtrExpansion &&               
       currentPrice > recentHigh &&    
-      bodySize > (atrM1 * 0.55) &&    // Breakout đủ lực (0.6 -> 0.55)
-      allKlines[i][5] > volMA * 1.15 && // Volume bùng nổ (1.2 -> 1.15)
+      bodySize > (atrM1 * 0.45) &&    // Breakout nhạy hơn (0.55 -> 0.45)
+      allKlines[i][5] > volMA * 1.05 && // Volume bùng nổ (1.15 -> 1.05)
       currentPrice > prevHigh;
 
     // SHORT CONTINUATION V5 (Balanced High Quality)
     const isContinuationShort = 
-      regimeData.totalScore >= 69 &&
+      regimeData.totalScore >= 60 &&
       currentPrice < vwma5m &&
       currentPrice < vwapM1 &&
       slopeM1 < 0 &&
-      (adxM1.adx >= 20 || (adxM1.adx >= 14 && adxM1.adx > prevAdxM1.adx)) &&
+      (adxM1.adx >= 15 || (adxM1.adx >= 10 && adxM1.adx > prevAdxM1.adx)) &&
       adxM1.mDI > adxM1.pDI &&
-      distFromVWMA < (atrM1 * 1.7) &&
-      compRange < (atrM1 * 1.35) &&
+      distFromVWMA < (atrM1 * 2.2) &&
+      compRange < (atrM1 * 1.8) &&
       overlapCount >= 2 &&
       recentHigh < vwma5m &&
-      allKlines.slice(Math.max(0, i-3), i).every(b => b[4] < vwma5m) &&
+      allKlines.slice(Math.max(0, i-2), i).every(b => b[4] < vwma5m) &&
       isAtrExpansion &&
       currentPrice < recentLow &&
-      bodySize > (atrM1 * 0.55) &&
-      allKlines[i][5] > volMA * 1.15 &&
+      bodySize > (atrM1 * 0.45) &&
+      allKlines[i][5] > volMA * 1.05 &&
       currentPrice < prevLow;
 
     // --- ENTRY DECISION (SWEP OR CONTINUATION) ---

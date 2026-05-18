@@ -653,40 +653,40 @@ async function traderLoop() {
 
     // LONG CONTINUATION V5
     const isContinuationLong = 
-      regimeData.totalScore >= 69 &&   
+      regimeData.totalScore >= 60 &&   
       currentPrice > vwma5m &&
       currentPrice > vwapM1 &&
       slopeM1 > 0 &&
-      (adxM1.adx >= 20 || (adxM1.adx >= 14 && adxM1.adx > prevAdxM1.adx)) &&              
+      (adxM1.adx >= 15 || (adxM1.adx >= 10 && adxM1.adx > prevAdxM1.adx)) &&              
       adxM1.pDI > adxM1.mDI &&
-      distFromVWMA < (atrM1 * 1.7) && 
-      compRange < (atrM1 * 1.35) &&    
+      distFromVWMA < (atrM1 * 2.2) && 
+      compRange < (atrM1 * 1.8) &&    
       overlapCount >= 2 &&            
       recentLow > vwma5m &&           
-      bars.slice(-4, -1).every(b => b[4] > vwma5m) && 
+      bars.slice(-3, -1).every(b => b[4] > vwma5m) && 
       isAtrExpansion &&               
       currentPrice > recentHigh &&    
-      bodySize > (atrM1 * 0.55) &&     
-      bars[bars.length - 1][5] > volMA * 1.15 && 
+      bodySize > (atrM1 * 0.45) &&     
+      bars[bars.length - 1][5] > volMA * 1.05 && 
       currentPrice > prevHigh;
 
     // SHORT CONTINUATION V5
     const isContinuationShort = 
-      regimeData.totalScore >= 69 &&
+      regimeData.totalScore >= 60 &&
       currentPrice < vwma5m &&
       currentPrice < vwapM1 &&
       slopeM1 < 0 &&
-      (adxM1.adx >= 20 || (adxM1.adx >= 14 && adxM1.adx > prevAdxM1.adx)) &&
+      (adxM1.adx >= 15 || (adxM1.adx >= 10 && adxM1.adx > prevAdxM1.adx)) &&
       adxM1.mDI > adxM1.pDI &&
-      distFromVWMA < (atrM1 * 1.7) &&
-      compRange < (atrM1 * 1.35) &&
+      distFromVWMA < (atrM1 * 2.2) &&
+      compRange < (atrM1 * 1.8) &&
       overlapCount >= 2 &&
       recentHigh < vwma5m &&
-      bars.slice(-4, -1).every(b => b[4] < vwma5m) &&
+      bars.slice(-3, -1).every(b => b[4] < vwma5m) &&
       isAtrExpansion &&
       currentPrice < recentLow &&
-      bodySize > (atrM1 * 0.55) &&
-      bars[bars.length - 1][5] > volMA * 1.15 &&
+      bodySize > (atrM1 * 0.45) &&
+      bars[bars.length - 1][5] > volMA * 1.05 &&
       currentPrice < prevLow;
 
     // LONG ENTRY
