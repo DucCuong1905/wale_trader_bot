@@ -526,51 +526,19 @@ async function traderLoop() {
         let status: "WIN" | "LOSS" = "WIN";
 
         // Tỷ lệ RR ban đầu
-        const initialRR = paperPosition.strategy === "CONTINUATION" ? 1.5 : 1.0;
-        const initialRiskDist = Math.abs(paperPosition.tp - paperPosition.entry) / initialRR;
-
-        // Logic Trailing Stop cho Continuation
-        if (paperPosition.strategy === "CONTINUATION") {
-          const currentProfitR = paperPosition.type === "LONG" 
-            ? (currentPrice - paperPosition.entry) / initialRiskDist
-            : (paperPosition.entry - currentPrice) / initialRiskDist;
-
-          // 1. Dời về BE khi đạt 1R
-          if (!paperPosition.isBE && currentProfitR >= 1.0) {
-            paperPosition.sl = paperPosition.entry;
-            paperPosition.isBE = true;
-            console.log(`[TRAILING] Moved to BE for ${paperPosition.type} Continuation at 1R`);
-            sendTelegram(`🛡️ [TRAILING] Đã dời SL về **Hòa vốn (BE)** cho lệnh Continuation khi đạt 1R.`);
-          }
-
-          // 2. ATR Trail sau khi đã ở BE
-          if (paperPosition.isBE) {
-            const atr = calculateATR(bars, 14);
-            if (paperPosition.type === "LONG") {
-              const newSl = currentPrice - (atr * 1.5);
-              if (newSl > paperPosition.sl) {
-                paperPosition.sl = newSl;
-              }
-            } else {
-              const newSl = currentPrice + (atr * 1.5);
-              if (newSl < paperPosition.sl) {
-                paperPosition.sl = newSl;
-              }
-            }
-          }
-        }
+        const initialRiskDist = Math.abs(paperPosition.tp - paperPosition.entry) / 1.5;
 
         if (paperPosition.type === "LONG") {
-          if (cL <= paperPosition.sl) { closed = true; status = currentPrice >= paperPosition.entry ? "WIN" : "LOSS"; }
+          if (cL <= paperPosition.sl) { closed = true; status = "LOSS"; }
           else if (cH >= paperPosition.tp) { closed = true; status = "WIN"; }
         } else {
-          if (cH >= paperPosition.sl) { closed = true; status = currentPrice <= paperPosition.entry ? "WIN" : "LOSS"; }
+          if (cH >= paperPosition.sl) { closed = true; status = "LOSS"; }
           else if (cL <= paperPosition.tp) { closed = true; status = "WIN"; }
         }
 
         if (closed) {
           // Tính PnL dựa trên giá thoát thực tế
-          const exitPrice = status === "WIN" ? (paperPosition.type === "LONG" ? (cH >= paperPosition.tp ? paperPosition.tp : paperPosition.sl) : (cL <= paperPosition.tp ? paperPosition.tp : paperPosition.sl)) : paperPosition.sl;
+          const exitPrice = status === "WIN" ? paperPosition.tp : paperPosition.sl;
           const pnlActualR = (paperPosition.type === "LONG" ? (exitPrice - paperPosition.entry) : (paperPosition.entry - exitPrice)) / initialRiskDist;
           
           const pnlDollar = paperPosition.size * pnlActualR;
@@ -738,7 +706,7 @@ async function traderLoop() {
     }
 
     const isContTrade = (sig === "LONG" && isContinuationLong) || (sig === "SHORT" && isContinuationShort);
-    const currentRR = isContTrade ? 1.5 : 1.0;
+    const currentRR = 1.5;
     const strategyLabel = isContTrade ? "CONTINUATION" : "WHALE SWEEP";
 
     // 7. XỬ LÝ LỆNH (MARKET ENTRY)

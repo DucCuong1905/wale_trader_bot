@@ -806,56 +806,20 @@ export async function runBacktest(
       const strategyLabel = isContTrade ? "CONTINUATION" : "WHALE SWEEP";
       console.log(`[SIGNAL] ${type} | ${strategyLabel} | Entry: $${entryPrice.toFixed(2)} | SL: $${sl.toFixed(2)} | TP: $${tp.toFixed(2)}`);
       
-      // Tìm kết quả trong các nến tiếp theo (Có thêm logic Trailing Stop cho Continuation)
+      // Tìm kết quả trong các nến tiếp theo
       let exitPrice = 0;
       let pnlR = 0;
       let status = "LOSS";
-      let currentSl = sl;
-      let isBE = false;
       const initialRiskDist = Math.abs(entryPrice - sl);
 
       for (let j = i + 1; j < Math.min(i + 150, allKlines.length); j++) {
         const [, , h, l, c] = allKlines[j];
         
-        // 1. Cập nhật Trailing Stop nếu là Continuation
-        if (isContTrade) {
-          const currentProfitR = type === "LONG" 
-            ? (c - entryPrice) / initialRiskDist
-            : (entryPrice - c) / initialRiskDist;
-
-          // dời về BE tại 1R
-          if (!isBE && currentProfitR >= 1.0) {
-            currentSl = entryPrice;
-            isBE = true;
-          }
-
-          // ATR Trail sau khi đã ở BE
-          if (isBE) {
-            // Tính ATR động tại thời điểm j (xấp xỉ bằng nến hiện tại)
-            const candleAtr = h - l; 
-            if (type === "LONG") {
-              const trailSl = c - (candleAtr * 1.5);
-              if (trailSl > currentSl) currentSl = trailSl;
-            } else {
-              const trailSl = c + (candleAtr * 1.5);
-              if (trailSl < currentSl) currentSl = trailSl;
-            }
-          }
-        }
-
         if (type === "LONG") {
-          if (l <= currentSl) { 
-            exitPrice = currentSl; 
-            status = exitPrice >= entryPrice ? "WIN" : "LOSS";
-            break; 
-          }
+          if (l <= sl) { exitPrice = sl; status = "LOSS"; break; }
           if (h >= tp) { exitPrice = tp; status = "WIN"; break; }
         } else {
-          if (h >= currentSl) { 
-            exitPrice = currentSl; 
-            status = exitPrice <= entryPrice ? "WIN" : "LOSS";
-            break; 
-          }
+          if (h >= sl) { exitPrice = sl; status = "LOSS"; break; }
           if (l <= tp) { exitPrice = tp; status = "WIN"; break; }
         }
       }
