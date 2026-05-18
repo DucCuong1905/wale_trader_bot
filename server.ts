@@ -659,7 +659,7 @@ async function traderLoop() {
       adxM1.adx >= 14 &&              
       adxM1.pDI > adxM1.mDI &&
       distFromVWMA < (atrM1 * 1.7) && 
-      compRange < (atrM1 * 1.2) &&    
+      compRange < (atrM1 * 1.6) &&    
       overlapCount >= 2 &&            
       recentLow > vwma5m &&           
       bars.slice(-4, -1).every(b => b[4] > vwma5m) && 
@@ -678,7 +678,7 @@ async function traderLoop() {
       adxM1.adx >= 14 &&
       adxM1.mDI > adxM1.pDI &&
       distFromVWMA < (atrM1 * 1.7) &&
-      compRange < (atrM1 * 1.2) &&
+      compRange < (atrM1 * 1.6) &&
       overlapCount >= 2 &&
       recentHigh < vwma5m &&
       bars.slice(-4, -1).every(b => b[4] < vwma5m) &&
@@ -814,7 +814,7 @@ async function startServer() {
         if (r && !r.error) {
           const period = `${new Date(r.startTime).toLocaleDateString('vi-VN')} - ${new Date(r.endTime).toLocaleDateString('vi-VN')}`;
           
-          // 1. Thống kê Continuation (Chi tiết từng tháng)
+          // 1. Thống kê Continuation (Chi tiết từng tháng & Tổng kết)
           let contMonthlyReport = "";
           if (r.monthlySnapshots && r.monthlySnapshots.length > 0) {
             contMonthlyReport = r.monthlySnapshots.map((m: any) => {
@@ -822,6 +822,11 @@ async function startServer() {
               return `• ${m.date}: ${m.continuationPnLR.toFixed(1)}R | WR: ${wr}% (${m.continuationTrades} lệnh)`;
             }).join('\n');
           }
+          const contTrades = r.continuationTrades || 0;
+          const contWins = r.continuationWins || 0;
+          const contPnLR = r.continuationPnLR || 0;
+          const contWR = contTrades > 0 ? (contWins / contTrades * 100).toFixed(1) : "0.0";
+          const contSummary = `• Tổng: ${contTrades} lệnh | WR: ${contWR}% | Lợi nhuận: ${contPnLR.toFixed(1)}R`;
 
           // 2. Thống kê Whale Sweep (Gọn 1 dòng)
           const whaleTrades = r.totalTrades - (r.continuationTrades || 0);
@@ -832,7 +837,8 @@ async function startServer() {
 
           await sendTelegram(`📊 **KẾT QUẢ BACKTEST HOÀN TẤT**\n\n` +
             `🗓 **Giai đoạn:** ${period}\n\n` +
-            `🚀 **CONTINUATION (Chi tiết):**\n${contMonthlyReport}\n\n` +
+            `🚀 **CONTINUATION (Chi tiết):**\n${contMonthlyReport}\n` +
+            `${contSummary}\n\n` +
             `🐋 **WHALE SWEEP (Tổng kết):**\n${whaleReport}\n\n` +
             `💰 **TỔNG LỢI NHUẬN:** ${r.totalProfitR.toFixed(2)}R`);
         }
@@ -910,7 +916,7 @@ async function autoRunInitialBacktest() {
     backtestStatus.lastResult = r;
     
     if (r && !r.error) {
-      // 1. Thống kê Continuation (Chi tiết từng tháng)
+      // 1. Thống kê Continuation (Chi tiết từng tháng & Tổng kết)
       let contMonthlyReport = "";
       if (r.monthlySnapshots && r.monthlySnapshots.length > 0) {
         contMonthlyReport = r.monthlySnapshots.map((m: any) => {
@@ -918,6 +924,11 @@ async function autoRunInitialBacktest() {
           return `• ${m.date}: ${m.continuationPnLR.toFixed(1)}R | WR: ${wr}% (${m.continuationTrades} lệnh)`;
         }).join('\n');
       }
+      const contTrades = r.continuationTrades || 0;
+      const contWins = r.continuationWins || 0;
+      const contPnLR = r.continuationPnLR || 0;
+      const contWR = contTrades > 0 ? (contWins / contTrades * 100).toFixed(1) : "0.0";
+      const contSummary = `• Tổng: ${contTrades} lệnh | WR: ${contWR}% | Lợi nhuận: ${contPnLR.toFixed(1)}R`;
 
       // 2. Thống kê Whale Sweep (Gọn 1 dòng)
       const whaleTrades = r.totalTrades - (r.continuationTrades || 0);
@@ -928,7 +939,8 @@ async function autoRunInitialBacktest() {
 
       await sendTelegram(`🤖 **TỰ ĐỘNG BACKTEST KHI LÊN SÀN**\n\n` +
         `🗓 **Giai đoạn:** 2022 - 2024\n\n` +
-        `🚀 **CONTINUATION (Chi tiết):**\n${contMonthlyReport}\n\n` +
+        `🚀 **CONTINUATION (Chi tiết):**\n${contMonthlyReport}\n` +
+        `${contSummary}\n\n` +
         `🐋 **WHALE SWEEP (Tổng kết):**\n${whaleReport}\n\n` +
         `💰 **TỔNG LỢI NHUẬN:** ${r.totalProfitR.toFixed(2)}R`);
     }

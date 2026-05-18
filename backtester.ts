@@ -741,7 +741,7 @@ export async function runBacktest(
       adxM1.adx >= 14 &&              // Nhạy hơn một chút (25 -> 23 -> 14)
       adxM1.pDI > adxM1.mDI &&
       distFromVWMA < (atrM1 * 1.7) && // Nới lỏng khoảng cách (1.6 -> 1.7)
-      compRange < (atrM1 * 1.35) &&   // Vùng nén thực tế hơn (1.2 -> 1.35)
+      compRange < (atrM1 * 1.6) &&   // Nới lỏng vùng nén (1.35 -> 1.6)
       overlapCount >= 2 &&            // Nén tối thiểu 2 nến chồng lấn
       recentLow > vwma5m &&           
       allKlines.slice(Math.max(0, i-3), i).every(b => b[4] > vwma5m) && // Pullback lành mạnh
@@ -760,7 +760,7 @@ export async function runBacktest(
       adxM1.adx >= 14 &&
       adxM1.mDI > adxM1.pDI &&
       distFromVWMA < (atrM1 * 1.7) &&
-      compRange < (atrM1 * 1.35) &&
+      compRange < (atrM1 * 1.6) &&
       overlapCount >= 2 &&
       recentHigh < vwma5m &&
       allKlines.slice(Math.max(0, i-3), i).every(b => b[4] < vwma5m) &&
