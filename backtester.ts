@@ -636,6 +636,9 @@ export async function runBacktest(
   let monthlyContTrades = 0;
   let monthlyContWins = 0;
   let monthlyContPnLR = 0;
+  let monthlyWhaleTrades = 0;
+  let monthlyWhaleWins = 0;
+  let monthlyWhalePnLR = 0;
   let monthlySnapshots: any[] = [];
   
   // Tracking for NEW Continuation strategy
@@ -739,12 +742,16 @@ export async function runBacktest(
         // Continuation stats for UI
         continuationTrades: monthlyContTrades,
         continuationWins: monthlyContWins,
-        continuationPnLR: monthlyContPnLR
+        continuationPnLR: monthlyContPnLR,
+        whaleTrades: monthlyWhaleTrades,
+        whaleWins: monthlyWhaleWins,
+        whalePnLR: monthlyWhalePnLR
       });
 
       monthlyWins = 0; monthlyLosses = 0; monthlyLongTrades = 0; monthlyLongWins = 0;
       monthlyShortTrades = 0; monthlyShortWins = 0; monthlyPnL = 0; monthlyProfitR = 0;
       monthlyContTrades = 0; monthlyContWins = 0; monthlyContPnLR = 0;
+      monthlyWhaleTrades = 0; monthlyWhaleWins = 0; monthlyWhalePnLR = 0;
     }
     lastMonth = currentMonth;
     lastYear = currentYear;
@@ -765,6 +772,7 @@ export async function runBacktest(
 
     // Detect mini compression (Overlap Count)
     let overlapCount = 0;
+    /*
     for (let j = 0; j < recent5.length - 1; j++) {
       const h1 = recent5[j][2];
       const l1 = recent5[j][3];
@@ -772,10 +780,13 @@ export async function runBacktest(
       const l2 = recent5[j+1][3];
       if (l1 <= h2 && h1 >= l2) overlapCount++;
     }
+    */
 
     const isAtrExpansion = (atrM1 > atrPrev) || (atrM1 > atrMA * 1.03);
 
     // LONG CONTINUATION V11 (Targeting 10-15 trades/month - Balanced)
+    const isContinuationLong = false;
+    /*
     const isContinuationLong = 
       regimeData.totalScore >= 65 &&   
       currentPrice > vwma5m &&
@@ -793,8 +804,11 @@ export async function runBacktest(
       bodySize > (atrM1 * 0.5) &&    
       allKlines[i][5] > volMA * 1.1 && 
       currentPrice > prevHigh;
+    */
 
     // SHORT CONTINUATION V11 (Targeting 10-15 trades/month - Balanced)
+    const isContinuationShort = false;
+    /*
     const isContinuationShort = 
       regimeData.totalScore >= 65 &&
       currentPrice < vwma5m &&
@@ -812,6 +826,7 @@ export async function runBacktest(
       bodySize > (atrM1 * 0.5) &&
       allKlines[i][5] > volMA * 1.1 &&
       currentPrice < prevLow;
+    */
 
     // --- ENTRY DECISION (CONTINUATION & WHALE SWEEP) ---
     let isLong = (
@@ -971,6 +986,13 @@ export async function runBacktest(
         continuationWins++;
         monthlyContWins++;
       }
+    } else {
+      // Whale Sweep stats
+      monthlyWhaleTrades++;
+      monthlyWhalePnLR += effectiveR;
+      if (status === "WIN") {
+        monthlyWhaleWins++;
+      }
     }
 
     // Track regime stats
@@ -1041,13 +1063,21 @@ export async function runBacktest(
   console.log("--------------------------------------\n");
 
   // GỬI TELEGRAM SUMMARY
-  let teleMsg = `📊 **KẾT QUẢ BACKTEST EFFICIENCY REGIME**\n`;
-  teleMsg += `📅 Từ: ${startDate} đến ${endDate}\n`;
+  let teleMsg = `📊 **KẾT QUẢ BACKTEST WHALE SWEEP ONLY**\n`;
+  teleMsg += `📅 Từ: ${new Date(startDate).toLocaleDateString()} đến ${new Date(endDate).toLocaleDateString()}\n`;
   teleMsg += `💰 Số dư cuối: $${results.finalBalance.toFixed(2)}\n`;
   teleMsg += `📈 Tổng PnL: ${results.totalProfitR.toFixed(1)}R\n`;
-  teleMsg += `⚡ Tổng lệnh: ${results.totalTrades} | Winrate: ${((results.wins / results.totalTrades) * 100).toFixed(1)}%\n\n`;
+  teleMsg += `⚡ Tổng lệnh: ${results.totalTrades} | Winrate: ${((results.wins / (results.totalTrades || 1)) * 100).toFixed(1)}%\n\n`;
   
-  teleMsg += `**Chi tiết theo Efficiency (Dynamic Risk):**\n`;
+  teleMsg += `**Thống kê Whale Sweep theo tháng:**\n`;
+  if (results.monthlySnapshots && results.monthlySnapshots.length > 0) {
+    results.monthlySnapshots.forEach((m: any) => {
+      const wr = m.whaleTrades > 0 ? (m.whaleWins / m.whaleTrades * 100).toFixed(1) : "0";
+      teleMsg += `• ${m.date}: ${m.whalePnLR.toFixed(1)}R | WR: ${wr}% (${m.whaleTrades} lệnh)\n`;
+    });
+  }
+
+  teleMsg += `\n**Chi tiết theo Efficiency (Dynamic Risk):**\n`;
   Object.entries(results.efficiencyStats).forEach(([eff, stats]: [string, any]) => {
      const wr = stats.trades > 0 ? ((stats.wins / stats.trades) * 100).toFixed(1) : "0";
      teleMsg += `• ${eff}: ${stats.trades} lệnh | WR: ${wr}% | ${stats.pnlR.toFixed(1)}R\n`;

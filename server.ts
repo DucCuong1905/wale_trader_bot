@@ -728,6 +728,8 @@ async function traderLoop() {
     const isAtrExpansion = (atrM1 > atrPrev) || (atrM1 > atrMA * 1.03);
 
     // LONG CONTINUATION V11 (Targeting 10-15 trades/month - Balanced)
+    const isContinuationLong = false;
+    /*
     const isContinuationLong = 
       regimeData.totalScore >= 65 &&   
       currentPrice > vwma5m &&
@@ -745,8 +747,11 @@ async function traderLoop() {
       bodySize > (atrM1 * 0.5) &&     
       bars[bars.length - 1][5] > volMA * 1.1 && 
       currentPrice > prevHigh;
+    */
 
     // SHORT CONTINUATION V11 (Targeting 10-15 trades/month - Balanced)
+    const isContinuationShort = false;
+    /*
     const isContinuationShort = 
       regimeData.totalScore >= 65 &&
       currentPrice < vwma5m &&
@@ -764,6 +769,7 @@ async function traderLoop() {
       bodySize > (atrM1 * 0.5) &&
       bars[bars.length - 1][5] > volMA * 1.1 &&
       currentPrice < prevLow;
+    */
 
     // LONG ENTRY
     if (
@@ -904,33 +910,36 @@ async function startServer() {
         if (r && !r.error) {
           const period = `${new Date(r.startTime).toLocaleDateString('vi-VN')} - ${new Date(r.endTime).toLocaleDateString('vi-VN')}`;
           
-          // 1. Thống kê Continuation (Chi tiết từng tháng & Tổng kết)
-          let contMonthlyReport = "";
+          // 1. Thống kê Whale Sweep (Chi tiết từng tháng & Tổng kết)
+          let whaleMonthlyReport = "";
           if (r.monthlySnapshots && r.monthlySnapshots.length > 0) {
-            contMonthlyReport = r.monthlySnapshots.map((m: any) => {
-              const wr = m.continuationTrades > 0 ? (m.continuationWins / m.continuationTrades * 100).toFixed(1) : "0";
-              return `• ${m.date}: ${m.continuationPnLR.toFixed(1)}R | WR: ${wr}% (${m.continuationTrades} lệnh)`;
+            whaleMonthlyReport = r.monthlySnapshots.map((m: any) => {
+              const wr = m.whaleTrades > 0 ? (m.whaleWins / m.whaleTrades * 100).toFixed(1) : "0";
+              return `• ${m.date}: ${m.whalePnLR.toFixed(1)}R | WR: ${wr}% (${m.whaleTrades} lệnh)`;
             }).join('\n');
           }
-          const contTrades = r.continuationTrades || 0;
-          const contWins = r.continuationWins || 0;
-          const contPnLR = r.continuationPnLR || 0;
-          const contWR = contTrades > 0 ? (contWins / contTrades * 100).toFixed(1) : "0.0";
-          const contSummary = `• Tổng: ${contTrades} lệnh | WR: ${contWR}% | Lợi nhuận: ${contPnLR.toFixed(1)}R`;
-
-          // 2. Thống kê Whale Sweep (Gọn 1 dòng)
           const whaleTrades = r.totalTrades - (r.continuationTrades || 0);
           const whaleWins = r.wins - (r.continuationWins || 0);
           const whalePnLR = r.totalProfitR - (r.continuationPnLR || 0);
           const whaleWR = whaleTrades > 0 ? (whaleWins / whaleTrades * 100).toFixed(1) : "0.0";
-          const whaleReport = `• Tổng: ${whaleTrades} lệnh | WR: ${whaleWR}% | Lợi nhuận: ${whalePnLR.toFixed(1)}R`;
+          const whaleSummary = `• Tổng: ${whaleTrades} lệnh | WR: ${whaleWR}% | Lợi nhuận: ${whalePnLR.toFixed(1)}R`;
+
+          // 2. Thống kê Continuation (Nếu có)
+          const contTrades = r.continuationTrades || 0;
+          let contReport = "";
+          if (contTrades > 0) {
+             const contWins = r.continuationWins || 0;
+             const contPnLR = r.continuationPnLR || 0;
+             const contWR = (contWins / contTrades * 100).toFixed(1);
+             contReport = `\n🚀 **CONTINUATION:**\n• Tổng: ${contTrades} lệnh | WR: ${contWR}% | ${contPnLR.toFixed(1)}R\n`;
+          }
 
           await sendTelegram(`📊 **KẾT QUẢ BACKTEST HOÀN TẤT**\n\n` +
             `🗓 **Giai đoạn:** ${period}\n\n` +
-            `🚀 **CONTINUATION (Chi tiết):**\n${contMonthlyReport}\n` +
-            `${contSummary}\n\n` +
-            `🐋 **WHALE SWEEP (Tổng kết):**\n${whaleReport}\n\n` +
-            `💰 **TỔNG LỢI NHUẬN:** ${r.totalProfitR.toFixed(2)}R`);
+            `🐋 **WHALE SWEEP (Chi tiết tháng):**\n${whaleMonthlyReport}\n` +
+            `${whaleSummary}\n` +
+            contReport +
+            `\n💰 **TỔNG LỢI NHUẬN:** ${r.totalProfitR.toFixed(2)}R`);
         }
     }).catch(err => {
       console.error("Backtest Error:", err);
