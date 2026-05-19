@@ -907,7 +907,6 @@ export async function runBacktest(
       // Tính PnL R thực tế dựa trên rủi ro ban đầu
       pnlR = (type === "LONG" ? (exitPrice - entryPrice) : (entryPrice - exitPrice)) / initialRiskDist;
       
-      const currentRiskPercent = baseRiskPercent * dynamicRiskMult;
       const dollarPnL = results.finalBalance * currentRiskPercent * pnlR;
       
       // Tính phí và trượt giá dự kiến (Để thống kê, ko trừ túi)
