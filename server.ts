@@ -635,20 +635,40 @@ async function traderLoop() {
       botState.efficiencyPending = botState.efficiencyPending.filter(p => {
          p.candleCount++;
          if (p.candleCount >= 4) {
-             const subBars = bars.slice(-4); // Lấy 4 cây nến gần nhất (1 entry + 3 follow)
+             const subBars = bars.slice(-4); // Entry + 3 follow bars
              if (subBars.length === 4) {
+                 const entryCandle = subBars[0];
                  const followBars = subBars.slice(1);
-                 const h = Math.max(...followBars.map(b => b[2]));
-                 const l = Math.min(...followBars.map(b => b[3]));
-                 let eff = 1.0;
+                 
+                 const eO = entryCandle[1];
+                 const eH = entryCandle[2];
+                 const eL = entryCandle[3];
+                 const eC = entryCandle[4];
+                 
+                 const netMoveScore = Math.abs(eC - eO) / (eH - eL + 0.0001);
+                 let closeAcceptanceScore = 0.5;
+                 let followThrough = 0;
+                 let retrace = 0;
+                 
+                 const next3High = Math.max(...followBars.map(b => b[2]));
+                 const next3Low = Math.min(...followBars.map(b => b[3]));
+
                  if (p.type === "LONG") {
-                    eff = (h - p.entryPrice) / (p.entryPrice - l + 0.0001);
+                    closeAcceptanceScore = (eC - eL) / (eH - eL + 0.0001);
+                    followThrough = next3High - eC;
+                    retrace = eC - next3Low;
                  } else {
-                    eff = (p.entryPrice - l) / (h - p.entryPrice + 0.0001);
+                    closeAcceptanceScore = (eH - eC) / (eH - eL + 0.0001);
+                    followThrough = eC - next3Low;
+                    retrace = next3High - eC;
                  }
+                 
+                 const ftScore = followThrough / (retrace + 0.0001);
+                 const eff = (netMoveScore + closeAcceptanceScore + ftScore) / 3;
+                 
                  botState.efficiencyHistory.push(eff);
                  if (botState.efficiencyHistory.length > 3) botState.efficiencyHistory.shift();
-                 console.log(`📊 [EFFICIENCY] Calculated for past signal: ${eff.toFixed(2)} | History: [${botState.efficiencyHistory.map(v => v.toFixed(1)).join(", ")}]`);
+                 console.log(`📊 [EFFICIENCY V2] Calculated: ${eff.toFixed(2)} | NetMove: ${netMoveScore.toFixed(2)} | CloseAcc: ${closeAcceptanceScore.toFixed(2)} | FT: ${ftScore.toFixed(2)}`);
              }
              return false; // Remove from pending
          }

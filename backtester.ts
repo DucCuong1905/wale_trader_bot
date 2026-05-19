@@ -862,22 +862,31 @@ export async function runBacktest(
       const time = new Date(allKlines[i][0]).toISOString();
       const next3 = allKlines.slice(i + 1, i + 4);
       
-      // Tính Efficiency của chính lệnh này để dùng cho lệnh sau
+      // Tính Efficiency V2 của chính lệnh này (Average of 3 scores)
       let currentTradeEff = 1.0;
       if (next3.length === 3) {
+          const entryCandle = allKlines[i];
+          const [,, eH, eL, eC, eVol, eO] = [0, 0, entryCandle[2], entryCandle[3], entryCandle[4], entryCandle[5], entryCandle[1]];
+          const netMoveScore = Math.abs(eC - eO) / (eH - eL + 0.0001);
+          
+          let closeAcceptanceScore = 0.5;
+          let followThrough = 0;
+          let retrace = 0;
+          
+          const next3High = Math.max(...next3.map(b => b[2]));
+          const next3Low = Math.min(...next3.map(b => b[3]));
+
           if (type === "LONG") {
-              const next3High = Math.max(...next3.map(b => b[2]));
-              const next3Low = Math.min(...next3.map(b => b[3]));
-              const followThrough = next3High - entryPrice;
-              const retrace = entryPrice - next3Low;
-              currentTradeEff = followThrough / (retrace + 0.0001);
+              closeAcceptanceScore = (eC - eL) / (eH - eL + 0.0001);
+              followThrough = next3High - eC;
+              retrace = eC - next3Low;
           } else {
-              const next3High = Math.max(...next3.map(b => b[2]));
-              const next3Low = Math.min(...next3.map(b => b[3]));
-              const followThrough = entryPrice - next3Low;
-              const retrace = next3High - entryPrice;
-              currentTradeEff = followThrough / (retrace + 0.0001);
+              closeAcceptanceScore = (eH - eC) / (eH - eL + 0.0001);
+              followThrough = eC - next3Low;
+              retrace = next3High - eC;
           }
+          const ftScore = followThrough / (retrace + 0.0001);
+          currentTradeEff = (netMoveScore + closeAcceptanceScore + ftScore) / 3;
       }
       efficiencyHistory.push(currentTradeEff);
       if (efficiencyHistory.length > 3) efficiencyHistory.shift();
