@@ -32,10 +32,10 @@ if [ ! -f "server.ts" ]; then
     exit 1
 fi
 
-# 6. Khởi động lại Bot bằng PM2 (Dùng npx tsx để chạy TypeScript trực tiếp)
+# 6. Khởi động lại Bot bằng PM2
 echo "🔄 Đang khởi động lại Bot bằng PM2..."
 pm2 flush
-pm2 start "npx tsx server.ts" --name "$APP_NAME"
+pm2 start "npm start" --name "$APP_NAME"
 
 # 7. Lưu cấu hình PM2
 pm2 save

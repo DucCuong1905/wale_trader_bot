@@ -16,10 +16,12 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // --- QUẢN LÝ VỊ THẾ GIẢ LẬP (PAPER TRADING) ---
-const PAIR = "BTC/USDT:USDT"; // Cặp giao dịch (Futures)
-const SYMBOL_ID = "btcusdt"; // ID ký hiệu cho WebSocket
-const TIMEFRAME = "1m"; // Khung thời gian nến (1 phút)
-const IS_LIVE_TRADING_ENABLED = false; // Chế độ giao dịch thật (true = bật, false = test)
+const MT5_ENABLED = process.env.MT5_ENABLED === "true";
+const PAIR = MT5_ENABLED ? (process.env.MT5_SYMBOL || "XAUUSD") : "BTC/USDT:USDT"; 
+const SYMBOL_ID = MT5_ENABLED ? (process.env.MT5_SYMBOL?.toLowerCase() || "xauusd") : "btcusdt"; 
+const TIMEFRAME = "1m"; 
+const IS_LIVE_TRADING_ENABLED = process.env.IS_LIVE_TRADING_ENABLED === "true";
+const MT5_BRIDGE_URL = process.env.MT5_WEBHOOK_URL?.replace('/webhook', '') || "http://localhost:5000";
 const RISK_PER_TRADE = 0.01; // Rủi ro trên mỗi lệnh (1% tài khoản)
 const RR = 1.5; // Tỷ lệ Risk/Reward 1.5 theo yêu cầu
 const COOLDOWN_MS = 30000; // Thời gian chờ giữa các lệnh (30 giây)
@@ -181,6 +183,34 @@ async function sendTelegram(msg: string) {
   } catch (e: any) {
     console.error("[TELEGRAM FETCH ERROR]", e.message);
   }
+}
+
+/**
+ * Thực hiện lệnh qua MT5 Bridge
+ */
+async function placeMT5Order(type: 'buy' | 'sell', sl: number, tp: number, signalInfo: string) {
+    if (!MT5_ENABLED) return null;
+    try {
+        console.log(`[MT5 BRIDGE] Sending ${type} order for ${PAIR}...`);
+        const res = await fetch(`${MT5_BRIDGE_URL}/order`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                symbol: PAIR,
+                type: type,
+                lot: parseFloat(process.env.MT5_LOT_SIZE || "0.01"),
+                sl: sl,
+                tp: tp,
+                comment: signalInfo
+            })
+        });
+        const result = await res.json();
+        console.log(`[MT5 BRIDGE] Result:`, result);
+        return result;
+    } catch (e) {
+        console.error("MT5 Bridge Connect Error:", e);
+        return { error: "Failed to connect to MT5 Bridge" };
+    }
 }
 
 /**
@@ -854,34 +884,45 @@ async function traderLoop() {
         // Gửi tới MT5 VPS (nếu enabled)
         await sendToMT5(sig, e, sl, tp, PAIR);
       } else {
-        // Chế độ Trade thật trên sàn
-        try {
-          const riskAmount = botState.balance * currentRiskPercent;
-          const size = riskAmount / Math.abs(e - sl);
-          const amt = ex.amountToPrecision(PAIR, Math.max(size, 0.001));
-          await ex.createMarketOrder(PAIR, sig === 'LONG' ? 'buy' : 'sell', parseFloat(amt));
-          botState.lastTradeTime = Date.now();
-          
-          const vnTime = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
-          const conditions = [
-            `1. Khoảng cách VWMA: ${sig === 'LONG' ? (!isOverExtendedLong ? '✅ Ok' : '❌ Quá xa') : (!isOverExtendedShort ? '✅ Ok' : '❌ Quá xa')} (${distFromVWMA.toFixed(2)})`,
-            `2. Giá vs VWMA 5m: ${currentPrice > vwma5m ? '✅ Trên' : '❌ Dưới'}`,
-            `3. Giá vs VWAP: ${currentPrice > vwapM1 ? '✅ Above' : '❌ Below'}`,
-            `4. Slope M1: ${sig === 'LONG' ? (slopeM1 > 0 ? '✅ Positive' : '❌ Negative') : (slopeM1 < 0 ? '✅ Negative' : '❌ Positive')}`,
-            `5. ADX M1 (>=${ADX_THRESHOLD}): ${adxM1.adx >= ADX_THRESHOLD ? '✅' : '❌'} (${adxM1.adx.toFixed(1)})`,
-            `6. Sweep M1: ✅ Confirmed`,
-            `7. DI Power M1: ${sig === 'LONG' ? (adxM1.pDI > adxM1.mDI ? '✅ +DI > -DI' : '❌') : (adxM1.mDI > adxM1.pDI ? '✅ -DI > +DI' : '❌')}`
-          ].join('\n');
+        // Chế độ Trade thật
+        if (MT5_ENABLED) {
+          try {
+            const res = await placeMT5Order(sig === 'LONG' ? 'buy' : 'sell', sl, tp, strategyLabel);
+            if (res && !res.error && (res.retcode === 10009 || res.retcode === 10008)) {
+               sendTelegram(`🔥 **MT5 LIVE TRADE EXECUTED**\n• Cặp: ${PAIR}\n• Lệnh: ${sig}\n• Ticket: ${res.order}`);
+            } else {
+               sendTelegram(`⚠️ **MT5 ORDER FAILED**\nLỗi: ${res?.error || res?.retcode}`);
+            }
+          } catch (err) {
+            console.error("MT5 Execution Error:", err);
+          }
+        } else {
+          try {
+            const riskAmount = botState.balance * currentRiskPercent;
+            const size = riskAmount / Math.abs(e - sl);
+            const amt = ex.amountToPrecision(PAIR, Math.max(size, 0.001));
+            await ex.createMarketOrder(PAIR, sig === 'LONG' ? 'buy' : 'sell', parseFloat(amt));
+            botState.lastTradeTime = Date.now();
+            
+            const vnTime = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
+            const conditions = [
+              `1. Khoảng cách VWMA: ${sig === 'LONG' ? (!isOverExtendedLong ? '✅ Ok' : '❌ Quá xa') : (!isOverExtendedShort ? '✅ Ok' : '❌ Quá xa')} (${distFromVWMA.toFixed(2)})`,
+              `2. Giá vs VWMA 5m: ${currentPrice > vwma5m ? '✅ Trên' : '❌ Dưới'}`,
+              `3. Giá vs VWAP: ${currentPrice > vwapM1 ? '✅ Above' : '❌ Below'}`,
+              `4. Slope M1: ${sig === 'LONG' ? (slopeM1 > 0 ? '✅ Positive' : '❌ Negative') : (slopeM1 < 0 ? '✅ Negative' : '❌ Positive')}`,
+              `5. ADX M1 (>=${ADX_THRESHOLD}): ${adxM1.adx >= ADX_THRESHOLD ? '✅' : '❌'} (${adxM1.adx.toFixed(1)})`,
+              `6. Sweep M1: ✅ Confirmed`,
+              `7. DI Power M1: ${sig === 'LONG' ? (adxM1.pDI > adxM1.mDI ? '✅ +DI > -DI' : '❌') : (adxM1.mDI > adxM1.pDI ? '✅ -DI > +DI' : '❌')}`
+            ].join('\n');
 
-          await sendTelegram(`⚡ [SIGNAL] **${sig}** Market Order (Live)!\n\n` +
-            `📊 Entry: ${e.toFixed(2)} (Pure 1M Strategy)\n` +
-            `📝 **Điều kiện vào lệnh:**\n${conditions}\n` +
-            `⏰ Giờ VN: ${vnTime}`);
-
-          // Gửi tới MT5 VPS (nếu enabled)
-          await sendToMT5(sig, e, sl, tp, PAIR);
-        } catch (err) {
-          console.error("Order Error:", err);
+            await sendTelegram(`⚡ [SIGNAL] **${sig}** Market Order (Binance Live)!\n\n` +
+              `📊 Entry: ${e.toFixed(2)} (Pure 1M Strategy)\n` +
+              `📝 **Điều kiện vào lệnh:**\n${conditions}\n` +
+              `⏰ Giờ VN: ${vnTime}`);
+          } catch (err: any) {
+            console.error("Trade Error:", err.message);
+            sendTelegram(`❌ **TRADING ERROR:** ${err.message}`);
+          }
         }
       }
     }
