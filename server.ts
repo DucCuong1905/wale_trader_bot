@@ -146,6 +146,8 @@ let botState = {
   lastReportKey: "",
   latestSweepStatus: "None" as "None" | "Low" | "High",
   latestSweepCandle: -1,
+  efficiencyHistory: [1.5, 1.5, 1.5] as number[],
+  efficiencyPending: [] as { entryPrice: number, type: "LONG" | "SHORT", candleCount: number }[],
   marketRegime: {
     tqs5m: 0,
     tqs1m: 0,
@@ -154,6 +156,30 @@ let botState = {
     riskPercent: 0.5
   }
 };
+
+/**
+ * Gửi thông báo qua Telegram
+ */
+async function sendTelegram(message: string) {
+  const token = getCleanEnv("TELEGRAM_BOT_TOKEN");
+  const chatId = getCleanEnv("TELEGRAM_CHAT_ID");
+  if (!token || !chatId) return;
+
+  const url = `https://api.telegram.org/bot${token}/sendMessage`;
+  try {
+    await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: message,
+        parse_mode: "Markdown",
+      }),
+    });
+  } catch (err) {
+    console.error("❌ Telegram Notify Error:", err);
+  }
+}
 
 // --- HELPERS ---
 /**
@@ -181,6 +207,45 @@ async function sendTelegram(msg: string) {
     }
   } catch (e: any) {
     console.error("[TELEGRAM FETCH ERROR]", e.message);
+  }
+}
+
+/**
+ * Gửi tín hiệu sang Python MT5 Bridge trên Windows VPS.
+ */
+async function sendToMT5(type: "LONG" | "SHORT", entry: number, sl: number, tp: number, symbol: string) {
+  const webhookUrl = process.env.MT5_WEBHOOK_URL;
+  const mt5Enabled = process.env.MT5_ENABLED === "true";
+  
+  if (!mt5Enabled || !webhookUrl) {
+    console.log(`[MT5] Forwarding disabled or URL missing: enabled=${mt5Enabled}`);
+    return;
+  }
+
+  console.log(`📡 [MT5] Sending signal for ${symbol}: ${type} at ${entry}`);
+
+  try {
+    const res = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        symbol: symbol,
+        type: type,
+        entry: entry,
+        sl: sl,
+        tp: tp,
+        volume: 0.1 // Có thể điều chỉnh lot size tùy ý
+      })
+    });
+    const result = await res.json() as any;
+    if (result.status === "success") {
+       await sendTelegram(`🚀 **MT5 ORDER SUCCESS**\nPair: ${symbol}\nType: ${type}\nPrice: ${entry}\nOrder ID: ${result.order}`);
+    } else {
+       await sendTelegram(`⚠️ **MT5 ORDER FAILED**\nReason: ${result.message}`);
+    }
+  } catch (err: any) {
+    console.error("❌ MT5 Forward failed:", err.message);
+    await sendTelegram(`❌ **MT5 CONNECTION ERROR**\n${err.message}`);
   }
 }
 
@@ -580,6 +645,44 @@ async function traderLoop() {
     const regimeData = calculateMarketRegime(m5Candles, m1Candles);
     botState.marketRegime = regimeData;
 
+    // --- DYNAMIC RISK MULTIPLIER (EFFICIENCY REGIME) ---
+    const avgEfficiency = botState.efficiencyHistory.reduce((a, b) => a + b, 0) / botState.efficiencyHistory.length;
+    let dynamicRiskMult = 1.0;
+    let efficiencyLabel = "NEUTRAL";
+    if (avgEfficiency < 1) {
+       dynamicRiskMult = 0.5;
+       efficiencyLabel = "CHOPPY";
+    } else if (avgEfficiency > 2) {
+       dynamicRiskMult = 1.5;
+       efficiencyLabel = "EXPANSION";
+    }
+
+    // --- UPDATE PENDING EFFICIENCY ---
+    if (botState.efficiencyPending.length > 0) {
+      botState.efficiencyPending = botState.efficiencyPending.filter(p => {
+         p.candleCount++;
+         if (p.candleCount >= 4) {
+             const subBars = bars.slice(-4); // Lấy 4 cây nến gần nhất (1 entry + 3 follow)
+             if (subBars.length === 4) {
+                 const followBars = subBars.slice(1);
+                 const h = Math.max(...followBars.map(b => b[2]));
+                 const l = Math.min(...followBars.map(b => b[3]));
+                 let eff = 1.0;
+                 if (p.type === "LONG") {
+                    eff = (h - p.entryPrice) / (p.entryPrice - l + 0.0001);
+                 } else {
+                    eff = (p.entryPrice - l) / (h - p.entryPrice + 0.0001);
+                 }
+                 botState.efficiencyHistory.push(eff);
+                 if (botState.efficiencyHistory.length > 3) botState.efficiencyHistory.shift();
+                 console.log(`📊 [EFFICIENCY] Calculated for past signal: ${eff.toFixed(2)} | History: [${botState.efficiencyHistory.map(v => v.toFixed(1)).join(", ")}]`);
+             }
+             return false; // Remove from pending
+         }
+         return true;
+      });
+    }
+
     // 4. TÍNH TOÁN CÁC CHỈ BÁO KỸ THUẬT
     // --- Khung M1 ---
     const atrM1 = calculateATR(bars, 14);
@@ -723,12 +826,16 @@ async function traderLoop() {
       const risk = Math.abs(e - sl);
       const tp = sig === "LONG" ? e + risk * 1.5 : e - risk * 1.5;
 
-      console.log(`\n[SIGNAL] ${sig} | ${strategyLabel} | Price: $${e.toFixed(2)} | SL: $${sl.toFixed(2)} | TP: $${tp.toFixed(2)}`);
+      const baseRiskPercent = 0.01;
+      const currentRiskPercent = baseRiskPercent * dynamicRiskMult;
+
+      console.log(`\n[SIGNAL] ${sig} | ${strategyLabel} | Risk: ${(currentRiskPercent * 100).toFixed(1)}% (${efficiencyLabel}) | Price: $${e.toFixed(2)} | SL: $${sl.toFixed(2)} | TP: $${tp.toFixed(2)}`);
       
       if (!IS_LIVE_TRADING_ENABLED) { 
-        const riskPercent = 0.01; // Cố định 1% cho mọi loại lệnh
-        const riskAmount = paperBalance * riskPercent;
+        const riskAmount = paperBalance * currentRiskPercent;
         const positionSize = riskAmount; 
+
+        botState.efficiencyPending.push({ entryPrice: e, type: sig, candleCount: 0 });
 
         paperPosition = {
           type: sig,
@@ -763,11 +870,14 @@ async function traderLoop() {
           `🛑 SL: ${sl.toFixed(2)} | 💎 TP: ${tp.toFixed(2)}\n\n` +
           `📝 **Điều kiện:**\n${conditions}\n\n` +
           `⏰ Giờ VN: ${vnTime}`); 
+
+        // Gửi tới MT5 VPS (nếu enabled)
+        await sendToMT5(sig, e, sl, tp, PAIR);
       } else {
         // Chế độ Trade thật trên sàn
         try {
-          const riskPercent = 0.01; // 1% cho mọi loại lệnh
-          const riskAmount = botState.balance * riskPercent;
+          botState.efficiencyPending.push({ entryPrice: e, type: sig, candleCount: 0 });
+          const riskAmount = botState.balance * currentRiskPercent;
           const size = riskAmount / Math.abs(e - sl);
           const amt = ex.amountToPrecision(PAIR, Math.max(size, 0.001));
           await ex.createMarketOrder(PAIR, sig === 'LONG' ? 'buy' : 'sell', parseFloat(amt));
@@ -788,6 +898,9 @@ async function traderLoop() {
             `📊 Entry: ${e.toFixed(2)} (Pure 1M Strategy)\n` +
             `📝 **Điều kiện vào lệnh:**\n${conditions}\n` +
             `⏰ Giờ VN: ${vnTime}`);
+
+          // Gửi tới MT5 VPS (nếu enabled)
+          await sendToMT5(sig, e, sl, tp, PAIR);
         } catch (err) {
           console.error("Order Error:", err);
         }
@@ -860,6 +973,7 @@ async function startServer() {
 
   app.get("/api/backtest/status", (req, res) => res.json(backtestStatus));
   app.get("/api/trading/status", (req, res) => {
+    const avgEfficiency = botState.efficiencyHistory.reduce((a, b) => a + b, 0) / botState.efficiencyHistory.length;
     res.json({
       symbol: PAIR, last_price: botState.lastPrice, in_position: botState.inPosition,
       signals: botState.signals.slice(0, 10), balance: botState.balance, ai_reasoning: botState.aiReasoning,
@@ -868,7 +982,9 @@ async function startServer() {
       enable_whale_sweep: ENABLE_WHALE_SWEEP,
       vwma_period: VWMA_PERIOD,
       is_ws_connected: botState.isWsConnected,
-      market_regime: botState.marketRegime
+      market_regime: botState.marketRegime,
+      avg_efficiency: avgEfficiency.toFixed(2),
+      efficiency_history: botState.efficiencyHistory
     });
   });
   app.post("/api/trading/toggle-session", (req, res) => {

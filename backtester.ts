@@ -76,6 +76,13 @@ interface BacktestResult {
   continuationTrades: number;
   continuationWins: number;
   continuationPnLR: number;
+  efficiencyStats: {
+    [key: string]: {
+      trades: number;
+      wins: number;
+      pnlR: number;
+    }
+  };
   regimeStats: {
     [key: string]: {
       trades: number;
@@ -111,6 +118,11 @@ let results: BacktestResult = {
   continuationTrades: 0,
   continuationWins: 0,
   continuationPnLR: 0,
+  efficiencyStats: {
+    "CHOPPY": { trades: 0, wins: 0, pnlR: 0 },
+    "NEUTRAL": { trades: 0, wins: 0, pnlR: 0 },
+    "EXPANSION": { trades: 0, wins: 0, pnlR: 0 }
+  },
   regimeStats: {
     "TREND_EXPANSION": { trades: 0, wins: 0, pnlR: 0 },
     "NEUTRAL": { trades: 0, wins: 0, pnlR: 0 },
@@ -358,6 +370,27 @@ async function getAIBacktestDecision(signal: string, lastPrice: number, bars: an
   return { decision: "CONFIRM", reason: "AI Check Disabled for Backtest" };
 }
 
+async function sendTelegramBacktest(message: string) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) return;
+
+  const url = `https://api.telegram.org/bot${token}/sendMessage`;
+  try {
+    await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: message,
+        parse_mode: "Markdown",
+      }),
+    });
+  } catch (err) {
+    console.error("❌ Telegram Notify Error:", err);
+  }
+}
+
 // --- MAIN RUNNER ---
 
 let shouldStopBacktest = false;
@@ -577,6 +610,11 @@ export async function runBacktest(
     continuationTrades: 0,
     continuationWins: 0,
     continuationPnLR: 0,
+    efficiencyStats: {
+      "CHOPPY": { trades: 0, wins: 0, pnlR: 0 },
+      "NEUTRAL": { trades: 0, wins: 0, pnlR: 0 },
+      "EXPANSION": { trades: 0, wins: 0, pnlR: 0 }
+    },
     regimeStats: {
       "TREND_EXPANSION": { trades: 0, wins: 0, pnlR: 0 },
       "NEUTRAL": { trades: 0, wins: 0, pnlR: 0 },
@@ -604,6 +642,9 @@ export async function runBacktest(
   let continuationTrades = 0;
   let continuationWins = 0;
   let continuationPnLR = 0;
+
+  // Tracking for Efficiency Regime
+  const efficiencyHistory: number[] = [1.5, 1.5, 1.5]; // Khởi tạo trung bình
 
   let sessionSkippedCount = 0;
   const isWithinSessions = (ts: number) => {
@@ -785,11 +826,47 @@ export async function runBacktest(
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
+
+      // 1. TÍNH TOÁN EFFICIENCY REGIME DỰA TRÊN 3 LỆNH GẦN NHẤT
+      const avgEfficiency = efficiencyHistory.reduce((a, b) => a + b, 0) / efficiencyHistory.length;
+      let dynamicRiskMult = 1.0;
+      let efficiencyLabel = "NEUTRAL";
+
+      if (avgEfficiency < 1) {
+          dynamicRiskMult = 0.5;
+          efficiencyLabel = "CHOPPY";
+      } else if (avgEfficiency > 2) {
+          dynamicRiskMult = 1.5;
+          efficiencyLabel = "EXPANSION";
+      }
+
       const isContTrade = (type === "LONG" ? isContinuationLong : isContinuationShort);
       const currentRR = isContTrade ? 1.5 : 1.0;
       const entryPrice = currentPrice; 
       
       const time = new Date(allKlines[i][0]).toISOString();
+      const next3 = allKlines.slice(i + 1, i + 4);
+      
+      // Tính Efficiency của chính lệnh này để dùng cho lệnh sau
+      let currentTradeEff = 1.0;
+      if (next3.length === 3) {
+          if (type === "LONG") {
+              const next3High = Math.max(...next3.map(b => b[2]));
+              const next3Low = Math.min(...next3.map(b => b[3]));
+              const followThrough = next3High - entryPrice;
+              const retrace = entryPrice - next3Low;
+              currentTradeEff = followThrough / (retrace + 0.0001);
+          } else {
+              const next3High = Math.max(...next3.map(b => b[2]));
+              const next3Low = Math.min(...next3.map(b => b[3]));
+              const followThrough = entryPrice - next3Low;
+              const retrace = next3High - entryPrice;
+              currentTradeEff = followThrough / (retrace + 0.0001);
+          }
+      }
+      efficiencyHistory.push(currentTradeEff);
+      if (efficiencyHistory.length > 3) efficiencyHistory.shift();
+
       // Nếu là lệnh Continuation, ta dùng ATR để đặt SL thay vì dùng nến Sweep (vì Sweep có thể ko tồn tại)
       let sl = type === "LONG" ? (currentPrice - atrM1 * 2) : (currentPrice + atrM1 * 2);
       
@@ -801,7 +878,8 @@ export async function runBacktest(
       const risk = Math.abs(entryPrice - sl);
       const tp = type === "LONG" ? entryPrice + risk * 1.5 : entryPrice - risk * 1.5;
 
-      const riskPercentForTrade = 0.01; // 1% cho mọi loại lệnh
+      const baseRiskPercent = 0.01;
+      const currentRiskPercent = baseRiskPercent * dynamicRiskMult;
 
       const strategyLabel = isContTrade ? "CONTINUATION" : "WHALE SWEEP";
       console.log(`[SIGNAL] ${type} | ${strategyLabel} | Entry: $${entryPrice.toFixed(2)} | SL: $${sl.toFixed(2)} | TP: $${tp.toFixed(2)}`);
@@ -829,7 +907,7 @@ export async function runBacktest(
       // Tính PnL R thực tế dựa trên rủi ro ban đầu
       pnlR = (type === "LONG" ? (exitPrice - entryPrice) : (entryPrice - exitPrice)) / initialRiskDist;
       
-      const currentRiskPercent = 0.01;
+      const currentRiskPercent = baseRiskPercent * dynamicRiskMult;
       const dollarPnL = results.finalBalance * currentRiskPercent * pnlR;
       
       // Tính phí và trượt giá dự kiến (Để thống kê, ko trừ túi)
@@ -905,6 +983,13 @@ export async function runBacktest(
       }
     }
 
+    // Track efficiency stats
+    if (results.efficiencyStats[efficiencyLabel]) {
+       results.efficiencyStats[efficiencyLabel].trades++;
+       results.efficiencyStats[efficiencyLabel].pnlR += effectiveR;
+       if (status === "WIN") results.efficiencyStats[efficiencyLabel].wins++;
+    }
+
     results.trades.push({ 
       time, 
       type, 
@@ -917,11 +1002,13 @@ export async function runBacktest(
       estimatedSlippage,
       currentBalance: results.finalBalance,
       reason: `TA Entry`,
-      regime: regimeData.regime
+      regime: regimeData.regime,
+      efficiency: efficiencyLabel,
+      effValue: currentTradeEff
     });
     
     const strategyLabelResult = isContTrade ? "CONTINUATION" : "WHALE SWEEP";
-    console.log(`[TRADE] ${status} | ${strategyLabelResult} | PnL: ${pnlR.toFixed(1)}R (Eff: ${effectiveR.toFixed(1)}R) | $${dollarPnL.toFixed(2)} | Balance: $${results.finalBalance.toFixed(2)}`);
+    console.log(`[TRADE] ${status} | ${strategyLabelResult} | Risk: ${(currentRiskPercent * 100).toFixed(1)}% (${efficiencyLabel}) | PnL: ${pnlR.toFixed(1)}R | Balance: $${results.finalBalance.toFixed(2)}`);
       
       // Nhảy vòng lặp đến điểm nến hiện tại
     }
@@ -945,7 +1032,35 @@ export async function runBacktest(
     console.log(`\n🚀 --- THỐNG KÊ CHIẾN LƯỢC CONTINUATION (PULLBACK/BREAKOUT) ---`);
     console.log(`• Số lệnh: ${continuationTrades} | Winrate: ${contWR}% | PnL: ${continuationPnLR.toFixed(1)}R`);
   }
+
+  console.log("\n📊 --- THỐNG KÊ THEO EFFICIENCY (DYNAMIC RISK) ---");
+  Object.entries(results.efficiencyStats).forEach(([eff, stats]: [string, any]) => {
+     const wr = stats.trades > 0 ? ((stats.wins / stats.trades) * 100).toFixed(1) : "0";
+     console.log(`• ${eff}: ${stats.trades} trades | WR: ${wr}% | Total: ${stats.pnlR.toFixed(1)}R`);
+  });
+
   console.log("--------------------------------------\n");
+
+  // GỬI TELEGRAM SUMMARY
+  let teleMsg = `📊 **KẾT QUẢ BACKTEST EFFICIENCY REGIME**\n`;
+  teleMsg += `📅 Từ: ${startDate} đến ${endDate}\n`;
+  teleMsg += `💰 Số dư cuối: $${results.finalBalance.toFixed(2)}\n`;
+  teleMsg += `📈 Tổng PnL: ${results.totalProfitR.toFixed(1)}R\n`;
+  teleMsg += `⚡ Tổng lệnh: ${results.totalTrades} | Winrate: ${((results.wins / results.totalTrades) * 100).toFixed(1)}%\n\n`;
+  
+  teleMsg += `**Chi tiết theo Efficiency (Dynamic Risk):**\n`;
+  Object.entries(results.efficiencyStats).forEach(([eff, stats]: [string, any]) => {
+     const wr = stats.trades > 0 ? ((stats.wins / stats.trades) * 100).toFixed(1) : "0";
+     teleMsg += `• ${eff}: ${stats.trades} lệnh | WR: ${wr}% | ${stats.pnlR.toFixed(1)}R\n`;
+  });
+
+  if (continuationTrades > 0) {
+    const contWR = ((continuationWins / continuationTrades) * 100).toFixed(1);
+    teleMsg += `\n🚀 **Continuation Strategy:**\n`;
+    teleMsg += `• Lệnh: ${continuationTrades} | WR: ${contWR}% | ${continuationPnLR.toFixed(1)}R`;
+  }
+
+  await sendTelegramBacktest(teleMsg);
 
   if (enableSessionFilter) {
     console.log(`[SESSION] Filtered out ${sessionSkippedCount} candles outside of 08:00 - 21:00 UTC.`);
