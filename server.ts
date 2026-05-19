@@ -618,62 +618,45 @@ async function traderLoop() {
     const regimeData = calculateMarketRegime(m5Candles, m1Candles);
     botState.marketRegime = regimeData;
 
-    // --- DYNAMIC RISK MULTIPLIER (EFFICIENCY REGIME) ---
-    const avgEfficiency = botState.efficiencyHistory.reduce((a, b) => a + b, 0) / botState.efficiencyHistory.length;
-    let dynamicRiskMult = 1.0;
+    // --- REAL-TIME EFFICIENCY CALCULATION (3 nến thị trường mới nhất) ---
+    let currentEff = 1.0;
     let efficiencyLabel = "NEUTRAL";
-    if (avgEfficiency < 1) {
-       dynamicRiskMult = 0.5;
-       efficiencyLabel = "CHOPPY";
-    } else if (avgEfficiency > 2) {
-       dynamicRiskMult = 1.5;
-       efficiencyLabel = "EXPANSION";
-    }
+    let dynamicRiskMult = 1.0;
 
-    // --- UPDATE PENDING EFFICIENCY ---
-    if (botState.efficiencyPending.length > 0) {
-      botState.efficiencyPending = botState.efficiencyPending.filter(p => {
-         p.candleCount++;
-         if (p.candleCount >= 4) {
-             const subBars = bars.slice(-4); // Entry + 3 follow bars
-             if (subBars.length === 4) {
-                 const entryCandle = subBars[0];
-                 const followBars = subBars.slice(1);
-                 
-                 const eO = entryCandle[1];
-                 const eH = entryCandle[2];
-                 const eL = entryCandle[3];
-                 const eC = entryCandle[4];
-                 
-                 const netMoveScore = Math.abs(eC - eO) / (eH - eL + 0.0001);
-                 let closeAcceptanceScore = 0.5;
-                 let followThrough = 0;
-                 let retrace = 0;
-                 
-                 const next3High = Math.max(...followBars.map(b => b[2]));
-                 const next3Low = Math.min(...followBars.map(b => b[3]));
+    const currentWindow = bars.slice(-3);
+    if (currentWindow.length === 3) {
+        const c0 = currentWindow[2]; // Nến hiện tại
+        const c1 = currentWindow[1];
+        const c2 = currentWindow[0];
 
-                 if (p.type === "LONG") {
-                    closeAcceptanceScore = (eC - eL) / (eH - eL + 0.0001);
-                    followThrough = next3High - eC;
-                    retrace = eC - next3Low;
-                 } else {
-                    closeAcceptanceScore = (eH - eC) / (eH - eL + 0.0001);
-                    followThrough = eC - next3Low;
-                    retrace = next3High - eC;
-                 }
-                 
-                 const ftScore = followThrough / (retrace + 0.0001);
-                 const eff = (netMoveScore + closeAcceptanceScore + ftScore) / 3;
-                 
-                 botState.efficiencyHistory.push(eff);
-                 if (botState.efficiencyHistory.length > 3) botState.efficiencyHistory.shift();
-                 console.log(`📊 [EFFICIENCY V2] Calculated: ${eff.toFixed(2)} | NetMove: ${netMoveScore.toFixed(2)} | CloseAcc: ${closeAcceptanceScore.toFixed(2)} | FT: ${ftScore.toFixed(2)}`);
-             }
-             return false; // Remove from pending
-         }
-         return true;
-      });
+        const [,, h0, l0, c0c, , o0] = c0;
+        
+        // 1. Net Move của nến gần nhất
+        const netMove = Math.abs(c0c - o0) / (h0 - l0 + 0.0001);
+        
+        // 2. Close Acceptance trong Window 3 nến
+        const maxH3 = Math.max(c0[2], c1[2], c2[2]);
+        const minL3 = Math.min(c0[3], c1[3], c2[3]);
+        const range3 = maxH3 - minL3 + 0.0001;
+        
+        // Giả định hướng dựa trên nến cuối
+        const isUp = c0c > o0;
+        const closeAcc = isUp ? (c0c - minL3) / range3 : (maxH3 - c0c) / range3;
+
+        // 3. Smoothness
+        const absMove3 = Math.abs(c0c - c2[1]);
+        const sumRange3 = (c0[2]-c0[3]) + (c1[2]-c1[3]) + (c2[2]-c2[3]);
+        const smoothness = absMove3 / (sumRange3 + 0.0001);
+
+        currentEff = (netMove + closeAcc + smoothness) / 3;
+
+        if (currentEff < 0.45) {
+            dynamicRiskMult = 0.5;
+            efficiencyLabel = "CHOPPY";
+        } else if (currentEff > 0.7) {
+            dynamicRiskMult = 1.5;
+            efficiencyLabel = "EXPANSION";
+        }
     }
 
     // 4. TÍNH TOÁN CÁC CHỈ BÁO KỸ THUẬT
@@ -834,8 +817,6 @@ async function traderLoop() {
         const riskAmount = paperBalance * currentRiskPercent;
         const positionSize = riskAmount; 
 
-        botState.efficiencyPending.push({ entryPrice: e, type: sig, candleCount: 0 });
-
         paperPosition = {
           type: sig,
           entry: e,
@@ -875,7 +856,6 @@ async function traderLoop() {
       } else {
         // Chế độ Trade thật trên sàn
         try {
-          botState.efficiencyPending.push({ entryPrice: e, type: sig, candleCount: 0 });
           const riskAmount = botState.balance * currentRiskPercent;
           const size = riskAmount / Math.abs(e - sl);
           const amt = ex.amountToPrecision(PAIR, Math.max(size, 0.001));

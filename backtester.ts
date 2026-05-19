@@ -646,9 +646,6 @@ export async function runBacktest(
   let continuationWins = 0;
   let continuationPnLR = 0;
 
-  // Tracking for Efficiency Regime
-  const efficiencyHistory: number[] = [1.5, 1.5, 1.5]; // Khởi tạo trung bình
-
   let sessionSkippedCount = 0;
   const isWithinSessions = (ts: number) => {
     if (!enableSessionFilter) return true;
@@ -842,15 +839,47 @@ export async function runBacktest(
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
 
-      // 1. TÍNH TOÁN EFFICIENCY REGIME DỰA TRÊN 3 LỆNH GẦN NHẤT
-      const avgEfficiency = efficiencyHistory.reduce((a, b) => a + b, 0) / efficiencyHistory.length;
+      // 1. TÍNH TOÁN REAL-TIME EFFICIENCY (Dựa trên 3 nến thị trường mới nhất)
+      const currentWindow = allKlines.slice(i - 2, i + 1); // C-2, C-1, C0
+      let currentTradeEff = 1.0;
+
+      if (currentWindow.length === 3) {
+          const c0 = currentWindow[2]; // Nến tín hiệu
+          const c1 = currentWindow[1];
+          const c2 = currentWindow[0];
+
+          const [,, h0, l0, c0c, , o0] = c0;
+          
+          // Component 1: Net Move của nến tín hiệu
+          const netMoveScore = Math.abs(c0c - o0) / (h0 - l0 + 0.0001);
+          
+          // Component 2: Close Acceptance (Vị trí đóng cửa trong Range 3 nến)
+          const maxH3 = Math.max(c0[2], c1[2], c2[2]);
+          const minL3 = Math.min(c0[3], c1[3], c2[3]);
+          const range3 = maxH3 - minL3 + 0.0001;
+          
+          let closeAccScore = 0.5;
+          if (type === "LONG") {
+              closeAccScore = (c0c - minL3) / range3;
+          } else {
+              closeAccScore = (maxH3 - c0c) / range3;
+          }
+
+          // Component 3: Smoothness (Độ mượt của 3 nến)
+          const absMove3 = Math.abs(c0c - c2[1]);
+          const sumRange3 = (c0[2]-c0[3]) + (c1[2]-c1[3]) + (c2[2]-c2[3]);
+          const smoothness = absMove3 / (sumRange3 + 0.0001);
+
+          currentTradeEff = (netMoveScore + closeAccScore + smoothness) / 3;
+      }
+
       let dynamicRiskMult = 1.0;
       let efficiencyLabel = "NEUTRAL";
 
-      if (avgEfficiency < 1) {
+      if (currentTradeEff < 0.45) { // Ngưỡng choppy điều chỉnh cho real-time
           dynamicRiskMult = 0.5;
           efficiencyLabel = "CHOPPY";
-      } else if (avgEfficiency > 2) {
+      } else if (currentTradeEff > 0.7) { // Ngưỡng expansion
           dynamicRiskMult = 1.5;
           efficiencyLabel = "EXPANSION";
       }
@@ -860,37 +889,6 @@ export async function runBacktest(
       const entryPrice = currentPrice; 
       
       const time = new Date(allKlines[i][0]).toISOString();
-      const next3 = allKlines.slice(i + 1, i + 4);
-      
-      // Tính Efficiency V2 của chính lệnh này (Average of 3 scores)
-      let currentTradeEff = 1.0;
-      if (next3.length === 3) {
-          const entryCandle = allKlines[i];
-          const [,, eH, eL, eC, eVol, eO] = [0, 0, entryCandle[2], entryCandle[3], entryCandle[4], entryCandle[5], entryCandle[1]];
-          const netMoveScore = Math.abs(eC - eO) / (eH - eL + 0.0001);
-          
-          let closeAcceptanceScore = 0.5;
-          let followThrough = 0;
-          let retrace = 0;
-          
-          const next3High = Math.max(...next3.map(b => b[2]));
-          const next3Low = Math.min(...next3.map(b => b[3]));
-
-          if (type === "LONG") {
-              closeAcceptanceScore = (eC - eL) / (eH - eL + 0.0001);
-              followThrough = next3High - eC;
-              retrace = eC - next3Low;
-          } else {
-              closeAcceptanceScore = (eH - eC) / (eH - eL + 0.0001);
-              followThrough = eC - next3Low;
-              retrace = next3High - eC;
-          }
-          const ftScore = followThrough / (retrace + 0.0001);
-          currentTradeEff = (netMoveScore + closeAcceptanceScore + ftScore) / 3;
-      }
-      efficiencyHistory.push(currentTradeEff);
-      if (efficiencyHistory.length > 3) efficiencyHistory.shift();
-
       // Nếu là lệnh Continuation, ta dùng ATR để đặt SL thay vì dùng nến Sweep (vì Sweep có thể ko tồn tại)
       let sl = type === "LONG" ? (currentPrice - atrM1 * 2) : (currentPrice + atrM1 * 2);
       
