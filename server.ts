@@ -23,7 +23,7 @@ const TIMEFRAME = "1m";
 const IS_LIVE_TRADING_ENABLED = process.env.IS_LIVE_TRADING_ENABLED === "true";
 const MT5_BRIDGE_URL = process.env.MT5_WEBHOOK_URL?.replace('/webhook', '') || "http://localhost:5000";
 const RISK_PER_TRADE = 0.01; // Rủi ro trên mỗi lệnh (1% tài khoản)
-const RR = 1.5; // Tỷ lệ Risk/Reward 1.5 theo yêu cầu
+const RR = 1.2; // Tỷ lệ Risk/Reward 1.2 theo yêu cầu
 const COOLDOWN_MS = 30000; // Thời gian chờ giữa các lệnh (30 giây)
 const MAX_DAILY_LOSS = 0.06; // Giới hạn lỗ tối đa trong ngày (6%)
 
@@ -71,7 +71,8 @@ let backtestStatus = {
   lastResult: null as any
 };
 
-// Load last backtest result on startup
+// Load last backtest result on startup (disabled as requested)
+/*
 if (fs.existsSync(BACKTEST_RESULTS_FILE)) {
   try {
     const data = fs.readFileSync(BACKTEST_RESULTS_FILE, "utf-8");
@@ -81,6 +82,7 @@ if (fs.existsSync(BACKTEST_RESULTS_FILE)) {
     console.error("Lỗi khi tải kết quả backtest:", e);
   }
 }
+*/
 
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR);
@@ -659,7 +661,7 @@ async function traderLoop() {
         let status: "WIN" | "LOSS" = "WIN";
 
         // Tỷ lệ RR ban đầu
-        const initialRiskDist = Math.abs(paperPosition.tp - paperPosition.entry) / 1.5;
+        const initialRiskDist = Math.abs(paperPosition.tp - paperPosition.entry) / RR;
 
         if (paperPosition.type === "LONG") {
           if (cL <= paperPosition.sl) { closed = true; status = "LOSS"; }
@@ -789,7 +791,7 @@ async function traderLoop() {
         if (isNewSweepLong) {
           const slPrice = sweep.low - atrVal * 0.2;
           const riskAmt = Math.max(0.0001, Math.abs(currentPriceVal - slPrice));
-          const tpPrice = currentPriceVal + riskAmt * 1.5;
+          const tpPrice = currentPriceVal + riskAmt * RR;
           if (!pendingSweeps.some(ps => ps.triggerIndex === idx && ps.type === "LONG")) {
             pendingSweeps.push({
               type: "LONG",
@@ -802,7 +804,7 @@ async function traderLoop() {
         } else if (isNewSweepShort) {
           const slPrice = sweep.high + atrVal * 0.2;
           const riskAmt = Math.max(0.0001, Math.abs(currentPriceVal - slPrice));
-          const tpPrice = currentPriceVal - riskAmt * 1.5;
+          const tpPrice = currentPriceVal - riskAmt * RR;
           if (!pendingSweeps.some(ps => ps.triggerIndex === idx && ps.type === "SHORT")) {
             pendingSweeps.push({
               type: "SHORT",
@@ -977,7 +979,7 @@ async function traderLoop() {
     }
 
     const isContTrade = (sig === "LONG" && isContinuationLong) || (sig === "SHORT" && isContinuationShort);
-    const currentRR = 1.5;
+    const currentRR = RR;
     const strategyLabel = isContTrade ? "CONTINUATION" : "WHALE SWEEP";
 
     // 7. XỬ LÝ LỆNH (MARKET ENTRY)
@@ -992,7 +994,7 @@ async function traderLoop() {
       }
       
       const risk = Math.abs(e - sl);
-      const tp = sig === "LONG" ? e + risk * 1.5 : e - risk * 1.5;
+      const tp = sig === "LONG" ? e + risk * RR : e - risk * RR;
 
       const baseRiskPercent = 0.01;
       const currentRiskPercent = baseRiskPercent * dynamicRiskMult;
@@ -1121,22 +1123,29 @@ async function startServer() {
           const whaleWR = whaleTrades > 0 ? (whaleWins / whaleTrades * 100).toFixed(1) : "0.0";
           const whaleSummary = `• Tổng: ${whaleTrades} lệnh | WR: ${whaleWR}% | Lợi nhuận: ${whalePnLR.toFixed(1)}R`;
 
+          // Gửi tin nhắn 1: Thông báo cho Whale Sweep (Chi tiết từng tháng & Tổng kết)
+          await sendTelegram(`📊 **KẾT QUẢ BACKTEST: WHALE SWEEP**\n\n` +
+            `🗓 **Giai đoạn:** ${period}\n\n` +
+            `🐋 **WHALE SWEEP (Chi tiết tháng):**\n${whaleMonthlyReport}\n\n` +
+            `📊 **Tổng kết Whale Sweep:**\n${whaleSummary}`);
+
           // 2. Thống kê Continuation (Nếu có)
           const contTrades = r.continuationTrades || 0;
-          let contReport = "";
           if (contTrades > 0) {
              const contWins = r.continuationWins || 0;
              const contPnLR = r.continuationPnLR || 0;
              const contWR = (contWins / contTrades * 100).toFixed(1);
-             contReport = `\n🚀 **CONTINUATION:**\n• Tổng: ${contTrades} lệnh | WR: ${contWR}% | ${contPnLR.toFixed(1)}R\n`;
+             
+             // Gửi tin nhắn 2: Thông báo cho Continuation
+             await sendTelegram(`📊 **KẾT QUẢ BACKTEST: CONTINUATION**\n\n` +
+               `🗓 **Giai đoạn:** ${period}\n\n` +
+               `🚀 **Tổng kết Continuation:**\n• Tổng: ${contTrades} lệnh | WR: ${contWR}% | Lợi nhuận: ${contPnLR.toFixed(1)}R`);
+          } else {
+             // Gửi thông báo Continuation trống nếu không có lệnh để đảm bảo nhận đủ 2 tin nhắn như yêu cầu
+             await sendTelegram(`📊 **KẾT QUẢ BACKTEST: CONTINUATION**\n\n` +
+               `🗓 **Giai đoạn:** ${period}\n\n` +
+               `🚀 Không tìm thấy lệnh Continuation nào trong giai đoạn này.`);
           }
-
-          await sendTelegram(`📊 **KẾT QUẢ BACKTEST HOÀN TẤT**\n\n` +
-            `🗓 **Giai đoạn:** ${period}\n\n` +
-            `🐋 **WHALE SWEEP (Chi tiết tháng):**\n${whaleMonthlyReport}\n` +
-            `${whaleSummary}\n` +
-            contReport +
-            `\n💰 **TỔNG LỢI NHUẬN:** ${r.totalProfitR.toFixed(2)}R`);
         }
     }).catch(err => {
       console.error("Backtest Error:", err);

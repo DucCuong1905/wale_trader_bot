@@ -27,6 +27,26 @@ const CACHE_24_26_FILE = path.join(DATA_DIR, "backtest_data_2024_2026.json");
 const CACHE_20_22_FILE = path.join(DATA_DIR, "backtest_data_2020_2022.json");
 const CACHE_18_20_FILE = path.join(DATA_DIR, "backtest_data_2018_2020.json");
 
+function getPredefinedCacheFile(rangeFile: string, timeframe: string): string {
+  if (timeframe === "1m") {
+    // Để giữ tương thích ngược, nếu file gốc (1m) tồn tại thì dùng luôn
+    if (fs.existsSync(rangeFile)) {
+      return rangeFile;
+    }
+  }
+  // Tạo đường dẫn mới có chứa timeframe, ví dụ: backtest_data_2024_2026_5m.json
+  const ext = path.extname(rangeFile);
+  const base = rangeFile.slice(0, -ext.length);
+  return `${base}_${timeframe}${ext}`;
+}
+
+function getCustomCacheFile(pair: string, timeframe: string, start: string, end: string): string {
+  const cleanPair = pair.replace(/[^a-zA-Z0-9]/g, "_");
+  const startYMD = start.split("T")[0].replace(/[^0-9-]/g, "");
+  const endYMD = end.split("T")[0].replace(/[^0-9-]/g, "");
+  return path.join(DATA_DIR, `backtest_data_custom_${cleanPair}_${timeframe}_${startYMD}_to_${endYMD}.json`);
+}
+
 function getCleanEnv(key: string) {
   const val = process.env[key];
   if (!val) return "";
@@ -36,7 +56,7 @@ function getCleanEnv(key: string) {
 const PAIR = "BTC/USDT";
 const START_DATE = "2024-01-01T00:00:00Z"; 
 const END_DATE = "2026-01-01T00:00:00Z";
-const RR = 1.5; 
+const RR = 1.2; 
 const INITIAL_BALANCE = 5000;
 const RISK_PER_TRADE = 0.01; // 1%
 
@@ -431,62 +451,79 @@ export async function runBacktest(
   const startTs = exchange.parse8601(startDate);
   const endTs = exchange.parse8601(endDate);
 
-  // KIỂM TRA PHẠM VI ĐẶC BIỆT (Tháng 1 -> Tháng 5 năm 2026) ĐỂ CACHE VĨNH VIỄN
+  // KIỂM TRA PHẠM VI ĐẶC BIỆT ĐỂ CACHE VĨNH VIỄN (Có nhận biết timeframe)
   const isSpecialRange = (startDate.startsWith("2026-01-01") && endDate.startsWith("2026-05-01"));
   const is2224Range = (startDate.startsWith("2022-01-01") && endDate.startsWith("2024-01-01"));
   const is2426Range = (startDate.startsWith("2024-01-01") && endDate.startsWith("2026-01-01"));
   const is2022Range = (startDate.startsWith("2020-01-01") && endDate.startsWith("2022-01-01"));
   const is1820Range = (startDate.startsWith("2018-01-01") && endDate.startsWith("2020-01-01"));
 
-  if (isSpecialRange && fs.existsSync(SPECIAL_CACHE_FILE)) {
+  const specialCachePath = getPredefinedCacheFile(SPECIAL_CACHE_FILE, timeframe);
+  const cache2022Path = getPredefinedCacheFile(CACHE_20_22_FILE, timeframe);
+  const cache2224Path = getPredefinedCacheFile(CACHE_22_24_FILE, timeframe);
+  const cache2426Path = getPredefinedCacheFile(CACHE_24_26_FILE, timeframe);
+  const cache1820Path = getPredefinedCacheFile(CACHE_18_20_FILE, timeframe);
+  const customCachePath = getCustomCacheFile(PAIR, timeframe, startDate, endDate);
+
+  if (isSpecialRange && fs.existsSync(specialCachePath)) {
     try {
-      console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ VÀNG (2026-01-01 -> 2026-05-01)`);
-      console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE VĨNH VIỄN từ ổ đĩa...`);
-      const rawData = fs.readFileSync(SPECIAL_CACHE_FILE, "utf-8");
+      console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ VÀNG (2026-01-01 -> 2026-05-01) - Timeframe: ${timeframe}`);
+      console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE từ ổ đĩa: ${specialCachePath}`);
+      const rawData = fs.readFileSync(specialCachePath, "utf-8");
       allKlines = JSON.parse(rawData);
       console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
     } catch (e) {
       console.error("[BACKTEST] ❌ Lỗi khi đọc cache vĩnh viễn, sẽ fetch lại:", e);
     }
-  } else if (is2022Range && fs.existsSync(CACHE_20_22_FILE)) {
+  } else if (is2022Range && fs.existsSync(cache2022Path)) {
     try {
-      console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ 2020-2022`);
-      console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE 2020-2022 từ ổ đĩa...`);
-      const rawData = fs.readFileSync(CACHE_20_22_FILE, "utf-8");
+      console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ 2020-2022 - Timeframe: ${timeframe}`);
+      console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE từ ổ đĩa: ${cache2022Path}`);
+      const rawData = fs.readFileSync(cache2022Path, "utf-8");
       allKlines = JSON.parse(rawData);
       console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
     } catch (e) {
-      console.error("[BACKTEST] ❌ Lỗi khi đọc cache 20-22, sẽ fetch lại:", e);
+      console.error("[BACKTEST] ❌ Lỗi khi đọc cache 2020-2022:", e);
     }
-  } else if (is2224Range && fs.existsSync(CACHE_22_24_FILE)) {
+  } else if (is2224Range && fs.existsSync(cache2224Path)) {
     try {
-      console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ 2022-2024`);
-      console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE 2022-2024 từ ổ đĩa...`);
-      const rawData = fs.readFileSync(CACHE_22_24_FILE, "utf-8");
+      console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ 2022-2024 - Timeframe: ${timeframe}`);
+      console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE từ ổ đĩa: ${cache2224Path}`);
+      const rawData = fs.readFileSync(cache2224Path, "utf-8");
       allKlines = JSON.parse(rawData);
       console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
     } catch (e) {
-      console.error("[BACKTEST] ❌ Lỗi khi đọc cache 22-24, sẽ fetch lại:", e);
+      console.error("[BACKTEST] ❌ Lỗi khi đọc cache 22-24:", e);
     }
-  } else if (is2426Range && fs.existsSync(CACHE_24_26_FILE)) {
+  } else if (is2426Range && fs.existsSync(cache2426Path)) {
     try {
-      console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ 2024-2026`);
-      console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE 2024-2026 từ ổ đĩa...`);
-      const rawData = fs.readFileSync(CACHE_24_26_FILE, "utf-8");
+      console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ 2024-2026 - Timeframe: ${timeframe}`);
+      console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE từ ổ đĩa: ${cache2426Path}`);
+      const rawData = fs.readFileSync(cache2426Path, "utf-8");
       allKlines = JSON.parse(rawData);
       console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
     } catch (e) {
-      console.error("[BACKTEST] ❌ Lỗi khi đọc cache 24-26, sẽ fetch lại:", e);
+      console.error("[BACKTEST] ❌ Lỗi khi đọc cache 24-26:", e);
     }
-  } else if (is1820Range && fs.existsSync(CACHE_18_20_FILE)) {
+  } else if (is1820Range && fs.existsSync(cache1820Path)) {
     try {
-      console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ 2018-2020`);
-      console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE 2018-2020 từ ổ đĩa...`);
-      const rawData = fs.readFileSync(CACHE_18_20_FILE, "utf-8");
+      console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ 2018-2020 - Timeframe: ${timeframe}`);
+      console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE từ ổ đĩa: ${cache1820Path}`);
+      const rawData = fs.readFileSync(cache1820Path, "utf-8");
       allKlines = JSON.parse(rawData);
       console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
     } catch (e) {
-      console.error("[BACKTEST] ❌ Lỗi khi đọc cache 18-20, sẽ fetch lại:", e);
+      console.error("[BACKTEST] ❌ Lỗi khi đọc cache 18-20:", e);
+    }
+  } else if (fs.existsSync(customCachePath)) {
+    try {
+      console.log(`[BACKTEST] 💠 PHÁT HIỆN CÓ CACHE DỮ LIỆU PHÙ HỢP - Timeframe: ${timeframe}`);
+      console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE từ ổ đĩa: ${customCachePath}`);
+      const rawData = fs.readFileSync(customCachePath, "utf-8");
+      allKlines = JSON.parse(rawData);
+      console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
+    } catch (e) {
+      console.error("[BACKTEST] ❌ Lỗi khi đọc cache custom:", e);
     }
   }
 
@@ -530,46 +567,55 @@ export async function runBacktest(
         };
         console.log(`[BACKTEST] ✅ Đã lưu dữ liệu vào Cache bộ nhớ (${allKlines.length} nến)`);
 
-        // NẾU LÀ KHUNG ĐẶC BIỆT THÌ LƯU VÀO FILE
+        // NẾU LÀ KHUNG ĐẶC BIỆT THÌ LƯU VÀO FILE TƯƠNG ỨNG TIMEFRAME
         if (isSpecialRange) {
           try {
-            console.log(`[BACKTEST] 💾 Đang lưu dữ liệu CACHE VĨNH VIỄN vào ổ đĩa...`);
-            fs.writeFileSync(SPECIAL_CACHE_FILE, JSON.stringify(allKlines));
+            console.log(`[BACKTEST] 💾 Đang lưu dữ liệu CACHE VĨNH VIỄN vào ổ đĩa: ${specialCachePath}`);
+            fs.writeFileSync(specialCachePath, JSON.stringify(allKlines));
             console.log(`[BACKTEST] ✅ Hoàn tất lưu cache vĩnh viễn.`);
           } catch (e) {
             console.error("[BACKTEST] ❌ Lỗi khi ghi cache vĩnh viễn:", e);
           }
         } else if (is2224Range) {
           try {
-            console.log(`[BACKTEST] 💾 Đang lưu dữ liệu CACHE 2022-2024 vào ổ đĩa...`);
-            fs.writeFileSync(CACHE_22_24_FILE, JSON.stringify(allKlines));
+            console.log(`[BACKTEST] 💾 Đang lưu dữ liệu CACHE 2022-2024 vào ổ đĩa: ${cache2224Path}`);
+            fs.writeFileSync(cache2224Path, JSON.stringify(allKlines));
             console.log(`[BACKTEST] ✅ Hoàn tất lưu cache 2022-2024.`);
           } catch (e) {
             console.error("[BACKTEST] ❌ Lỗi khi ghi cache 2022-2024:", e);
           }
         } else if (is2426Range) {
           try {
-            console.log(`[BACKTEST] 💾 Đang lưu dữ liệu CACHE 2024-2026 vào ổ đĩa...`);
-            fs.writeFileSync(CACHE_24_26_FILE, JSON.stringify(allKlines));
+            console.log(`[BACKTEST] 💾 Đang lưu dữ liệu CACHE 2024-2026 vào ổ đĩa: ${cache2426Path}`);
+            fs.writeFileSync(cache2426Path, JSON.stringify(allKlines));
             console.log(`[BACKTEST] ✅ Hoàn tất lưu cache 2024-2026.`);
           } catch (e) {
             console.error("[BACKTEST] ❌ Lỗi khi ghi cache 2024-2026:", e);
           }
         } else if (is2022Range) {
           try {
-            console.log(`[BACKTEST] 💾 Đang lưu dữ liệu CACHE 2020-2022 vào ổ đĩa...`);
-            fs.writeFileSync(CACHE_20_22_FILE, JSON.stringify(allKlines));
+            console.log(`[BACKTEST] 💾 Đang lưu dữ liệu CACHE 2020-2022 vào ổ đĩa: ${cache2022Path}`);
+            fs.writeFileSync(cache2022Path, JSON.stringify(allKlines));
             console.log(`[BACKTEST] ✅ Hoàn tất lưu cache 2020-2022.`);
           } catch (e) {
             console.error("[BACKTEST] ❌ Lỗi khi ghi cache 2020-2022:", e);
           }
         } else if (is1820Range) {
           try {
-            console.log(`[BACKTEST] 💾 Đang lưu dữ liệu CACHE 2018-2020 vào ổ đĩa...`);
-            fs.writeFileSync(CACHE_18_20_FILE, JSON.stringify(allKlines));
+            console.log(`[BACKTEST] 💾 Đang lưu dữ liệu CACHE 2018-2020 vào ổ đĩa: ${cache1820Path}`);
+            fs.writeFileSync(cache1820Path, JSON.stringify(allKlines));
             console.log(`[BACKTEST] ✅ Hoàn tất lưu cache 2018-2020.`);
           } catch (e) {
             console.error("[BACKTEST] ❌ Lỗi khi ghi cache 18-20:", e);
+          }
+        } else {
+          // Lưu vào custom file cache để các lần sau chạy không phải online fetch nữa!
+          try {
+            console.log(`[BACKTEST] 💾 Đang lưu dữ liệu CACHE của khoảng thời gian này vào ổ đĩa: ${customCachePath}`);
+            fs.writeFileSync(customCachePath, JSON.stringify(allKlines));
+            console.log(`[BACKTEST] ✅ Hoàn tất lưu cache của khoảng thời gian này.`);
+          } catch (e) {
+            console.error("[BACKTEST] ❌ Lỗi khi ghi cache custom:", e);
           }
         }
       }
@@ -768,7 +814,7 @@ export async function runBacktest(
     if (isNewSweepLongAtBar) {
       const slPrice = sweep.low - atrM1 * 0.2;
       const riskAmt = Math.max(0.0001, Math.abs(currentPrice - slPrice));
-      const tpPrice = currentPrice + riskAmt * 1.5;
+      const tpPrice = currentPrice + riskAmt * rr;
       if (!pendingSweeps.some(ps => ps.triggerIndex === i && ps.type === "LONG")) {
         pendingSweeps.push({
           type: "LONG",
@@ -781,7 +827,7 @@ export async function runBacktest(
     } else if (isNewSweepShortAtBar) {
       const slPrice = sweep.high + atrM1 * 0.2;
       const riskAmt = Math.max(0.0001, Math.abs(currentPrice - slPrice));
-      const tpPrice = currentPrice - riskAmt * 1.5;
+      const tpPrice = currentPrice - riskAmt * rr;
       if (!pendingSweeps.some(ps => ps.triggerIndex === i && ps.type === "SHORT")) {
         pendingSweeps.push({
           type: "SHORT",
@@ -960,7 +1006,7 @@ export async function runBacktest(
       else if (dynamicRiskMult === 0.25) efficiencyLabel = "CHOPPY";
 
       const isContTrade = (type === "LONG" ? isContinuationLong : isContinuationShort);
-      const currentRR = isContTrade ? 1.5 : 1.0;
+      const currentRR = rr;
       const entryPrice = currentPrice; 
       
       const time = new Date(allKlines[i][0]).toISOString();
@@ -973,7 +1019,7 @@ export async function runBacktest(
          sl = type === "LONG" ? (sweep.low - atrM1 * 0.2) : (sweep.high + atrM1 * 0.2);
       }
       const risk = Math.abs(entryPrice - sl);
-      const tp = type === "LONG" ? entryPrice + risk * 1.5 : entryPrice - risk * 1.5;
+      const tp = type === "LONG" ? entryPrice + risk * rr : entryPrice - risk * rr;
 
       const baseRiskPercent = 0.01;
       const currentRiskPercent = baseRiskPercent * dynamicRiskMult;
