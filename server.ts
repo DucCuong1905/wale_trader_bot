@@ -12,8 +12,9 @@ import { calculateMarketRegime, Candle } from "./regime.ts";
 
 dotenv.config();
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const fileUrl = typeof import.meta !== "undefined" && import.meta.url ? import.meta.url : "";
+const resolvedFilename = fileUrl ? fileURLToPath(fileUrl) : "server.cjs";
+const resolvedDirname = path.dirname(resolvedFilename);
 
 // --- QUẢN LÝ VỊ THẾ GIẢ LẬP (PAPER TRADING) ---
 const MT5_ENABLED = process.env.MT5_ENABLED === "true";
