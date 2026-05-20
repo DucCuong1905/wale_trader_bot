@@ -1121,8 +1121,11 @@ async function startServer() {
       
       // Gửi báo cáo Telegram khi hoàn tất backtest
         if (r && !r.error) {
-          const period = `${new Date(r.startTime).toLocaleDateString('vi-VN')} - ${new Date(r.endTime).toLocaleDateString('vi-VN')}`;
-          
+          const formatDateStr = (dateStr: string) => {
+            const d = new Date(dateStr);
+            return `${d.getUTCDate()}/${d.getUTCMonth() + 1}/${d.getUTCFullYear()}`;
+          };
+
           // 1. Thống kê Whale Sweep (Chi tiết từng tháng & Tổng kết)
           let whaleMonthlyReport = "";
           if (r.monthlySnapshots && r.monthlySnapshots.length > 0) {
@@ -1135,31 +1138,44 @@ async function startServer() {
           const whaleWins = r.wins - (r.continuationWins || 0);
           const whalePnLR = r.totalProfitR - (r.continuationPnLR || 0);
           const whaleWR = whaleTrades > 0 ? (whaleWins / whaleTrades * 100).toFixed(1) : "0.0";
-          const whaleSummary = `• Tổng: ${whaleTrades} lệnh | WR: ${whaleWR}% | Lợi nhuận: ${whalePnLR.toFixed(1)}R`;
 
-          // Gửi tin nhắn 1: Thông báo cho Whale Sweep (Chi tiết từng tháng & Tổng kết)
-          await sendTelegram(`📊 **KẾT QUẢ BACKTEST: WHALE SWEEP**\n\n` +
-            `🗓 **Giai đoạn:** ${period}\n\n` +
-            `🐋 **WHALE SWEEP (Chi tiết tháng):**\n${whaleMonthlyReport}\n\n` +
-            `📊 **Tổng kết Whale Sweep:**\n${whaleSummary}`);
+          // 2. Chi tiết theo Efficiency
+          const getEffStatsStr = (key: string) => {
+            const stats = r.efficiencyStats?.[key] || { trades: 0, wins: 0, pnlR: 0 };
+            const wr = stats.trades > 0 ? (stats.wins / stats.trades * 100).toFixed(1) : "0.0";
+            return `• ${key}: ${stats.trades} lệnh | WR: ${wr}% | ${stats.pnlR.toFixed(1)}R`;
+          };
+          const choppyStr = getEffStatsStr("CHOPPY");
+          const neutralStr = getEffStatsStr("NEUTRAL");
+          const expansionStr = getEffStatsStr("EXPANSION");
 
-          // 2. Thống kê Continuation (Nếu có)
+          // 3. Thống kê Continuation
           const contTrades = r.continuationTrades || 0;
-          if (contTrades > 0) {
-             const contWins = r.continuationWins || 0;
-             const contPnLR = r.continuationPnLR || 0;
-             const contWR = (contWins / contTrades * 100).toFixed(1);
-             
-             // Gửi tin nhắn 2: Thông báo cho Continuation
-             await sendTelegram(`📊 **KẾT QUẢ BACKTEST: CONTINUATION**\n\n` +
-               `🗓 **Giai đoạn:** ${period}\n\n` +
-               `🚀 **Tổng kết Continuation:**\n• Tổng: ${contTrades} lệnh | WR: ${contWR}% | Lợi nhuận: ${contPnLR.toFixed(1)}R`);
-          } else {
-             // Gửi thông báo Continuation trống nếu không có lệnh để đảm bảo nhận đủ 2 tin nhắn như yêu cầu
-             await sendTelegram(`📊 **KẾT QUẢ BACKTEST: CONTINUATION**\n\n` +
-               `🗓 **Giai đoạn:** ${period}\n\n` +
-               `🚀 Không tìm thấy lệnh Continuation nào trong giai đoạn này.`);
-          }
+          const contWins = r.continuationWins || 0;
+          const contPnLR = r.continuationPnLR || 0;
+          const contWR = contTrades > 0 ? (contWins / contTrades * 100).toFixed(1) : "0.0";
+
+          // Gửi đúng 1 tin nhắn duy nhất chứa toàn bộ thông tin
+          const reportMsg = [
+            `📊 **KẾT QUẢ BACKTEST WHALE SWEEP ONLY**`,
+            `📅 Từ: ${formatDateStr(r.startTime)} đến ${formatDateStr(r.endTime)}`,
+            `💰 Số dư cuối: $${r.finalBalance.toFixed(2)}`,
+            `📈 Tổng PnL: ${whalePnLR.toFixed(1)}R`,
+            `⚡ Tổng lệnh: ${whaleTrades} | Winrate: ${whaleWR}%`,
+            ``,
+            `Thống kê Whale Sweep theo tháng:`,
+            whaleMonthlyReport || `• Không có dữ liệu tháng`,
+            ``,
+            `Chi tiết theo Efficiency (Dynamic Risk):`,
+            choppyStr,
+            neutralStr,
+            expansionStr,
+            ``,
+            `🚀 Continuation Strategy:`,
+            `• Lệnh: ${contTrades} | WR: ${contWR}% | ${contPnLR.toFixed(1)}R`
+          ].join('\n');
+
+          await sendTelegram(reportMsg);
         }
     }).catch(err => {
       console.error("Backtest Error:", err);

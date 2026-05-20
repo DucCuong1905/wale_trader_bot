@@ -1153,11 +1153,18 @@ export async function runBacktest(
       reason: `TA Entry`,
       regime: regimeData.regime,
       efficiency: efficiencyLabel,
-      effValue: currentTradeEff
+      effValue: currentTradeEff,
+      riskPercent: Number((currentRiskPercent * 100).toFixed(2))
     });
     
     const strategyLabelResult = isContTrade ? "CONTINUATION" : "WHALE SWEEP";
     console.log(`[TRADE] ${status} | ${strategyLabelResult} | Risk: ${(currentRiskPercent * 100).toFixed(1)}% (${efficiencyLabel}) | PnL: ${pnlR.toFixed(1)}R | Balance: $${results.finalBalance.toFixed(2)}`);
+    
+    // Log format requested by user
+    const formattedTradeTime = new Date(allKlines[i][0]).toLocaleString("vi-VN");
+    const formattedPnL = pnlR > 0 ? `+${pnlR.toFixed(2)}` : `${pnlR.toFixed(2)}`;
+    const formattedRiskPercent = (currentRiskPercent * 100).toFixed(2);
+    console.log(`[${formattedTradeTime}] ${status === "WIN" ? "Win" : "Loss"} ${formattedPnL}R Balance: $${results.finalBalance.toFixed(2)} risk: ${formattedRiskPercent}%`);
       
       // Nhảy vòng lặp đến điểm nến hiện tại
     }

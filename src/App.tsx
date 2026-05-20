@@ -893,28 +893,39 @@ export default function App() {
                                  <th className="px-8 py-4">Thời Gian</th>
                                  <th className="px-8 py-4">Lệnh</th>
                                  <th className="px-8 py-4">Lý Do</th>
+                                 <th className="px-8 py-4 text-right">Rủi ro</th>
                                  <th className="px-8 py-4 text-right">PnL</th>
                               </tr>
                            </thead>
                            <tbody className="divide-y divide-white/5">
-                              {(backtestStatus.lastResult?.trades || []).map((t: any, i: number) => (
-                                <tr key={i} className="hover:bg-white/[0.02] transition-all">
-                                   <td className="px-8 py-4 text-[11px] font-mono whitespace-nowrap">{new Date(t.time).toLocaleString()}</td>
-                                   <td className="px-8 py-4">
-                                      <span className={cn(
-                                        "text-[9px] font-black px-2 py-0.5 rounded border uppercase",
-                                        t.type === 'LONG' ? "text-green-400 border-green-500/30" : "text-red-400 border-red-500/30"
-                                      )}>{t.type}</span>
-                                   </td>
-                                   <td className="px-8 py-4 text-xs text-slate-300 italic">"{t.reason}"</td>
-                                   <td className={cn(
-                                     "px-8 py-4 text-right font-mono font-black",
-                                     (t.pnlR !== undefined ? t.pnlR : (t.pnl || 0)) > 0 ? "text-green-400" : "text-red-400"
-                                   )}>
-                                      {t.pnlR !== undefined ? (t.pnlR > 0 ? `+${t.pnlR}R` : `${t.pnlR}R`) : (t.pnl > 0 ? `+${t.pnl}R` : `${t.pnl}R`)}
-                                   </td>
-                                </tr>
-                              ))}
+                              {(backtestStatus.lastResult?.trades || []).map((t: any, i: number) => {
+                                const riskVal = t.riskPercent !== undefined 
+                                  ? t.riskPercent 
+                                  : (t.efficiency === "CHOPPY" ? 0.25 : (t.efficiency === "NEUTRAL" ? 0.5 : (t.efficiency === "EXPANSION" ? 1.0 : 0.5)));
+                                const rawPnL = t.pnlR !== undefined ? t.pnlR : (t.pnl || 0);
+                                const formattedPnL = Number(rawPnL.toFixed(2));
+                                return (
+                                  <tr key={i} className="hover:bg-white/[0.02] transition-all">
+                                     <td className="px-8 py-4 text-[11px] font-mono whitespace-nowrap">{new Date(t.time).toLocaleString()}</td>
+                                     <td className="px-8 py-4">
+                                        <span className={cn(
+                                          "text-[9px] font-black px-2 py-0.5 rounded border uppercase",
+                                          t.type === 'LONG' ? "text-green-400 border-green-500/30" : "text-red-400 border-red-500/30"
+                                        )}>{t.type}</span>
+                                     </td>
+                                     <td className="px-8 py-4 text-xs text-slate-300 italic">"{t.reason}"</td>
+                                     <td className="px-8 py-4 text-right text-xs font-mono font-bold text-slate-300">
+                                        {riskVal.toLocaleString("vi-VN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
+                                     </td>
+                                     <td className={cn(
+                                       "px-8 py-4 text-right font-mono font-black",
+                                       rawPnL > 0 ? "text-green-400" : "text-red-400"
+                                     )}>
+                                        {rawPnL > 0 ? `+${formattedPnL}R` : `${formattedPnL}R`}
+                                     </td>
+                                  </tr>
+                                );
+                              })}
                            </tbody>
                         </table>
                      </div>
