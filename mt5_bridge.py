@@ -103,71 +103,105 @@ def order_action():
 
 @app.route('/candles', methods=['GET'])
 def get_candles():
-    symbol = request.args.get('symbol', 'XAUUSD')
-    timeframe_str = request.args.get('timeframe', '1m')
-    limit = int(request.args.get('limit', 1000))
+    try:
+        symbol = request.args.get('symbol', 'XAUUSD')
+        timeframe_str = request.args.get('timeframe', '1m')
+        limit = int(request.args.get('limit', 1000))
 
-    tf_map = {
-        '1m': mt5.TIMEFRAME_M1,
-        '5m': mt5.TIMEFRAME_M5,
-        '1d': mt5.TIMEFRAME_D1,
-        '1D': mt5.TIMEFRAME_D1
-    }
-    tf = tf_map.get(timeframe_str, mt5.TIMEFRAME_M1)
+        tf_map = {
+            '1m': mt5.TIMEFRAME_M1,
+            '5m': mt5.TIMEFRAME_M5,
+            '1d': mt5.TIMEFRAME_D1,
+            '1D': mt5.TIMEFRAME_D1
+        }
+        tf = tf_map.get(timeframe_str, mt5.TIMEFRAME_M1)
 
-    rates = mt5.copy_rates_from_pos(symbol, tf, 0, limit)
-    if rates is None or len(rates) == 0:
-        return jsonify({"status": "error", "message": f"Failed to get rates for {symbol}"}), 400
+        rates = mt5.copy_rates_from_pos(symbol, tf, 0, limit)
+        if rates is None or len(rates) == 0:
+            return jsonify({
+                "status": "error",
+                "message": f"Không thể lấy nến cho {symbol}. Hãy kiểm tra xem symbol này đã được thêm vào bảng Market Watch (Bảng giá) trong phần mềm MT5 trên VPS chưa!"
+            }), 400
 
-    ohlcv = []
-    for r in rates:
-        timestamp_ms = int(r[0]) * 1000
-        ohlcv.append([
-            timestamp_ms,
-            float(r[1]), # open
-            float(r[2]), # high
-            float(r[3]), # low
-            float(r[4]), # close
-            float(r[5])  # volume / tick_volume
-        ])
+        ohlcv = []
+        # Kiểm tra xem rates có cột thuộc tính theo tên không
+        has_names = False
+        if hasattr(rates, 'dtype') and rates.dtype.names:
+            has_names = True
 
-    return jsonify({"status": "success", "data": ohlcv})
+        for r in rates:
+            if has_names:
+                time_val = r['time']
+                open_val = r['open']
+                high_val = r['high']
+                low_val = r['low']
+                close_val = r['close']
+                vol_val = r['tick_volume']
+            else:
+                time_val = r[0]
+                open_val = r[1]
+                high_val = r[2]
+                low_val = r[3]
+                close_val = r[4]
+                vol_val = r[5]
+
+            timestamp_ms = int(time_val) * 1000
+            ohlcv.append([
+                timestamp_ms,
+                float(open_val), # open
+                float(high_val), # high
+                float(low_val), # low
+                float(close_val), # close
+                float(vol_val)  # volume / tick_volume
+            ])
+
+        return jsonify({"status": "success", "data": ohlcv})
+    except Exception as e:
+        import traceback
+        print("❌ Lỗi trong /candles API:", traceback.format_exc())
+        return jsonify({"status": "error", "message": f"Lỗi exception tại mt5_bridge.py: {str(e)}"}), 500
 
 @app.route('/account', methods=['GET'])
 def get_account_info():
-    account_info = mt5.account_info()
-    if account_info is None:
-        return jsonify({"status": "error", "message": "Failed to get account info"}), 400
-    
-    return jsonify({
-        "status": "success",
-        "balance": account_info.balance,
-        "equity": account_info.equity,
-        "margin": account_info.margin,
-        "free_margin": account_info.margin_free,
-        "profit": account_info.profit
-    })
+    try:
+        account_info = mt5.account_info()
+        if account_info is None:
+            return jsonify({"status": "error", "message": "Failed to get account info. Hãy đảm bảo bạn đã đăng nhập tài khoản Exness MT5 thành công"}), 400
+        
+        return jsonify({
+            "status": "success",
+            "balance": account_info.balance,
+            "equity": account_info.equity,
+            "margin": account_info.margin,
+            "free_margin": account_info.margin_free,
+            "profit": account_info.profit
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Lỗi exception khi lấy tài khoản: {str(e)}"}), 500
 
 @app.route('/positions', methods=['GET'])
 def get_positions():
-    symbol = request.args.get('symbol', 'XAUUSD')
-    positions = mt5.positions_get(symbol=symbol)
-    if positions is None:
-        return jsonify({"status": "success", "positions": []})
-    
-    pos_list = []
-    for p in positions:
-        pos_list.append({
-            "ticket": p.ticket,
-            "symbol": p.symbol,
-            "volume": p.volume,
-            "type": "buy" if p.type == mt5.POSITION_TYPE_BUY else "sell",
-            "price_open": p.price_open,
-            "sl": p.sl,
-            "tp": p.tp,
-            "profit": p.profit
-        })
-    return jsonify({"status": "success", "positions": pos_list})
+    try:
+        symbol = request.args.get('symbol', 'XAUUSD')
+        positions = mt5.positions_get(symbol=symbol)
+        if positions is None:
+            return jsonify({"status": "success", "positions": []})
+        
+        pos_list = []
+        for p in positions:
+            pos_list.append({
+                "ticket": p.ticket,
+                "symbol": p.symbol,
+                "volume": p.volume,
+                "type": "buy" if p.type == mt5.POSITION_TYPE_BUY else "sell",
+                "price_open": p.price_open,
+                "sl": p.sl,
+                "tp": p.tp,
+                "profit": p.profit
+            })
+        return jsonify({"status": "success", "positions": pos_list})
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Lỗi exception khi lấy vị thế: {str(e)}"}), 500
 
 if __name__ == "__main__":
     initialize_mt5()

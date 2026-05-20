@@ -3,7 +3,6 @@ import * as ccxt from "ccxt";
 import fs from "fs";
 import path from "path";
 import dotenv from "dotenv";
-import { GoogleGenAI } from "@google/genai";
 import { calculateMarketRegime, Candle } from "./regime.ts";
 
 dotenv.config();
@@ -33,10 +32,6 @@ function getCleanEnv(key: string) {
   if (!val) return "";
   return val.trim().replace(/^["']|["']$/g, "").trim();
 }
-
-const aiString = getCleanEnv("GEMINI_API_KEY");
-const ai = (aiString && aiString !== "MY_GEMINI_API_KEY") ? new GoogleGenAI({ apiKey: aiString }) : null;
-const modelName = "gemini-2.0-flash";
 
 const PAIR = "BTC/USDT";
 const START_DATE = "2024-01-01T00:00:00Z"; 
