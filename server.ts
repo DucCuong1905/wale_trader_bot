@@ -253,6 +253,56 @@ async function sendToMT5(type: "LONG" | "SHORT", entry: number, sl: number, tp: 
   }
 }
 
+/**
+ * Lấy nến từ MT5 Bridge
+ */
+async function fetchMT5OHLCV(symbol: string, timeframe: string, limit: number): Promise<any[]> {
+  try {
+    const res = await fetch(`${MT5_BRIDGE_URL}/candles?symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}&limit=${limit}`);
+    const result = await res.json() as any;
+    if (result && result.status === "success" && Array.isArray(result.data)) {
+      return result.data;
+    }
+    throw new Error(result?.message || "Định dạng dữ liệu nến MT5 không hợp lệ");
+  } catch (err: any) {
+    throw new Error(`Không thể lấy nến từ MT5 Bridge tại ${MT5_BRIDGE_URL}: ${err.message}`);
+  }
+}
+
+/**
+ * Lấy số dư từ tài khoản MT5
+ */
+async function fetchMT5Balance(): Promise<number> {
+  try {
+    const res = await fetch(`${MT5_BRIDGE_URL}/account`);
+    const result = await res.json() as any;
+    if (result && result.status === "success" && typeof result.balance === "number") {
+      return result.balance;
+    }
+    throw new Error(result?.message || "Định dạng số dư MT5 không hợp lệ");
+  } catch (err: any) {
+    console.warn(`[MT5 BRIDGE] Không lấy được số dư MT5, sử dụng số dư giả lập. Lỗi: ${err.message}`);
+    return paperBalance;
+  }
+}
+
+/**
+ * Lấy vị thế hiện tại từ MT5 Bridge
+ */
+async function fetchMT5Positions(symbol: string): Promise<any[]> {
+  try {
+    const res = await fetch(`${MT5_BRIDGE_URL}/positions?symbol=${encodeURIComponent(symbol)}`);
+    const result = await res.json() as any;
+    if (result && result.status === "success" && Array.isArray(result.positions)) {
+      return result.positions;
+    }
+    return [];
+  } catch (err: any) {
+    console.error(`[MT5 BRIDGE] Không thể lấy vị thế MT5: ${err.message}`);
+    return [];
+  }
+}
+
 let exchange: ccxt.binance | null = null;
 /**
  * Khởi tạo hoặc lấy đối tượng kết nối với sàn Binance.
@@ -262,7 +312,7 @@ function getExchange() {
   const secret = process.env.BINANCE_API_SECRET;
 
   if (!apiKey || !secret) {
-    if (!botState.apiError) {
+    if (!MT5_ENABLED && !botState.apiError) {
       console.warn("[WARN] BINANCE_API_KEY hoặc BINANCE_API_SECRET chưa được cấu hình.");
       botState.apiError = "Thiếu API Key/Secret. Vui lòng cấu hình trong Settings.";
     }
@@ -514,8 +564,8 @@ async function fetchOHLCVWithRetry(ex: ccxt.Exchange, symbol: string, timeframe:
  * Vòng lặp chính của Bot: Kiểm tra nến, tín hiệu và thực hiện giao dịch.
  */
 async function traderLoop() {
-  const ex = getExchange(); 
-  if (!ex) { 
+  const ex = MT5_ENABLED ? null : getExchange(); 
+  if (!MT5_ENABLED && !ex) { 
     console.log("[INFO] Đang chờ cấu hình API Key để bắt đầu giao dịch...");
     setTimeout(traderLoop, 15000); 
     return; 
@@ -527,9 +577,15 @@ async function traderLoop() {
     let bars5m: any[] = [];
     let bars1d: any[] = [];
     try {
-      bars = await fetchOHLCVWithRetry(ex, PAIR, TIMEFRAME, undefined, 1000);
-      bars5m = await fetchOHLCVWithRetry(ex, PAIR, "5m", undefined, 100);
-      bars1d = await fetchOHLCVWithRetry(ex, PAIR, "1d", undefined, 100);
+      if (MT5_ENABLED) {
+        bars = await fetchMT5OHLCV(PAIR, "1m", 1000);
+        bars5m = await fetchMT5OHLCV(PAIR, "5m", 100);
+        bars1d = await fetchMT5OHLCV(PAIR, "1d", 100);
+      } else if (ex) {
+        bars = await fetchOHLCVWithRetry(ex, PAIR, TIMEFRAME, undefined, 1000);
+        bars5m = await fetchOHLCVWithRetry(ex, PAIR, "5m", undefined, 100);
+        bars1d = await fetchOHLCVWithRetry(ex, PAIR, "1d", undefined, 100);
+      }
     } catch (ohlcvErr: any) {
       console.error("❌ Lỗi fetchOHLCV (sau khi retry):", ohlcvErr.message);
       setTimeout(traderLoop, 10000);
@@ -547,19 +603,23 @@ async function traderLoop() {
     // 1. KIỂM TRA SỐ DƯ VÀ QUẢN LÝ RỦI RO NGÀY
     let curr = 0;
     if (IS_LIVE_TRADING_ENABLED) {
-      let bal;
-      try {
-        bal = await ex.fetchBalance();
-      } catch (authErr: any) {
-        if (authErr.message.includes("-2015") || authErr.name === "AuthenticationError") {
-          console.error("❌ LỖI BINANCE: API Key không hợp lệ hoặc chưa bật quyền 'Enable Futures'!");
-          await sendTelegram("⚠️ Lỗi API Binance: Vui lòng kiểm tra lại Key và quyền 'Enable Futures' trên sàn.");
-          setTimeout(traderLoop, 60000); 
-          return;
+      if (MT5_ENABLED) {
+        curr = await fetchMT5Balance();
+      } else if (ex) {
+        let bal;
+        try {
+          bal = await ex.fetchBalance();
+        } catch (authErr: any) {
+          if (authErr.message.includes("-2015") || authErr.name === "AuthenticationError") {
+            console.error("❌ LỖI BINANCE: API Key không hợp lệ hoặc chưa bật quyền 'Enable Futures'!");
+            await sendTelegram("⚠️ Lỗi API Binance: Vui lòng kiểm tra lại Key và quyền 'Enable Futures' trên sàn.");
+            setTimeout(traderLoop, 60000); 
+            return;
+          }
+          throw authErr;
         }
-        throw authErr;
+        curr = bal.USDT ? (bal.USDT as any).total : 0;
       }
-      curr = bal.USDT ? (bal.USDT as any).total : 0;
     } else {
       curr = paperBalance;
     }
@@ -578,11 +638,16 @@ async function traderLoop() {
     // 2. KIỂM TRA TRẠNG THÁI VỊ THẾ, LỆNH CHỜ VÀ COOLDOWN
     if (IS_LIVE_TRADING_ENABLED) {
       try {
-        const pos = await ex.fetchPositions([PAIR]);
-        botState.inPosition = pos.some(p => Math.abs(parseFloat(p.info.size || (p as any).contracts || 0)) > 0);
+        if (MT5_ENABLED) {
+          const pos = await fetchMT5Positions(PAIR);
+          botState.inPosition = pos.length > 0;
+        } else if (ex) {
+          const pos = await ex.fetchPositions([PAIR]);
+          botState.inPosition = pos.some(p => Math.abs(parseFloat(p.info.size || (p as any).contracts || 0)) > 0);
+        }
       } catch (authErr: any) {
         if (authErr.message.includes("-2015") || authErr.name === "AuthenticationError") {
-          console.error("❌ LỖI BINANCE POSITIONS: API Key không hợp lệ hoặc thiếu quyền!");
+          console.error("❌ LỖI LIVE POSITIONS: API Key không hợp lệ hoặc thiếu quyền!");
           botState.inPosition = false; // Mặc định false nếu không check được
         } else {
           throw authErr;

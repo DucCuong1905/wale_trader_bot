@@ -35,7 +35,7 @@ function getCleanEnv(key: string) {
 }
 
 const aiString = getCleanEnv("GEMINI_API_KEY");
-const ai = new GoogleGenAI({ apiKey: aiString });
+const ai = (aiString && aiString !== "MY_GEMINI_API_KEY") ? new GoogleGenAI({ apiKey: aiString }) : null;
 const modelName = "gemini-2.0-flash";
 
 const PAIR = "BTC/USDT";
