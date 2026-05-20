@@ -436,11 +436,16 @@ export async function runBacktest(
     for (let i = 0; i < retries; i++) {
       if (shouldStopBacktest) return [];
       try {
-        return await ex.fetchOHLCV(symbol, tf, sinceVal, limit);
+        const data = await ex.fetchOHLCV(symbol, tf, sinceVal, limit);
+        console.log(`[BACKTEST FETCH] Lấy thành công ${data.length} nến (${tf}) từ Binance cho cặp ${symbol}`);
+        return data;
       } catch (e: any) {
-        if (i === retries - 1) throw e;
+        if (i === retries - 1) {
+          console.error(`[BACKTEST FETCH] ❌ Lỗi lấy nến (${tf}) cho cặp ${symbol} sau ${retries} lần thử: ${e.message}`);
+          throw e;
+        }
         const delay = Math.pow(2, i) * 2000;
-        console.warn(`[CCXT BACKTEST] Fetch failed (attempt ${i + 1}/${retries}). Retrying in ${delay}ms... Error: ${e.message}`);
+        console.warn(`[BACKTEST FETCH] Lấy nến thất bại (lần thử ${i + 1}/${retries}). Thử lại sau ${delay}ms... Lỗi: ${e.message}`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
