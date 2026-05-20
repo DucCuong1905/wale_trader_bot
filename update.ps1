@@ -1,5 +1,6 @@
 # --- FIX FONT CHỮ TIẾNG VIỆT TRÊN POWERSHELL ---
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [Console]::InputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+chcp 65001 | Out-Null
 
 # --- CẤU HÌNH ---
 $APP_NAME = "whale"
@@ -35,7 +36,7 @@ if (!(Test-Path "server.ts")) {
 # 6. Khởi động lại Bot bằng PM2
 Write-Host "🔄 Đang khởi động lại Bot bằng PM2..." -ForegroundColor Cyan
 pm2 flush
-pm2 start "npm start" --name "$APP_NAME"
+pm2 start dist/server.cjs --name "$APP_NAME"
 
 # 7. Lưu cấu hình PM2
 pm2 save
