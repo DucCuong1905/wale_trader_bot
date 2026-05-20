@@ -262,10 +262,12 @@ async function fetchMT5OHLCV(symbol: string, timeframe: string, limit: number): 
     const res = await fetch(`${MT5_BRIDGE_URL}/candles?symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}&limit=${limit}`);
     const result = await res.json() as any;
     if (result && result.status === "success" && Array.isArray(result.data)) {
+      console.log(`[MT5 BRIDGE] Lấy thành công ${result.data.length} nến (${timeframe}) cho ${symbol}`);
       return result.data;
     }
     throw new Error(result?.message || "Định dạng dữ liệu nến MT5 không hợp lệ");
   } catch (err: any) {
+    console.error(`[MT5 BRIDGE] Lỗi lấy nến (${timeframe}) cho ${symbol}: ${err.message}`);
     throw new Error(`Không thể lấy nến từ MT5 Bridge tại ${MT5_BRIDGE_URL}: ${err.message}`);
   }
 }
