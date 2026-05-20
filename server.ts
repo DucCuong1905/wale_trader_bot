@@ -526,7 +526,7 @@ async function traderLoop() {
     let bars5m: any[] = [];
     let bars1d: any[] = [];
     try {
-      bars = await fetchOHLCVWithRetry(ex, PAIR, TIMEFRAME, undefined, 100);
+      bars = await fetchOHLCVWithRetry(ex, PAIR, TIMEFRAME, undefined, 1000);
       bars5m = await fetchOHLCVWithRetry(ex, PAIR, "5m", undefined, 100);
       bars1d = await fetchOHLCVWithRetry(ex, PAIR, "1d", undefined, 100);
     } catch (ohlcvErr: any) {
@@ -633,7 +633,7 @@ async function traderLoop() {
       return; 
     }
 
-    // 3.1 CALCULATE MARKET REGIME
+    // 3.1 COMPUTE ROLLING SWEEP WINRATE OVER HISTORY
     const toCandle = (b: any): Candle => ({
       open: b[1],
       high: b[2],
@@ -645,49 +645,146 @@ async function traderLoop() {
     const m5Candles = bars5m.map(toCandle);
     const m1Candles = bars.map(toCandle);
 
-    const regimeData = calculateMarketRegime(m5Candles, m1Candles);
+    let sweepHistoryQueue: number[] = [];
+    let pendingSweeps: { type: "LONG" | "SHORT", entryPrice: number, sl: number, tp: number, triggerIndex: number }[] = [];
+
+    for (let idx = 100; idx < bars.length; idx++) {
+      const [, , barH, barL, barC] = bars[idx];
+      
+      // Resolve pending sweeps
+      for (let sIdx = pendingSweeps.length - 1; sIdx >= 0; sIdx--) {
+        const ps = pendingSweeps[sIdx];
+        let resolved = false;
+        let won = false;
+        
+        if (ps.type === "LONG") {
+          if (barL <= ps.sl && barH >= ps.tp) {
+            resolved = true;
+            won = false; // conservative loss
+          } else if (barL <= ps.sl) {
+            resolved = true;
+            won = false;
+          } else if (barH >= ps.tp) {
+            resolved = true;
+            won = true;
+          }
+        } else { // SHORT
+          if (barH >= ps.sl && barL <= ps.tp) {
+            resolved = true;
+            won = false; // conservative loss
+          } else if (barH >= ps.sl) {
+            resolved = true;
+            won = false;
+          } else if (barL <= ps.tp) {
+            resolved = true;
+            won = true;
+          }
+        }
+        
+        // Expired after 150 candles
+        if (!resolved && (idx - ps.triggerIndex >= 150)) {
+          resolved = true;
+          won = ps.type === "LONG" ? (barC >= ps.entryPrice) : (barC <= ps.entryPrice);
+        }
+        
+        if (resolved) {
+          sweepHistoryQueue.push(won ? 1 : 0);
+          if (sweepHistoryQueue.length > 12) {
+            sweepHistoryQueue.shift();
+          }
+          pendingSweeps.splice(sIdx, 1);
+        }
+      }
+
+      // If it's not the ticking candle (idx < bars.length - 1), we can detect new sweeps triggering
+      if (idx < bars.length - 1) {
+        const calcWindow = bars.slice(Math.max(0, idx - 100), idx + 1);
+        const sweep = detectWhaleSweep(calcWindow);
+        
+        let atrVal = 0;
+        if (calcWindow.length >= 15) {
+          let sum = 0;
+          for (let j = calcWindow.length - 14; j < calcWindow.length; j++) {
+            const c_curr = calcWindow[j];
+            const c_prev = calcWindow[j - 1];
+            const tr = Math.max(
+              c_curr[2] - c_curr[3],
+              Math.abs(c_curr[2] - c_prev[4]),
+              Math.abs(c_curr[3] - c_prev[4])
+            );
+            sum += tr;
+          }
+          atrVal = sum / 14;
+        }
+
+        const isNewSweepLong = sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm;
+        const isNewSweepShort = sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm;
+
+        const currentPriceVal = barC;
+        if (isNewSweepLong) {
+          const slPrice = sweep.low - atrVal * 0.2;
+          const riskAmt = Math.max(0.0001, Math.abs(currentPriceVal - slPrice));
+          const tpPrice = currentPriceVal + riskAmt * 1.5;
+          if (!pendingSweeps.some(ps => ps.triggerIndex === idx && ps.type === "LONG")) {
+            pendingSweeps.push({
+              type: "LONG",
+              entryPrice: currentPriceVal,
+              sl: slPrice,
+              tp: tpPrice,
+              triggerIndex: idx
+            });
+          }
+        } else if (isNewSweepShort) {
+          const slPrice = sweep.high + atrVal * 0.2;
+          const riskAmt = Math.max(0.0001, Math.abs(currentPriceVal - slPrice));
+          const tpPrice = currentPriceVal - riskAmt * 1.5;
+          if (!pendingSweeps.some(ps => ps.triggerIndex === idx && ps.type === "SHORT")) {
+            pendingSweeps.push({
+              type: "SHORT",
+              entryPrice: currentPriceVal,
+              sl: slPrice,
+              tp: tpPrice,
+              triggerIndex: idx
+            });
+          }
+        }
+      }
+    }
+
+    const rollingWinRate = sweepHistoryQueue.length > 0
+      ? (sweepHistoryQueue.reduce((a, b) => a + b, 0) / sweepHistoryQueue.length)
+      : 0.50;
+
+    let dynamicRiskMult = 0.5;
+    let isContinuationEnabled = false;
+    let regimeLabel = "NEUTRAL";
+
+    if (rollingWinRate > 0.55) {
+      dynamicRiskMult = 1.0;
+      isContinuationEnabled = true;
+      regimeLabel = "HIGH_WINRATE";
+    } else if (rollingWinRate < 0.45) {
+      dynamicRiskMult = 0.25;
+      isContinuationEnabled = false;
+      regimeLabel = "LOW_WINRATE";
+    } else {
+      dynamicRiskMult = 0.5;
+      isContinuationEnabled = false;
+      regimeLabel = "NEUTRAL";
+    }
+
+    const regimeData = {
+      tqs5m: 100,
+      tqs1m: 100,
+      totalScore: Number((rollingWinRate * 100).toFixed(1)),
+      regime: regimeLabel,
+      riskPercent: dynamicRiskMult
+    };
     botState.marketRegime = regimeData;
 
-    // --- REAL-TIME EFFICIENCY CALCULATION (3 nến thị trường mới nhất) ---
-    let currentEff = 1.0;
     let efficiencyLabel = "NEUTRAL";
-    let dynamicRiskMult = 1.0;
-
-    const currentWindow = bars.slice(-3);
-    if (currentWindow.length === 3) {
-        const c0 = currentWindow[2]; // Nến hiện tại
-        const c1 = currentWindow[1];
-        const c2 = currentWindow[0];
-
-        const [,, h0, l0, c0c, , o0] = c0;
-        
-        // 1. Net Move của nến gần nhất
-        const netMove = Math.abs(c0c - o0) / (h0 - l0 + 0.0001);
-        
-        // 2. Close Acceptance trong Window 3 nến
-        const maxH3 = Math.max(c0[2], c1[2], c2[2]);
-        const minL3 = Math.min(c0[3], c1[3], c2[3]);
-        const range3 = maxH3 - minL3 + 0.0001;
-        
-        // Giả định hướng dựa trên nến cuối
-        const isUp = c0c > o0;
-        const closeAcc = isUp ? (c0c - minL3) / range3 : (maxH3 - c0c) / range3;
-
-        // 3. Smoothness
-        const absMove3 = Math.abs(c0c - c2[1]);
-        const sumRange3 = (c0[2]-c0[3]) + (c1[2]-c1[3]) + (c2[2]-c2[3]);
-        const smoothness = absMove3 / (sumRange3 + 0.0001);
-
-        currentEff = (netMove + closeAcc + smoothness) / 3;
-
-        if (currentEff < 0.45) {
-            dynamicRiskMult = 0.5;
-            efficiencyLabel = "CHOPPY";
-        } else if (currentEff > 0.7) {
-            dynamicRiskMult = 1.5;
-            efficiencyLabel = "EXPANSION";
-        }
-    }
+    if (dynamicRiskMult === 1.0) efficiencyLabel = "EXPANSION";
+    else if (dynamicRiskMult === 0.25) efficiencyLabel = "CHOPPY";
 
     // 4. TÍNH TOÁN CÁC CHỈ BÁO KỸ THUẬT
     // --- Khung M1 ---
@@ -761,10 +858,8 @@ async function traderLoop() {
     const isAtrExpansion = (atrM1 > atrPrev) || (atrM1 > atrMA * 1.03);
 
     // LONG CONTINUATION V11 (Targeting 10-15 trades/month - Balanced)
-    const isContinuationLong = false;
-    /*
     const isContinuationLong = 
-      regimeData.totalScore >= 65 &&   
+      isContinuationEnabled &&   
       currentPrice > vwma5m &&
       currentPrice > vwapM1 &&
       slopeM1 > 0 &&
@@ -780,13 +875,10 @@ async function traderLoop() {
       bodySize > (atrM1 * 0.5) &&     
       bars[bars.length - 1][5] > volMA * 1.1 && 
       currentPrice > prevHigh;
-    */
 
     // SHORT CONTINUATION V11 (Targeting 10-15 trades/month - Balanced)
-    const isContinuationShort = false;
-    /*
     const isContinuationShort = 
-      regimeData.totalScore >= 65 &&
+      isContinuationEnabled &&
       currentPrice < vwma5m &&
       currentPrice < vwapM1 &&
       slopeM1 < 0 &&
@@ -802,7 +894,6 @@ async function traderLoop() {
       bodySize > (atrM1 * 0.5) &&
       bars[bars.length - 1][5] > volMA * 1.1 &&
       currentPrice < prevLow;
-    */
 
     // LONG ENTRY
     if (

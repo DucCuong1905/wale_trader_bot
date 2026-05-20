@@ -1,4 +1,7 @@
-# --- CẬU HÌNH ---
+# --- FIX FONT CHỮ TIẾNG VIỆT TRÊN POWERSHELL ---
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+# --- CẤU HÌNH ---
 $APP_NAME = "whale"
 
 Write-Host "------------------------------------------------" -ForegroundColor White

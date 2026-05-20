@@ -656,6 +656,9 @@ export async function runBacktest(
     return result;
   };
 
+  let sweepHistoryQueue: number[] = [];
+  let pendingSweeps: { type: "LONG" | "SHORT", entryPrice: number, sl: number, tp: number, triggerIndex: number }[] = [];
+
   for (let i = 100; i < allKlines.length; i++) {
     if (shouldStopBacktest) break;
     if (onProgress) onProgress(50 + ((i / allKlines.length) * 50));
@@ -673,25 +676,83 @@ export async function runBacktest(
     const bars5m = aggregateCandles(calcWindow5mRaw, 5);
     const vwma5m = calculateVWMA(bars5m, 20);
 
-    // --- MARKET REGIME FILTER (Optimize: Only calculate every 15 mins) ---
-    const shouldUpdateRegime = i % 15 === 0 || !results.marketRegime;
-    if (shouldUpdateRegime) {
-      const calcWindowDailyRaw = allKlines.slice(Math.max(0, i - 1440 * 100), i + 1);
-      const bars1d = aggregateCandles(calcWindowDailyRaw, 1440);
+    // --- 1. RESOLVE PENDING SWEEPS ON CURRENT BAR ---
+    const [, , barH, barL, barC] = allKlines[i];
+    for (let sIdx = pendingSweeps.length - 1; sIdx >= 0; sIdx--) {
+      const ps = pendingSweeps[sIdx];
+      let resolved = false;
+      let won = false;
       
-      const toCandle = (b: any): Candle => ({
-        open: b[1],
-        high: b[2],
-        low: b[3],
-        close: b[4],
-        volume: b[5]
-      });
-
-      const m5CandlesBacktest = bars5m.map(toCandle);
-      const m1Candles = allKlines.slice(Math.max(0, i - 100), i + 1).map(toCandle);
-      results.marketRegime = calculateMarketRegime(m5CandlesBacktest, m1Candles);
+      if (ps.type === "LONG") {
+        if (barL <= ps.sl && barH >= ps.tp) {
+          resolved = true;
+          won = false; // conservative loss
+        } else if (barL <= ps.sl) {
+          resolved = true;
+          won = false;
+        } else if (barH >= ps.tp) {
+          resolved = true;
+          won = true;
+        }
+      } else { // SHORT
+        if (barH >= ps.sl && barL <= ps.tp) {
+          resolved = true;
+          won = false; // conservative loss
+        } else if (barH >= ps.sl) {
+          resolved = true;
+          won = false;
+        } else if (barL <= ps.tp) {
+          resolved = true;
+          won = true;
+        }
+      }
+      
+      // Expired after 150 candles
+      if (!resolved && (i - ps.triggerIndex >= 150)) {
+        resolved = true;
+        won = ps.type === "LONG" ? (barC >= ps.entryPrice) : (barC <= ps.entryPrice);
+      }
+      
+      if (resolved) {
+        sweepHistoryQueue.push(won ? 1 : 0);
+        if (sweepHistoryQueue.length > 12) {
+          sweepHistoryQueue.shift();
+        }
+        pendingSweeps.splice(sIdx, 1);
+      }
     }
-    const regimeData = results.marketRegime!;
+
+    // --- 2. CALCULATE ROLLING WINRATE ---
+    const rollingWinRate = sweepHistoryQueue.length > 0
+      ? (sweepHistoryQueue.reduce((a, b) => a + b, 0) / sweepHistoryQueue.length)
+      : 0.50; // default to 50% if queue is empty
+
+    let dynamicRiskPctMultiplier = 0.5;
+    let isContinuationEnabled = false;
+    let regimeLabel = "NEUTRAL";
+
+    if (rollingWinRate > 0.55) {
+      dynamicRiskPctMultiplier = 1.0; // risk 1%
+      isContinuationEnabled = true;
+      regimeLabel = "HIGH_WINRATE";
+    } else if (rollingWinRate < 0.45) {
+      dynamicRiskPctMultiplier = 0.25; // risk 0.25%
+      isContinuationEnabled = false;
+      regimeLabel = "LOW_WINRATE";
+    } else {
+      dynamicRiskPctMultiplier = 0.5; // risk 0.5%
+      isContinuationEnabled = false;
+      regimeLabel = "NEUTRAL";
+    }
+
+    results.marketRegime = {
+      tqs5m: 100,
+      tqs1m: 100,
+      totalScore: Number((rollingWinRate * 100).toFixed(1)),
+      regime: regimeLabel,
+      riskPercent: dynamicRiskPctMultiplier
+    };
+    const regimeData = results.marketRegime;
 
     // --- KHUNG 1P (ENTRIES) ---
     const currentPrice = allKlines[i][4];
@@ -704,6 +765,39 @@ export async function runBacktest(
     const prevAdxM1 = calcADX(allKlines.slice(Math.max(0, i - 101), i));
     const sweep = detectSweep(calcWindow);
     const atrM1 = calculateATR(calcWindow, 14);
+
+    // Tracking/storing new sweep candidates
+    const isNewSweepLongAtBar = sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm;
+    const isNewSweepShortAtBar = sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm;
+
+    if (isNewSweepLongAtBar) {
+      const slPrice = sweep.low - atrM1 * 0.2;
+      const riskAmt = Math.max(0.0001, Math.abs(currentPrice - slPrice));
+      const tpPrice = currentPrice + riskAmt * 1.5;
+      if (!pendingSweeps.some(ps => ps.triggerIndex === i && ps.type === "LONG")) {
+        pendingSweeps.push({
+          type: "LONG",
+          entryPrice: currentPrice,
+          sl: slPrice,
+          tp: tpPrice,
+          triggerIndex: i
+        });
+      }
+    } else if (isNewSweepShortAtBar) {
+      const slPrice = sweep.high + atrM1 * 0.2;
+      const riskAmt = Math.max(0.0001, Math.abs(currentPrice - slPrice));
+      const tpPrice = currentPrice - riskAmt * 1.5;
+      if (!pendingSweeps.some(ps => ps.triggerIndex === i && ps.type === "SHORT")) {
+        pendingSweeps.push({
+          type: "SHORT",
+          entryPrice: currentPrice,
+          sl: slPrice,
+          tp: tpPrice,
+          triggerIndex: i
+        });
+      }
+    }
+
     const isInSession = isWithinSessions(allKlines[i][0]);
 
     const distFromVWMA = Math.abs(currentPrice - vwmaM1);
@@ -769,7 +863,6 @@ export async function runBacktest(
 
     // Detect mini compression (Overlap Count)
     let overlapCount = 0;
-    /*
     for (let j = 0; j < recent5.length - 1; j++) {
       const h1 = recent5[j][2];
       const l1 = recent5[j][3];
@@ -777,15 +870,12 @@ export async function runBacktest(
       const l2 = recent5[j+1][3];
       if (l1 <= h2 && h1 >= l2) overlapCount++;
     }
-    */
 
     const isAtrExpansion = (atrM1 > atrPrev) || (atrM1 > atrMA * 1.03);
 
     // LONG CONTINUATION V11 (Targeting 10-15 trades/month - Balanced)
-    const isContinuationLong = false;
-    /*
     const isContinuationLong = 
-      regimeData.totalScore >= 65 &&   
+      isContinuationEnabled &&   
       currentPrice > vwma5m &&
       currentPrice > vwapM1 &&
       slopeM1 > 0 &&
@@ -801,13 +891,10 @@ export async function runBacktest(
       bodySize > (atrM1 * 0.5) &&    
       allKlines[i][5] > volMA * 1.1 && 
       currentPrice > prevHigh;
-    */
 
     // SHORT CONTINUATION V11 (Targeting 10-15 trades/month - Balanced)
-    const isContinuationShort = false;
-    /*
     const isContinuationShort = 
-      regimeData.totalScore >= 65 &&
+      isContinuationEnabled &&
       currentPrice < vwma5m &&
       currentPrice < vwapM1 &&
       slopeM1 < 0 &&
@@ -823,7 +910,6 @@ export async function runBacktest(
       bodySize > (atrM1 * 0.5) &&
       allKlines[i][5] > volMA * 1.1 &&
       currentPrice < prevLow;
-    */
 
     // --- ENTRY DECISION (CONTINUATION & WHALE SWEEP) ---
     let isLong = (
@@ -873,16 +959,10 @@ export async function runBacktest(
           currentTradeEff = (netMoveScore + closeAccScore + smoothness) / 3;
       }
 
-      let dynamicRiskMult = 1.0;
+      let dynamicRiskMult = regimeData.riskPercent;
       let efficiencyLabel = "NEUTRAL";
-
-      if (currentTradeEff < 0.45) { // Ngưỡng choppy điều chỉnh cho real-time
-          dynamicRiskMult = 0.5;
-          efficiencyLabel = "CHOPPY";
-      } else if (currentTradeEff > 0.7) { // Ngưỡng expansion
-          dynamicRiskMult = 1.5;
-          efficiencyLabel = "EXPANSION";
-      }
+      if (dynamicRiskMult === 1.0) efficiencyLabel = "EXPANSION";
+      else if (dynamicRiskMult === 0.25) efficiencyLabel = "CHOPPY";
 
       const isContTrade = (type === "LONG" ? isContinuationLong : isContinuationShort);
       const currentRR = isContTrade ? 1.5 : 1.0;
