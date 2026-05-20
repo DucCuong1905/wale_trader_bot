@@ -17,6 +17,7 @@ def webhook():
     print(f"📥 Nhận tín hiệu từ webhook: {data}")
     
     symbol = data.get('symbol', 'XAUUSD')
+    mt5.symbol_select(symbol, True)
     signal_type = data.get('type')  # LONG/SHORT
     entry = data.get('entry')
     sl = data.get('sl')
@@ -64,6 +65,7 @@ def order_action():
     print(f"📥 Nhận tin từ API /order: {data}")
     
     symbol = data.get('symbol', 'XAUUSD')
+    mt5.symbol_select(symbol, True)
     type_str = data.get('type') # 'buy' hoặc 'sell'
     sl = data.get('sl')
     tp = data.get('tp')
@@ -105,6 +107,7 @@ def order_action():
 def get_candles():
     try:
         symbol = request.args.get('symbol', 'XAUUSD')
+        mt5.symbol_select(symbol, True)
         timeframe_str = request.args.get('timeframe', '1m')
         limit = int(request.args.get('limit', 1000))
 
@@ -183,6 +186,7 @@ def get_account_info():
 def get_positions():
     try:
         symbol = request.args.get('symbol', 'XAUUSD')
+        mt5.symbol_select(symbol, True)
         positions = mt5.positions_get(symbol=symbol)
         if positions is None:
             return jsonify({"status": "success", "positions": []})
