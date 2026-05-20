@@ -876,7 +876,7 @@ async function traderLoop() {
     // THÔNG BÁO KHI SẴN SÀNG
     if (!botState.isInitNotified) {
       botState.isInitNotified = true;
-      console.log(`🤖 WHALE BOT SẴN SÀNG! Regime: ${regimeData.regime} (TQS 5m: ${regimeData.tqs5m}, TQS 1m: ${regimeData.tqs1m}, Tổng: ${regimeData.totalScore})`);
+      console.log(`🤖 WHALE BOT SẴN SÀNG! Regime: ${regimeData.regime} (Tỷ lệ thắng lăn Sweep: ${regimeData.totalScore}%)`);
     }
 
     // lastCandle already defined at top
@@ -1032,10 +1032,16 @@ async function traderLoop() {
           `7. DI Power M1: ${sig === 'LONG' ? (adxM1.pDI > adxM1.mDI ? '✅ +DI > -DI' : '❌') : (adxM1.mDI > adxM1.pDI ? '✅ -DI > +DI' : '❌')}`
         ].join('\n');
 
+        const rollingWRPercent = (rollingWinRate * 100).toFixed(1);
+        const sweepQueueLength = sweepHistoryQueue.length;
+
         await sendTelegram(`🚀 [SIGNAL] **${sig}** Market Entry!\n\n` +
           `📊 **Thông số lệnh:**\n` +
           `🎯 Entry: ${e.toFixed(2)}\n` +
           `🛑 SL: ${sl.toFixed(2)} | 💎 TP: ${tp.toFixed(2)}\n\n` +
+          `📈 **Hiệu suất thực tế:**\n` +
+          `• Tỷ lệ thắng lăn (Rolling WR): **${rollingWRPercent}%** (Dựa trên ${sweepQueueLength} vị thế gần nhất)\n` +
+          `• Phân loại thị trường: **${regimeLabel}** (Risk mult: ${dynamicRiskMult}x)\n\n` +
           `📝 **Điều kiện:**\n${conditions}\n\n` +
           `⏰ Giờ VN: ${vnTime}`); 
 
@@ -1047,7 +1053,9 @@ async function traderLoop() {
           try {
             const res = await placeMT5Order(sig === 'LONG' ? 'buy' : 'sell', sl, tp, strategyLabel);
             if (res && !res.error && (res.retcode === 10009 || res.retcode === 10008)) {
-               sendTelegram(`🔥 **MT5 LIVE TRADE EXECUTED**\n• Cặp: ${PAIR}\n• Lệnh: ${sig}\n• Ticket: ${res.order}`);
+               const rollingWRPercent = (rollingWinRate * 100).toFixed(1);
+               const sweepQueueLength = sweepHistoryQueue.length;
+               sendTelegram(`🔥 **MT5 LIVE TRADE EXECUTED**\n• Cặp: ${PAIR}\n• Lệnh: ${sig}\n• Ticket: ${res.order}\n• Entry: ${e.toFixed(2)}\n• SL: ${sl.toFixed(2)} | TP: ${tp.toFixed(2)}\n• Tỷ lệ thắng lăn: **${rollingWRPercent}%** (${sweepQueueLength} vị thế Sweep gần nhất)\n• Regime: **${regimeLabel}**`);
             } else {
                sendTelegram(`⚠️ **MT5 ORDER FAILED**\nLỗi: ${res?.error || res?.retcode}`);
             }
@@ -1073,8 +1081,14 @@ async function traderLoop() {
               `7. DI Power M1: ${sig === 'LONG' ? (adxM1.pDI > adxM1.mDI ? '✅ +DI > -DI' : '❌') : (adxM1.mDI > adxM1.pDI ? '✅ -DI > +DI' : '❌')}`
             ].join('\n');
 
+            const rollingWRPercent = (rollingWinRate * 100).toFixed(1);
+            const sweepQueueLength = sweepHistoryQueue.length;
+
             await sendTelegram(`⚡ [SIGNAL] **${sig}** Market Order (Binance Live)!\n\n` +
               `📊 Entry: ${e.toFixed(2)} (Pure 1M Strategy)\n` +
+              `📈 **Hiệu suất thực tế:**\n` +
+              `• Tỷ lệ thắng lăn (Rolling WR): **${rollingWRPercent}%** (Dựa trên ${sweepQueueLength} vị thế gần nhất)\n` +
+              `• Phân loại thị trường: **${regimeLabel}** (Risk mult: ${dynamicRiskMult}x)\n\n` +
               `📝 **Điều kiện vào lệnh:**\n${conditions}\n` +
               `⏰ Giờ VN: ${vnTime}`);
           } catch (err: any) {
