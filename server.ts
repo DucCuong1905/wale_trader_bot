@@ -244,7 +244,7 @@ async function sendToMT5(type: "LONG" | "SHORT", entry: number, sl: number, tp: 
     });
     const result = await res.json() as any;
     if (result.status === "success") {
-       await sendTelegram(`🚀 **MT5 ORDER SUCCESS**\nPair: ${symbol}\nType: ${type}\nPrice: ${entry}\nOrder ID: ${result.order}`);
+       console.log(`[MT5] Webhook success: order executed on MT5 with ID ${result.order}`);
     } else {
        await sendTelegram(`⚠️ **MT5 ORDER FAILED**\nReason: ${result.message}`);
     }
