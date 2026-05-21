@@ -275,7 +275,8 @@ function detectSweep(bars: any[]) {
 
   const volumes = bars.slice(-21, -1).map(b => b[5]);
   const avgVol = volumes.reduce((a, b) => a + b, 0) / volumes.length;
-  const volConfirm = cV > avgVol;
+  const isConstantVol = volumes.length > 0 && volumes.every(v => v === volumes[0]);
+  const volConfirm = isConstantVol ? true : cV > avgVol;
 
   return {
     sweepLow,
@@ -863,6 +864,11 @@ export async function runBacktest(
   let debugTotalNewSweepsLong = 0;
   let debugTotalNewSweepsShort = 0;
   let debugPendingSweepsAdded = 0;
+  let debugSweepLowCount = 0;
+  let debugSweepHighCount = 0;
+  let debugDisplacementBullishCount = 0;
+  let debugDisplacementBearishCount = 0;
+  let debugVolConfirmCount = 0;
   const debugWhaleLongConditions = {
     isNewSweepLongAtBar: 0,
     isInSession: 0,
@@ -1015,6 +1021,11 @@ export async function runBacktest(
     if (sweep.sweepLow || sweep.sweepHigh) {
       debugTotalSweepsDetected++;
     }
+    if (sweep.sweepLow) debugSweepLowCount++;
+    if (sweep.sweepHigh) debugSweepHighCount++;
+    if (sweep.displacementBullish) debugDisplacementBullishCount++;
+    if (sweep.displacementBearish) debugDisplacementBearishCount++;
+    if (sweep.volConfirm) debugVolConfirmCount++;
 
     // Tracking/storing new sweep candidates
     const isNewSweepLongAtBar = sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm;
@@ -1496,7 +1507,8 @@ export async function runBacktest(
   console.log(`• Tổng số nến đã chạy: ${debugTotalCandles}`);
   console.log(`• Nến ngoài phiên giao dịch (Bị Bỏ qua): ${sessionSkippedCount} (${(sessionSkippedCount / (debugTotalCandles || 1) * 100).toFixed(1)}%)`);
   console.log(`• Nến trong phiên giao dịch (Được Quét): ${debugTotalCandles - sessionSkippedCount} (${((debugTotalCandles - sessionSkippedCount) / (debugTotalCandles || 1) * 100).toFixed(1)}%)`);
-  console.log(`• Tổng Sweep thô phát hiện (Low/High): ${debugTotalSweepsDetected}`);
+  console.log(`• Tổng Sweep thô phát hiện (Low/High): ${debugTotalSweepsDetected} (sweepLow: ${debugSweepLowCount}, sweepHigh: ${debugSweepHighCount})`);
+  console.log(`• Thống kê điều kiện mượt & Vol lớn: displacementBullish: ${debugDisplacementBullishCount}, displacementBearish: ${debugDisplacementBearishCount}, volConfirm: ${debugVolConfirmCount}`);
   console.log(`• Tổng Sweep có lực bật mượt & Vol lớn (Long): ${debugTotalNewSweepsLong}`);
   console.log(`• Tổng Sweep có lực bật mượt & Vol lớn (Short): ${debugTotalNewSweepsShort}`);
   console.log(`• Tổng Sweep được thêm thành công vào Queue tính Winrate (Pending): ${debugPendingSweepsAdded}`);

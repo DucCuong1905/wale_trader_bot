@@ -55,10 +55,16 @@ async function main() {
       timeframe,
       enableSessionFilter,
       20, // VWMA Period
-      (p) => {
-        // Cập nhật phần trăm tiến độ
-        process.stdout.write(`⏳ Tiến độ backtest: ${p.toFixed(1)}%\r`);
-      },
+      (() => {
+        let lastPrinted = -1;
+        return (p) => {
+          const rounded = Math.floor(p / 5) * 5;
+          if (rounded !== lastPrinted) {
+            console.log(`⏳ Tiến độ backtest: ${rounded}%`);
+            lastPrinted = rounded;
+          }
+        };
+      })(),
       adxThreshold,
       enableWhaleSweep
     );

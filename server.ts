@@ -456,7 +456,8 @@ function detectWhaleSweep(bars: any[]) {
   // 4. VOLUME CONFIRM (Standard)
   const volumes = bars.slice(-21, -1).map(b => b[5]);
   const avgVol = volumes.reduce((a, b) => a + b, 0) / volumes.length;
-  const volConfirm = cV > avgVol;
+  const isConstantVol = volumes.length > 0 && volumes.every(v => v === volumes[0]);
+  const volConfirm = isConstantVol ? true : cV > avgVol;
 
   return {
     sweepLow,
