@@ -50,7 +50,7 @@ export default function App() {
   const [backtestRR, setBacktestRR] = useState(1.2);
   const [backtestADX, setBacktestADX] = useState(10);
   const [backtestTimeframe, setBacktestTimeframe] = useState('1m');
-  const [backtestSessionFilter, setBacktestSessionFilter] = useState(false);
+  const [backtestSessionFilter, setBacktestSessionFilter] = useState(true);
   const [backtestWhaleSweep, setBacktestWhaleSweep] = useState(true);
   const [vwmaPeriod, setVwmaPeriod] = useState(20);
 

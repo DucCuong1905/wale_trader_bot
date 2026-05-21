@@ -575,7 +575,7 @@ export async function runBacktest(
   endDate: string = END_DATE,
   rr: number = RR,
   timeframe: string = "1m",
-  enableSessionFilter: boolean = false,
+  enableSessionFilter: boolean = true,
   vwmaPeriod: number = 20, 
   onProgress?: (p: number) => void,
   adxThreshold: number = 10,
@@ -977,11 +977,13 @@ export async function runBacktest(
     const sweep = detectSweep(calcWindow);
     const atrM1 = calculateATR(calcWindow, 14);
 
+    const isInSession = isWithinSessions(allKlines[i][0]);
+
     // Tracking/storing new sweep candidates
     const isNewSweepLongAtBar = sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm;
     const isNewSweepShortAtBar = sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm;
 
-    if (isNewSweepLongAtBar) {
+    if (isNewSweepLongAtBar && isInSession) {
       const slPrice = sweep.low - atrM1 * 0.2;
       const riskAmt = Math.max(0.0001, Math.abs(currentPrice - slPrice));
       const tpPrice = currentPrice + riskAmt * rr;
@@ -994,7 +996,7 @@ export async function runBacktest(
           triggerIndex: i
         });
       }
-    } else if (isNewSweepShortAtBar) {
+    } else if (isNewSweepShortAtBar && isInSession) {
       const slPrice = sweep.high + atrM1 * 0.2;
       const riskAmt = Math.max(0.0001, Math.abs(currentPrice - slPrice));
       const tpPrice = currentPrice - riskAmt * rr;
@@ -1008,8 +1010,6 @@ export async function runBacktest(
         });
       }
     }
-
-    const isInSession = isWithinSessions(allKlines[i][0]);
 
     const distFromVWMA = Math.abs(currentPrice - vwmaM1);
     
@@ -1340,6 +1340,37 @@ export async function runBacktest(
     }
   }
 
+  // Đẩy tháng cuối cùng chưa lưu nếu kết thúc loop xuyên tháng
+  if (lastMonth !== -1 && (monthlyWins + monthlyLosses > 0 || monthlyContTrades > 0 || monthlyWhaleTrades > 0)) {
+    const totalMonthTrades = monthlyWins + monthlyLosses;
+    const monthWinRate = totalMonthTrades > 0 ? (monthlyWins / totalMonthTrades * 100) : 0;
+    
+    monthlySnapshots.push({
+      month: lastMonth + 1,
+      year: lastYear,
+      date: `Tháng ${lastMonth + 1}/${lastYear}`,
+      balance: results.finalBalance,
+      monthlyProfit: monthlyPnL,
+      monthlyProfitR: monthlyProfitR,
+      totalProfitR: results.totalProfitR,
+      winRate: monthWinRate.toFixed(1),
+      trades: totalMonthTrades,
+      wins: monthlyWins,
+      losses: monthlyLosses,
+      longTrades: monthlyLongTrades,
+      longWins: monthlyLongWins,
+      shortTrades: monthlyShortTrades,
+      shortWins: monthlyShortWins,
+      // Continuation stats for UI
+      continuationTrades: monthlyContTrades,
+      continuationWins: monthlyContWins,
+      continuationPnLR: monthlyContPnLR,
+      whaleTrades: monthlyWhaleTrades,
+      whaleWins: monthlyWhaleWins,
+      whalePnLR: monthlyWhalePnLR
+    });
+  }
+
   results.monthlySnapshots = monthlySnapshots;
   results.continuationTrades = continuationTrades;
   results.continuationWins = continuationWins;
@@ -1347,11 +1378,14 @@ export async function runBacktest(
   fs.writeFileSync(RESULTS_FILE, JSON.stringify(results, null, 2));
   console.log(`[DONE] Backtest complete. Results: ${RESULTS_FILE}`);
 
-  console.log("\n📈 --- THỐNG KÊ CHI TIẾT THEO REGIME ---");
-  Object.entries(results.regimeStats).forEach(([regime, stats]: [string, any]) => {
-    const wr = stats.trades > 0 ? ((stats.wins / stats.trades) * 100).toFixed(1) : "0";
-    console.log(`• ${regime}: ${stats.trades} trades | WR: ${wr}% | PnL: ${stats.pnlR.toFixed(1)}R`);
-  });
+  console.log("\n📅 --- THỐNG KÊ CHI TIẾT THEO TỪNG THÁNG ---");
+  if (results.monthlySnapshots && results.monthlySnapshots.length > 0) {
+    results.monthlySnapshots.forEach((m: any) => {
+      const wr = m.whaleTrades > 0 ? (m.whaleWins / m.whaleTrades * 100).toFixed(1) : "0.0";
+      const totalPnLR = m.whalePnLR + (m.continuationPnLR || 0);
+      console.log(`• ${m.date}: PnL: ${totalPnLR.toFixed(1)}R | Whale PnL: ${m.whalePnLR.toFixed(1)}R (WR: ${wr}%, ${m.whaleTrades} lđ) | Số dư: $${m.balance.toFixed(2)}`);
+    });
+  }
 
   if (continuationTrades > 0) {
     const contWR = ((continuationWins / continuationTrades) * 100).toFixed(1);
