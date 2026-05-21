@@ -31,6 +31,11 @@ def download_data():
 
     print("🟢 Đã kết nối thành công tới MetaTrader 5!")
 
+    # Đảm bảo Symbol được active trong Market Watch
+    if not mt2_select := mt5.symbol_select(SYMBOL, True):
+        print(f"⚠️ Không thể hiển thị Symbol '{SYMBOL}' trong Market Watch. Vui lòng kiểm tra lại tên Symbol chính xác trên sàn.")
+
+
     # Duyệt tải dữ liệu từ 2018 đến 2026
     current_year = datetime.now().year
     
