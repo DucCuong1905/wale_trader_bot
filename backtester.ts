@@ -857,6 +857,35 @@ export async function runBacktest(
   let continuationWins = 0;
   let continuationPnLR = 0;
 
+  // Diagnostics/Debug Tracking
+  let debugTotalCandles = 0;
+  let debugTotalSweepsDetected = 0;
+  let debugTotalNewSweepsLong = 0;
+  let debugTotalNewSweepsShort = 0;
+  let debugPendingSweepsAdded = 0;
+  const debugWhaleLongConditions = {
+    isNewSweepLongAtBar: 0,
+    isInSession: 0,
+    enableWhaleSweep: 0,
+    notOverExtendedLong: 0,
+    currentPrice_gt_vwma5m: 0,
+    currentPrice_gt_vwapM1: 0,
+    adx_ge_threshold: 0,
+    slope_gt_0: 0,
+    di_check: 0
+  };
+  const debugWhaleShortConditions = {
+    isNewSweepShortAtBar: 0,
+    isInSession: 0,
+    enableWhaleSweep: 0,
+    notOverExtendedShort: 0,
+    currentPrice_lt_vwma5m: 0,
+    currentPrice_lt_vwapM1: 0,
+    adx_ge_threshold: 0,
+    slope_lt_0: 0,
+    di_check: 0
+  };
+
   let sessionSkippedCount = 0;
   const isWithinSessions = (ts: number) => {
     if (!enableSessionFilter) return true;
@@ -978,43 +1007,76 @@ export async function runBacktest(
     const atrM1 = calculateATR(calcWindow, 14);
 
     const isInSession = isWithinSessions(allKlines[i][0]);
+    const distFromVWMA = Math.abs(currentPrice - vwmaM1);
+    const isOverExtendedLong = distFromVWMA > (atrM1 * 2);
+    const isOverExtendedShort = distFromVWMA > (atrM1 * 2);
+
+    debugTotalCandles++;
+    if (sweep.sweepLow || sweep.sweepHigh) {
+      debugTotalSweepsDetected++;
+    }
 
     // Tracking/storing new sweep candidates
     const isNewSweepLongAtBar = sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm;
     const isNewSweepShortAtBar = sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm;
 
-    if (isNewSweepLongAtBar && isInSession) {
-      const slPrice = sweep.low - atrM1 * 0.2;
-      const riskAmt = Math.max(0.0001, Math.abs(currentPrice - slPrice));
-      const tpPrice = currentPrice + riskAmt * rr;
-      if (!pendingSweeps.some(ps => ps.triggerIndex === i && ps.type === "LONG")) {
-        pendingSweeps.push({
-          type: "LONG",
-          entryPrice: currentPrice,
-          sl: slPrice,
-          tp: tpPrice,
-          triggerIndex: i
-        });
+    if (isNewSweepLongAtBar) {
+      debugTotalNewSweepsLong++;
+      debugWhaleLongConditions.isNewSweepLongAtBar++;
+      if (isInSession) debugWhaleLongConditions.isInSession++;
+      if (enableWhaleSweep) debugWhaleLongConditions.enableWhaleSweep++;
+      if (!isOverExtendedLong) debugWhaleLongConditions.notOverExtendedLong++;
+      if (currentPrice > vwma5m) debugWhaleLongConditions.currentPrice_gt_vwma5m++;
+      if (currentPrice > vwapM1) debugWhaleLongConditions.currentPrice_gt_vwapM1++;
+      if (adxM1.adx >= adxThreshold) debugWhaleLongConditions.adx_ge_threshold++;
+      if (slopeM1 > 0) debugWhaleLongConditions.slope_gt_0++;
+      if (adxM1.pDI > adxM1.mDI) debugWhaleLongConditions.di_check++;
+
+      if (isInSession) {
+        const slPrice = sweep.low - atrM1 * 0.2;
+        const riskAmt = Math.max(0.0001, Math.abs(currentPrice - slPrice));
+        const tpPrice = currentPrice + riskAmt * rr;
+        if (!pendingSweeps.some(ps => ps.triggerIndex === i && ps.type === "LONG")) {
+          pendingSweeps.push({
+            type: "LONG",
+            entryPrice: currentPrice,
+            sl: slPrice,
+            tp: tpPrice,
+            triggerIndex: i
+          });
+          debugPendingSweepsAdded++;
+        }
       }
-    } else if (isNewSweepShortAtBar && isInSession) {
-      const slPrice = sweep.high + atrM1 * 0.2;
-      const riskAmt = Math.max(0.0001, Math.abs(currentPrice - slPrice));
-      const tpPrice = currentPrice - riskAmt * rr;
-      if (!pendingSweeps.some(ps => ps.triggerIndex === i && ps.type === "SHORT")) {
-        pendingSweeps.push({
-          type: "SHORT",
-          entryPrice: currentPrice,
-          sl: slPrice,
-          tp: tpPrice,
-          triggerIndex: i
-        });
+    } else if (isNewSweepShortAtBar) {
+      debugTotalNewSweepsShort++;
+      debugWhaleShortConditions.isNewSweepShortAtBar++;
+      if (isInSession) debugWhaleShortConditions.isInSession++;
+      if (enableWhaleSweep) debugWhaleShortConditions.enableWhaleSweep++;
+      if (!isOverExtendedShort) debugWhaleShortConditions.notOverExtendedShort++;
+      if (currentPrice < vwma5m) debugWhaleShortConditions.currentPrice_lt_vwma5m++;
+      if (currentPrice < vwapM1) debugWhaleShortConditions.currentPrice_lt_vwapM1++;
+      if (adxM1.adx >= adxThreshold) debugWhaleShortConditions.adx_ge_threshold++;
+      if (slopeM1 < 0) debugWhaleShortConditions.slope_lt_0++;
+      if (adxM1.mDI > adxM1.pDI) debugWhaleShortConditions.di_check++;
+
+      if (isInSession) {
+        const slPrice = sweep.high + atrM1 * 0.2;
+        const riskAmt = Math.max(0.0001, Math.abs(currentPrice - slPrice));
+        const tpPrice = currentPrice - riskAmt * rr;
+        if (!pendingSweeps.some(ps => ps.triggerIndex === i && ps.type === "SHORT")) {
+          pendingSweeps.push({
+            type: "SHORT",
+            entryPrice: currentPrice,
+            sl: slPrice,
+            tp: tpPrice,
+            triggerIndex: i
+          });
+          debugPendingSweepsAdded++;
+        }
       }
     }
 
-    const distFromVWMA = Math.abs(currentPrice - vwmaM1);
-    
-    const isOverExtendedLong = distFromVWMA > (atrM1 * 2);
-    const isOverExtendedShort = distFromVWMA > (atrM1 * 2);
+
 
     // --- MONTHLY SNAPSHOT LOGIC ---
     const d = new Date(allKlines[i][0]);
@@ -1429,6 +1491,35 @@ export async function runBacktest(
   }
 
   await sendTelegramBacktest(teleMsg);
+
+  console.log("\n🔍 ==================== CHẨN ĐOÁN LỖI BACKTEST (DIAGNOSTICS) ====================");
+  console.log(`• Tổng số nến đã chạy: ${debugTotalCandles}`);
+  console.log(`• Nến ngoài phiên giao dịch (Bị Bỏ qua): ${sessionSkippedCount} (${(sessionSkippedCount / (debugTotalCandles || 1) * 100).toFixed(1)}%)`);
+  console.log(`• Nến trong phiên giao dịch (Được Quét): ${debugTotalCandles - sessionSkippedCount} (${((debugTotalCandles - sessionSkippedCount) / (debugTotalCandles || 1) * 100).toFixed(1)}%)`);
+  console.log(`• Tổng Sweep thô phát hiện (Low/High): ${debugTotalSweepsDetected}`);
+  console.log(`• Tổng Sweep có lực bật mượt & Vol lớn (Long): ${debugTotalNewSweepsLong}`);
+  console.log(`• Tổng Sweep có lực bật mượt & Vol lớn (Short): ${debugTotalNewSweepsShort}`);
+  console.log(`• Tổng Sweep được thêm thành công vào Queue tính Winrate (Pending): ${debugPendingSweepsAdded}`);
+  console.log(`\n📌 THỐNG KÊ CHI TIẾT ĐIỀU KIỆN LỆNH LONG (Dựa trên ${debugWhaleLongConditions.isNewSweepLongAtBar} nến tín hiệu thô):`);
+  console.log(`  [1] Nằm trong phiên giao dịch:              ${debugWhaleLongConditions.isInSession} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
+  console.log(`  [2] Bật Whale Sweep:                        ${debugWhaleLongConditions.enableWhaleSweep} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
+  console.log(`  [3] Biên độ giá không quá xa (Not Overextend): ${debugWhaleLongConditions.notOverExtendedLong} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
+  console.log(`  [4] Giá hiện tại > VWMA 5m:                 ${debugWhaleLongConditions.currentPrice_gt_vwma5m} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
+  console.log(`  [5] Giá hiện tại > VWAP 1m:                 ${debugWhaleLongConditions.currentPrice_gt_vwapM1} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
+  console.log(`  [6] Chỉ số ADX M1 >= Ngưỡng (${adxThreshold}):           ${debugWhaleLongConditions.adx_ge_threshold} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
+  console.log(`  [7] Đường dốc M1 có xu hướng đi lên (Slope):  ${debugWhaleLongConditions.slope_gt_0} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
+  console.log(`  [8] Chỉ số lực mua thắng (+DI > -DI):         ${debugWhaleLongConditions.di_check} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
+  
+  console.log(`\n📌 THỐNG KÊ CHI TIẾT ĐIỀU KIỆN LỆNH SHORT (Dựa trên ${debugWhaleShortConditions.isNewSweepShortAtBar} nến tín hiệu thô):`);
+  console.log(`  [1] Nằm trong phiên giao dịch:              ${debugWhaleShortConditions.isInSession} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
+  console.log(`  [2] Bật Whale Sweep:                        ${debugWhaleShortConditions.enableWhaleSweep} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
+  console.log(`  [3] Biên độ giá không quá xa (Not Overextend): ${debugWhaleShortConditions.notOverExtendedShort} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
+  console.log(`  [4] Giá hiện tại < VWMA 5m:                 ${debugWhaleShortConditions.currentPrice_lt_vwma5m} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
+  console.log(`  [5] Giá hiện tại < VWAP 1m:                 ${debugWhaleShortConditions.currentPrice_lt_vwapM1} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
+  console.log(`  [6] Chỉ số ADX M1 >= Ngưỡng (${adxThreshold}):           ${debugWhaleShortConditions.adx_ge_threshold} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
+  console.log(`  [7] Đường dốc M1 có xu hướng đi xuống (Slope):${debugWhaleShortConditions.slope_lt_0} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
+  console.log(`  [8] Chỉ số lực bán thắng (-DI > +DI):         ${debugWhaleShortConditions.di_check} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
+  console.log("===============================================================================\n");
 
   if (enableSessionFilter) {
     console.log(`[SESSION] Filtered out ${sessionSkippedCount} candles outside of 08:00 - 21:00 UTC.`);
