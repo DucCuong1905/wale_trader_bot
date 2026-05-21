@@ -30,6 +30,7 @@ const MAX_DAILY_LOSS = 0.06; // Giới hạn lỗ tối đa trong ngày (6%)
 // CẤU HÌNH PHIÊN GIAO DỊCH (LONDON & NEW YORK)
 let ENABLE_SESSION_FILTER = true; 
 let ENABLE_WHALE_SWEEP = true; 
+let ENABLE_CONTINUATION = false; // Tạm thời tắt chiến lược continuation theo yêu cầu
 const VWMA_PERIOD = 20; // Cố định VWMA 20
 let ADX_THRESHOLD = 10; // Ngưỡng ADX mặc định
 const SESSION_START_GMT = 8;  // 08:00 GMT (Mở phiên Âu)
@@ -835,7 +836,7 @@ async function traderLoop() {
 
     if (rollingWinRate > 0.55) {
       dynamicRiskMult = 1.0;
-      isContinuationEnabled = true;
+      isContinuationEnabled = ENABLE_CONTINUATION && true;
       regimeLabel = "HIGH_WINRATE";
     } else if (rollingWinRate < 0.45) {
       dynamicRiskMult = 0.25;

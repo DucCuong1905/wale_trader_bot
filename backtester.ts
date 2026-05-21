@@ -63,6 +63,7 @@ const RISK_PER_TRADE = 0.01; // 1%
 
 // CẤU HÌNH PHIÊN GIAO DỊCH
 const ENABLE_SESSION_FILTER = true;
+const ENABLE_CONTINUATION = false; // Tạm thời tắt chiến lược continuation theo yêu cầu
 const SESSION_START_GMT = 8;
 const SESSION_END_GMT = 21;
 
@@ -979,7 +980,7 @@ export async function runBacktest(
 
     if (rollingWinRate > 0.55) {
       dynamicRiskPctMultiplier = 1.0; // risk 1%
-      isContinuationEnabled = true;
+      isContinuationEnabled = ENABLE_CONTINUATION && true;
       regimeLabel = "HIGH_WINRATE";
     } else if (rollingWinRate < 0.45) {
       dynamicRiskPctMultiplier = 0.25; // risk 0.25%
