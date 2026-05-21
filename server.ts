@@ -262,7 +262,6 @@ async function fetchMT5OHLCV(symbol: string, timeframe: string, limit: number): 
     const res = await fetch(`${MT5_BRIDGE_URL}/candles?symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}&limit=${limit}`);
     const result = await res.json() as any;
     if (result && result.status === "success" && Array.isArray(result.data)) {
-      console.log(`[MT5 BRIDGE] Lấy thành công ${result.data.length} nến (${timeframe}) cho ${symbol}`);
       return result.data;
     }
     throw new Error(result?.message || "Định dạng dữ liệu nến MT5 không hợp lệ");
@@ -563,16 +562,21 @@ async function fetchOHLCVWithRetry(ex: ccxt.Exchange, symbol: string, timeframe:
   return [];
 }
 
+let waitingMsgLogged = false;
 /**
  * Vòng lặp chính của Bot: Kiểm tra nến, tín hiệu và thực hiện giao dịch.
  */
 async function traderLoop() {
   const ex = MT5_ENABLED ? null : getExchange(); 
   if (!MT5_ENABLED && !ex) { 
-    console.log("[INFO] Đang chờ cấu hình API Key để bắt đầu giao dịch...");
+    if (!waitingMsgLogged) {
+      console.log("[INFO] Đang chờ cấu hình API Key để bắt đầu giao dịch...");
+      waitingMsgLogged = true;
+    }
     setTimeout(traderLoop, 15000); 
     return; 
   }
+  waitingMsgLogged = false;
 
   try {
     // 0. LẤY DỮ LIỆU NẾN TRƯỚC HẾT

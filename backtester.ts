@@ -53,7 +53,8 @@ function getCleanEnv(key: string) {
   return val.trim().replace(/^["']|["']$/g, "").trim();
 }
 
-const PAIR = "BTC/USDT";
+const MT5_ENABLED = getCleanEnv("MT5_ENABLED") === "true";
+const PAIR = MT5_ENABLED ? (getCleanEnv("MT5_SYMBOL") || "XAUUSD") : "BTC/USDT";
 const START_DATE = "2024-01-01T00:00:00Z"; 
 const END_DATE = "2026-01-01T00:00:00Z";
 const RR = 1.2; 
@@ -408,6 +409,161 @@ async function sendTelegramBacktest(message: string) {
 
 // --- MAIN RUNNER ---
 
+function aggregateCandlesByTime(oneMinBars: any[], timeframeStr: string): any[] {
+  const isMinute = timeframeStr.endsWith("m");
+  const isHour = timeframeStr.endsWith("h");
+  const isDay = timeframeStr.endsWith("d") || timeframeStr.endsWith("D");
+  
+  let windowMinutes = 1;
+  if (isMinute) {
+    windowMinutes = parseInt(timeframeStr) || 1;
+  } else if (isHour) {
+    windowMinutes = (parseInt(timeframeStr) || 1) * 60;
+  } else if (isDay) {
+    windowMinutes = (parseInt(timeframeStr) || 1) * 1440;
+  }
+  
+  if (windowMinutes <= 1) {
+    return oneMinBars;
+  }
+
+  const intervalMs = windowMinutes * 60 * 1000;
+  const groups = new Map<number, any[]>();
+  
+  for (const bar of oneMinBars) {
+    const openTime = Math.floor(bar[0] / intervalMs) * intervalMs;
+    let list = groups.get(openTime);
+    if (!list) {
+      list = [];
+      groups.set(openTime, list);
+    }
+    list.push(bar);
+  }
+  
+  const aggregated: any[] = [];
+  const sortedKeys = Array.from(groups.keys()).sort((a, b) => a - b);
+  
+  for (const openTime of sortedKeys) {
+    const slice = groups.get(openTime)!;
+    aggregated.push([
+      openTime,
+      slice[0][1], // Open
+      Math.max(...slice.map(b => b[2])), // High
+      Math.min(...slice.map(b => b[3])), // Low
+      slice[slice.length - 1][4], // Close
+      slice.reduce((acc, b) => acc + b[5], 0) // Volume
+    ]);
+  }
+  return aggregated;
+}
+
+function tryLoadFromXauCsv(startDate: string, endDate: string, timeframe: string): any[] | null {
+  try {
+    const startYear = new Date(startDate).getUTCFullYear();
+    const endYear = new Date(endDate).getUTCFullYear();
+    
+    const candles: any[] = [];
+    let loadedAny = false;
+    
+    for (let year = startYear; year <= endYear; year++) {
+      const pathsToTry = [
+        `C:/xau_data/${year}.csv`,
+        `C:\\xau_data\\${year}.csv`,
+        path.join(process.cwd(), "data", `xau_data_${year}.csv`)
+      ];
+      
+      let filePath = "";
+      for (const p of pathsToTry) {
+        if (fs.existsSync(p)) {
+          filePath = p;
+          break;
+        }
+      }
+      
+      if (!filePath) {
+        continue;
+      }
+      
+      console.log(`[CSV LOAD] 📂 Phát hiện file CSV dữ liệu vàng: ${filePath}`);
+      const content = fs.readFileSync(filePath, "utf-8");
+      const lines = content.split(/\r?\n/);
+      if (lines.length < 2) continue;
+      
+      const header = lines[0].toLowerCase().split(",");
+      const timeIdx = header.indexOf("time");
+      const openIdx = header.indexOf("open");
+      const highIdx = header.indexOf("high");
+      const lowIdx = header.indexOf("low");
+      const closeIdx = header.indexOf("close");
+      
+      let volIdx = header.indexOf("tick_volume");
+      if (volIdx === -1) volIdx = header.indexOf("volume");
+      if (volIdx === -1) volIdx = header.indexOf("real_volume");
+      
+      if (timeIdx === -1 || openIdx === -1 || highIdx === -1 || lowIdx === -1 || closeIdx === -1) {
+        console.error(`[CSV LOAD] ❌ Header không hợp lệ trong file ${filePath}`);
+        continue;
+      }
+      
+      let yearCandlesCount = 0;
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        
+        const cols = line.split(",");
+        if (cols.length < 5) continue;
+        
+        const timeStr = cols[timeIdx];
+        const timestamp = new Date(timeStr).getTime();
+        if (isNaN(timestamp)) continue;
+        
+        const open = parseFloat(cols[openIdx]);
+        const high = parseFloat(cols[highIdx]);
+        const low = parseFloat(cols[lowIdx]);
+        const close = parseFloat(cols[closeIdx]);
+        const vol = volIdx !== -1 ? parseFloat(cols[volIdx]) || 1 : 1;
+        
+        if (isNaN(open) || isNaN(high) || isNaN(low) || isNaN(close)) continue;
+        
+        candles.push([
+          timestamp,
+          open,
+          high,
+          low,
+          close,
+          vol
+        ]);
+        yearCandlesCount++;
+      }
+      
+      console.log(`[CSV LOAD] ✅ Đã tải thành công ${yearCandlesCount} nến M1 từ ${filePath}`);
+      loadedAny = true;
+    }
+    
+    if (!loadedAny || candles.length === 0) {
+      return null;
+    }
+    
+    candles.sort((a, b) => a[0] - b[0]);
+    
+    const startTs = new Date(startDate).getTime();
+    const endTs = new Date(endDate).getTime();
+    let filtered = candles.filter(k => k[0] >= startTs && k[0] <= endTs);
+    console.log(`[CSV LOAD] 📊 Tổng nến M1 nạp từ CSV: ${filtered.length} nến (Từ ${startDate} đến ${endDate})`);
+    
+    if (timeframe !== "1m") {
+      console.log(`[CSV LOAD] 🔄 Đang gộp nến từ M1 sang ${timeframe}...`);
+      filtered = aggregateCandlesByTime(filtered, timeframe);
+      console.log(`[CSV LOAD] 🔄 Sau khi gộp: còn lại ${filtered.length} nến ${timeframe}`);
+    }
+    
+    return filtered;
+  } catch (err: any) {
+    console.error("[CSV LOAD] ❌ Lỗi đọc dữ liệu CSV vàng:", err.message);
+    return null;
+  }
+}
+
 let shouldStopBacktest = false;
 
 export function stopBacktestExecution() {
@@ -456,6 +612,13 @@ export async function runBacktest(
   const startTs = exchange.parse8601(startDate);
   const endTs = exchange.parse8601(endDate);
 
+  // 1. CHỈNH SỬA THEO YÊU CẦU: ƯU TIÊN LOAD FILE CSV XAU_DATA TỪ VPS (C:/xau_data/{year}.csv)
+  const csvCandles = tryLoadFromXauCsv(startDate, endDate, timeframe);
+  if (csvCandles && csvCandles.length > 0) {
+    allKlines = csvCandles;
+    console.log(`[BACKTEST] 📈 SỬ DỤNG DỮ LIỆU VÀNG THỰC TẾ TỪ CSV KHÁCH HÀNG: ${allKlines.length} nến (${timeframe})`);
+  }
+
   // KIỂM TRA PHẠM VI ĐẶC BIỆT ĐỂ CACHE VĨNH VIỄN (Có nhận biết timeframe)
   const isSpecialRange = (startDate.startsWith("2026-01-01") && endDate.startsWith("2026-05-01"));
   const is2224Range = (startDate.startsWith("2022-01-01") && endDate.startsWith("2024-01-01"));
@@ -470,65 +633,67 @@ export async function runBacktest(
   const cache1820Path = getPredefinedCacheFile(CACHE_18_20_FILE, timeframe);
   const customCachePath = getCustomCacheFile(PAIR, timeframe, startDate, endDate);
 
-  if (isSpecialRange && fs.existsSync(specialCachePath)) {
-    try {
-      console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ VÀNG (2026-01-01 -> 2026-05-01) - Timeframe: ${timeframe}`);
-      console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE từ ổ đĩa: ${specialCachePath}`);
-      const rawData = fs.readFileSync(specialCachePath, "utf-8");
-      allKlines = JSON.parse(rawData);
-      console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
-    } catch (e) {
-      console.error("[BACKTEST] ❌ Lỗi khi đọc cache vĩnh viễn, sẽ fetch lại:", e);
-    }
-  } else if (is2022Range && fs.existsSync(cache2022Path)) {
-    try {
-      console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ 2020-2022 - Timeframe: ${timeframe}`);
-      console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE từ ổ đĩa: ${cache2022Path}`);
-      const rawData = fs.readFileSync(cache2022Path, "utf-8");
-      allKlines = JSON.parse(rawData);
-      console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
-    } catch (e) {
-      console.error("[BACKTEST] ❌ Lỗi khi đọc cache 2020-2022:", e);
-    }
-  } else if (is2224Range && fs.existsSync(cache2224Path)) {
-    try {
-      console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ 2022-2024 - Timeframe: ${timeframe}`);
-      console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE từ ổ đĩa: ${cache2224Path}`);
-      const rawData = fs.readFileSync(cache2224Path, "utf-8");
-      allKlines = JSON.parse(rawData);
-      console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
-    } catch (e) {
-      console.error("[BACKTEST] ❌ Lỗi khi đọc cache 22-24:", e);
-    }
-  } else if (is2426Range && fs.existsSync(cache2426Path)) {
-    try {
-      console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ 2024-2026 - Timeframe: ${timeframe}`);
-      console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE từ ổ đĩa: ${cache2426Path}`);
-      const rawData = fs.readFileSync(cache2426Path, "utf-8");
-      allKlines = JSON.parse(rawData);
-      console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
-    } catch (e) {
-      console.error("[BACKTEST] ❌ Lỗi khi đọc cache 24-26:", e);
-    }
-  } else if (is1820Range && fs.existsSync(cache1820Path)) {
-    try {
-      console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ 2018-2020 - Timeframe: ${timeframe}`);
-      console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE từ ổ đĩa: ${cache1820Path}`);
-      const rawData = fs.readFileSync(cache1820Path, "utf-8");
-      allKlines = JSON.parse(rawData);
-      console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
-    } catch (e) {
-      console.error("[BACKTEST] ❌ Lỗi khi đọc cache 18-20:", e);
-    }
-  } else if (fs.existsSync(customCachePath)) {
-    try {
-      console.log(`[BACKTEST] 💠 PHÁT HIỆN CÓ CACHE DỮ LIỆU PHÙ HỢP - Timeframe: ${timeframe}`);
-      console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE từ ổ đĩa: ${customCachePath}`);
-      const rawData = fs.readFileSync(customCachePath, "utf-8");
-      allKlines = JSON.parse(rawData);
-      console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
-    } catch (e) {
-      console.error("[BACKTEST] ❌ Lỗi khi đọc cache custom:", e);
+  if (allKlines.length === 0) {
+    if (isSpecialRange && fs.existsSync(specialCachePath)) {
+      try {
+        console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ VÀNG (2026-01-01 -> 2026-05-01) - Timeframe: ${timeframe}`);
+        console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE từ ổ đĩa: ${specialCachePath}`);
+        const rawData = fs.readFileSync(specialCachePath, "utf-8");
+        allKlines = JSON.parse(rawData);
+        console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
+      } catch (e) {
+        console.error("[BACKTEST] ❌ Lỗi khi đọc cache vĩnh viễn, sẽ fetch lại:", e);
+      }
+    } else if (is2022Range && fs.existsSync(cache2022Path)) {
+      try {
+        console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ 2020-2022 - Timeframe: ${timeframe}`);
+        console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE từ ổ đĩa: ${cache2022Path}`);
+        const rawData = fs.readFileSync(cache2022Path, "utf-8");
+        allKlines = JSON.parse(rawData);
+        console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
+      } catch (e) {
+        console.error("[BACKTEST] ❌ Lỗi khi đọc cache 2020-2022:", e);
+      }
+    } else if (is2224Range && fs.existsSync(cache2224Path)) {
+      try {
+        console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ 2022-2024 - Timeframe: ${timeframe}`);
+        console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE từ ổ đĩa: ${cache2224Path}`);
+        const rawData = fs.readFileSync(cache2224Path, "utf-8");
+        allKlines = JSON.parse(rawData);
+        console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
+      } catch (e) {
+        console.error("[BACKTEST] ❌ Lỗi khi đọc cache 22-24:", e);
+      }
+    } else if (is2426Range && fs.existsSync(cache2426Path)) {
+      try {
+        console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ 2024-2026 - Timeframe: ${timeframe}`);
+        console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE từ ổ đĩa: ${cache2426Path}`);
+        const rawData = fs.readFileSync(cache2426Path, "utf-8");
+        allKlines = JSON.parse(rawData);
+        console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
+      } catch (e) {
+        console.error("[BACKTEST] ❌ Lỗi khi đọc cache 24-26:", e);
+      }
+    } else if (is1820Range && fs.existsSync(cache1820Path)) {
+      try {
+        console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ 2018-2020 - Timeframe: ${timeframe}`);
+        console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE từ ổ đĩa: ${cache1820Path}`);
+        const rawData = fs.readFileSync(cache1820Path, "utf-8");
+        allKlines = JSON.parse(rawData);
+        console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
+      } catch (e) {
+        console.error("[BACKTEST] ❌ Lỗi khi đọc cache 18-20:", e);
+      }
+    } else if (fs.existsSync(customCachePath)) {
+      try {
+        console.log(`[BACKTEST] 💠 PHÁT HIỆN CÓ CACHE DỮ LIỆU PHÙ HỢP - Timeframe: ${timeframe}`);
+        console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE từ ổ đĩa: ${customCachePath}`);
+        const rawData = fs.readFileSync(customCachePath, "utf-8");
+        allKlines = JSON.parse(rawData);
+        console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
+      } catch (e) {
+        console.error("[BACKTEST] ❌ Lỗi khi đọc cache custom:", e);
+      }
     }
   }
 
