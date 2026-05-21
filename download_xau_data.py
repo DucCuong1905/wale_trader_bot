@@ -2,6 +2,7 @@ import MetaTrader5 as mt5
 import pandas as pd
 from datetime import datetime
 import os
+import time
 
 # ==========================================================
 # Cấu hình Symbol. Bạn có thể đổi sang "XAUUSD" nếu MT5 của bạn đặt tên như vậy.
@@ -31,22 +32,40 @@ def download_data():
     print("🟢 Đã kết nối thành công tới MetaTrader 5!")
 
     # Duyệt tải dữ liệu từ 2018 đến 2026
-    for year in range(2018, 2027):
-        print(f"\n⏳ Đang tải dữ liệu nến M1 năm {year}...")
+    current_year = datetime.now().year
+    
+    for year in range(2018, current_year + 1):
+        print(f"\n⏳ Đang yêu cầu tải dữ liệu nến M1 năm {year}...")
         
         start_date = datetime(year, 1, 1)
         end_date = datetime(year + 1, 1, 1)
 
-        # Trích xuất dữ liệu nến M1 từ MT5
-        rates = mt5.copy_rates_range(
-            SYMBOL,
-            mt5.TIMEFRAME_M1,
-            start_date,
-            end_date
-        )
+        rates = None
+        max_retries = 12  # Thử lại tối đa 12 lần (tổng cộng ~24-30 giây) để MT5 tải dữ liệu từ Broker
+        
+        for attempt in range(1, max_retries + 1):
+            rates = mt5.copy_rates_range(
+                SYMBOL,
+                mt5.TIMEFRAME_M1,
+                start_date,
+                end_date
+            )
+            
+            count = len(rates) if rates is not None else 0
+            
+            # Đối với các năm cũ (trước năm hiện tại), số nến M1 thực tế phải rất nhiều (> 5,000 nến)
+            # Nếu chỉ lấy được 1-2 nến, nghĩa là MT5 vẫn đang tải từ broker trong nền
+            is_insufficient = (year < current_year and count < 10000) or (year == current_year and count == 0)
+            
+            if not is_insufficient and rates is not None and len(rates) > 0:
+                print(f"   👉 [Lần thử {attempt}] Đã tải thành công {count:,} nến!")
+                break
+            else:
+                print(f"   ⚠️ [Lần thử {attempt}] MT5 phản hồi {count} nến. Đang chờ đồng bộ hóa dữ liệu từ Broker...")
+                time.sleep(2.5)
 
-        if rates is None or len(rates) == 0:
-            print(f"⚠️ Không có dữ liệu nến cho năm {year} (có thể MT5 chưa load kịp nến hoặc sai Symbol '{SYMBOL}').")
+        if rates is None or len(rates) <= 1:
+            print(f"❌ Không thể lấy dữ liệu nến thực tế cho năm {year} (Broker có thế không lưu lịch sử xa hoặc sai Symbol '{SYMBOL}').")
             continue
 
         # Chuyển đổi thành DataFrame để xử lý
@@ -60,10 +79,10 @@ def download_data():
 
         # Lưu DataFrame ra CSV (bao gồm đầy đủ: time, open, high, low, close, tick_volume, spread, real_volume)
         df.to_csv(file_path, index=False)
-        print(f"✅ Đã lưu thành công {len(df):,} nến nạp chuẩn vào: {file_path}")
+        print(f"✅ ĐÃ LƯU THÀNH CÔNG: {len(df):,} nến nạp chuẩn vào: {file_path}")
 
     mt5.shutdown()
-    print("\n🎉 HOÀN THÀNH TẢI DỮ LIỆU LỊCH SỬ VÀNG!")
+    print("\n🎉 HOÀN THÀNH TẢI DỮ LIỆU LỊCH SỬ VÀNG CHẤT LƯỢNG CAO!")
 
 if __name__ == "__main__":
     download_data()
