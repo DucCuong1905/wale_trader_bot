@@ -923,6 +923,25 @@ export async function runBacktest(
     const bars5m = aggregateCandles(calcWindow5mRaw, 5);
     const vwma5m = calculateVWMA(bars5m, 20);
 
+    // Chuẩn bị nến cho bộ lọc Market Regime
+    const m1Window = allKlines.slice(Math.max(0, i - 100), i + 1);
+    const m5CandlesObj = bars5m.map(b => ({
+      open: b[1],
+      high: b[2],
+      low: b[3],
+      close: b[4],
+      volume: b[5]
+    }));
+    const m1CandlesObj = m1Window.map(b => ({
+      open: b[1],
+      high: b[2],
+      low: b[3],
+      close: b[4],
+      volume: b[5]
+    }));
+
+    const realRegime = calculateMarketRegime(m5CandlesObj, m1CandlesObj);
+
     // --- 1. RESOLVE PENDING SWEEPS ON CURRENT BAR ---
     const [, , barH, barL, barC] = allKlines[i];
     for (let sIdx = pendingSweeps.length - 1; sIdx >= 0; sIdx--) {
@@ -969,34 +988,54 @@ export async function runBacktest(
       }
     }
 
-    // --- 2. CALCULATE ROLLING WINRATE ---
+    // --- 2. CALCULATE ROLLING WINRATE & TWO-LAYER SMART RISK ENGINE ---
     const rollingWinRate = sweepHistoryQueue.length > 0
       ? (sweepHistoryQueue.reduce((a, b) => a + b, 0) / sweepHistoryQueue.length)
       : 0.50; // default to 50% if queue is empty
 
-    let dynamicRiskPctMultiplier = 0.5;
+    let baseRiskPctMultiplier = 0.5;
     let isContinuationEnabled = false;
-    let regimeLabel = "NEUTRAL";
+    let baseRegimeLabel = "NEUTRAL";
 
     if (rollingWinRate > 0.55) {
-      dynamicRiskPctMultiplier = 1.0; // risk 1%
+      baseRiskPctMultiplier = 1.0; 
       isContinuationEnabled = ENABLE_CONTINUATION && true;
-      regimeLabel = "HIGH_WINRATE";
+      baseRegimeLabel = "HIGH_WINRATE";
     } else if (rollingWinRate < 0.45) {
-      dynamicRiskPctMultiplier = 0.25; // risk 0.25%
+      baseRiskPctMultiplier = 0.25; 
       isContinuationEnabled = false;
-      regimeLabel = "LOW_WINRATE";
+      baseRegimeLabel = "LOW_WINRATE";
     } else {
-      dynamicRiskPctMultiplier = 0.5; // risk 0.5%
+      baseRiskPctMultiplier = 0.5;
       isContinuationEnabled = false;
-      regimeLabel = "NEUTRAL";
+      baseRegimeLabel = "NEUTRAL";
     }
 
+    // TỐI ƯU HÓA HOÀN HẢO THEO ĐIỂM SỐ REGIME THỰC TẾ (TQS)
+    let marketFilterMultiplier = 1.0;
+    let finalRegimeLabel = "NEUTRAL";
+    
+    if (realRegime.totalScore < 43) {
+      marketFilterMultiplier = 0.05; // Giảm 95% rủi ro khi thị trường vào CHOPPY thực sự
+      finalRegimeLabel = "CHOPPY";
+    } else if (realRegime.totalScore > 58) {
+      marketFilterMultiplier = 1.0; // Vừng bùng nổ, rủi ro tối đa
+      finalRegimeLabel = "TREND_EXPANSION";
+    } else {
+      marketFilterMultiplier = 0.4; // Giảm 60% rủi ro khi thị trường trung tính lờ vờ
+      finalRegimeLabel = "NEUTRAL";
+    }
+
+    const dynamicRiskPctMultiplier = Number((baseRiskPctMultiplier * marketFilterMultiplier).toFixed(4));
+    
+    // Nếu điểm số TQS cực thấp (< 39.5) tịt luôn không cho vào lệnh để bảo vệ vốn
+    const isMarketTooChoppy = realRegime.totalScore < 39.5;
+
     results.marketRegime = {
-      tqs5m: 100,
-      tqs1m: 100,
-      totalScore: Number((rollingWinRate * 100).toFixed(1)),
-      regime: regimeLabel,
+      tqs5m: realRegime.tqs5m,
+      tqs1m: realRegime.tqs1m,
+      totalScore: realRegime.totalScore,
+      regime: finalRegimeLabel,
       riskPercent: dynamicRiskPctMultiplier
     };
     const regimeData = results.marketRegime;
@@ -1045,7 +1084,9 @@ export async function runBacktest(
       if (adxM1.pDI > adxM1.mDI) debugWhaleLongConditions.di_check++;
 
       if (isInSession) {
-        const slPrice = sweep.low - atrM1 * 0.2;
+        const slRaw = sweep.low - atrM1 * 0.6;
+        const minRisk = atrM1 * 1.2;
+        const slPrice = Math.min(slRaw, currentPrice - minRisk);
         const riskAmt = Math.max(0.0001, Math.abs(currentPrice - slPrice));
         const tpPrice = currentPrice + riskAmt * rr;
         if (!pendingSweeps.some(ps => ps.triggerIndex === i && ps.type === "LONG")) {
@@ -1072,7 +1113,9 @@ export async function runBacktest(
       if (adxM1.mDI > adxM1.pDI) debugWhaleShortConditions.di_check++;
 
       if (isInSession) {
-        const slPrice = sweep.high + atrM1 * 0.2;
+        const slRaw = sweep.high + atrM1 * 0.6;
+        const minRisk = atrM1 * 1.2;
+        const slPrice = Math.max(slRaw, currentPrice + minRisk);
         const riskAmt = Math.max(0.0001, Math.abs(currentPrice - slPrice));
         const tpPrice = currentPrice - riskAmt * rr;
         if (!pendingSweeps.some(ps => ps.triggerIndex === i && ps.type === "SHORT")) {
@@ -1197,12 +1240,12 @@ export async function runBacktest(
       currentPrice < prevLow;
 
     // --- ENTRY DECISION (CONTINUATION & WHALE SWEEP) ---
-    let isLong = (
+    let isLong = !isMarketTooChoppy && (
       (enableWhaleSweep && !isOverExtendedLong && currentPrice > vwma5m && currentPrice > vwapM1 && adxM1.adx >= adxThreshold && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI && isInSession) ||
       (regimeData.riskPercent > 0 && isContinuationLong && isInSession)
     );
 
-    let isShort = (
+    let isShort = !isMarketTooChoppy && (
       (enableWhaleSweep && !isOverExtendedShort && currentPrice < vwma5m && currentPrice < vwapM1 && adxM1.adx >= adxThreshold && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI && isInSession) ||
       (regimeData.riskPercent > 0 && isContinuationShort && isInSession)
     );
@@ -1246,8 +1289,13 @@ export async function runBacktest(
 
       let dynamicRiskMult = regimeData.riskPercent;
       let efficiencyLabel = "NEUTRAL";
-      if (dynamicRiskMult === 1.0) efficiencyLabel = "EXPANSION";
-      else if (dynamicRiskMult === 0.25) efficiencyLabel = "CHOPPY";
+      if (regimeData.regime === "CHOPPY") {
+        efficiencyLabel = "CHOPPY";
+      } else if (regimeData.regime === "TREND_EXPANSION") {
+        efficiencyLabel = "EXPANSION";
+      } else {
+        efficiencyLabel = "NEUTRAL";
+      }
 
       const isContTrade = (type === "LONG" ? isContinuationLong : isContinuationShort);
       const currentRR = rr;
@@ -1260,7 +1308,13 @@ export async function runBacktest(
       if (isContinuationLong || isContinuationShort) {
          sl = type === "LONG" ? (currentPrice - atrM1 * 1.5) : (currentPrice + atrM1 * 1.5);
       } else {
-         sl = type === "LONG" ? (sweep.low - atrM1 * 0.2) : (sweep.high + atrM1 * 0.2);
+         const slRaw = type === "LONG" ? (sweep.low - atrM1 * 0.6) : (sweep.high + atrM1 * 0.6);
+         const minRisk = atrM1 * 1.2;
+         if (type === "LONG") {
+           sl = Math.min(slRaw, currentPrice - minRisk);
+         } else {
+           sl = Math.max(slRaw, currentPrice + minRisk);
+         }
       }
       const risk = Math.abs(entryPrice - sl);
       const tp = type === "LONG" ? entryPrice + risk * rr : entryPrice - risk * rr;
