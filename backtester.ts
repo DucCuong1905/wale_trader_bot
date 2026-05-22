@@ -3,7 +3,6 @@ import * as ccxt from "ccxt";
 import fs from "fs";
 import path from "path";
 import dotenv from "dotenv";
-import { calculateMarketRegime, Candle } from "./regime.ts";
 
 dotenv.config();
 
@@ -904,7 +903,7 @@ export async function runBacktest(
   };
 
   let sweepHistoryQueue: number[] = [];
-  let pendingSweeps: { type: "LONG" | "SHORT", entryPrice: number, sl: number, tp: number, triggerIndex: number }[] = [];
+  let pendingSweeps: { type: "LONG" | "SHORT", entryPrice: number, sl: number, tp: number, triggerIndex: number, isBreakEven?: boolean }[] = [];
 
   for (let i = 100; i < allKlines.length; i++) {
     if (shouldStopBacktest) break;
@@ -922,25 +921,6 @@ export async function runBacktest(
     const calcWindow5mRaw = allKlines.slice(Math.max(0, i - 1500), i + 1);
     const bars5m = aggregateCandles(calcWindow5mRaw, 5);
     const vwma5m = calculateVWMA(bars5m, 20);
-
-    // Chuẩn bị nến cho bộ lọc Market Regime
-    const m1Window = allKlines.slice(Math.max(0, i - 100), i + 1);
-    const m5CandlesObj = bars5m.map(b => ({
-      open: b[1],
-      high: b[2],
-      low: b[3],
-      close: b[4],
-      volume: b[5]
-    }));
-    const m1CandlesObj = m1Window.map(b => ({
-      open: b[1],
-      high: b[2],
-      low: b[3],
-      close: b[4],
-      volume: b[5]
-    }));
-
-    const realRegime = calculateMarketRegime(m5CandlesObj, m1CandlesObj);
 
     // --- 1. RESOLVE PENDING SWEEPS ON CURRENT BAR ---
     const [, , barH, barL, barC] = allKlines[i];
@@ -973,6 +953,25 @@ export async function runBacktest(
         }
       }
       
+      // --- DỜI SL VỀ HUỀ VỐN (BREAK-EVEN) ---
+      // Nếu giá đi đúng hướng đạt 50% chặng đường tới TP, dời SL về huề vốn (entryPrice) để bảo vệ lệnh
+      if (!resolved && !ps.isBreakEven) {
+        const potentialProfit = Math.abs(ps.entryPrice - ps.tp);
+        if (ps.type === "LONG") {
+          const reachedTarget = ps.entryPrice + potentialProfit * 0.50;
+          if (barH >= reachedTarget) {
+            ps.sl = ps.entryPrice;
+            ps.isBreakEven = true;
+          }
+        } else {
+          const reachedTarget = ps.entryPrice - potentialProfit * 0.50;
+          if (barL <= reachedTarget) {
+            ps.sl = ps.entryPrice;
+            ps.isBreakEven = true;
+          }
+        }
+      }
+      
       // Expired after 150 candles
       if (!resolved && (i - ps.triggerIndex >= 150)) {
         resolved = true;
@@ -988,53 +987,33 @@ export async function runBacktest(
       }
     }
 
-    // --- 2. CALCULATE ROLLING WINRATE & TWO-LAYER SMART RISK ENGINE ---
+    // --- 2. CALCULATE ROLLING WINRATE & RISK ENGINE ---
     const rollingWinRate = sweepHistoryQueue.length > 0
       ? (sweepHistoryQueue.reduce((a, b) => a + b, 0) / sweepHistoryQueue.length)
       : 0.50; // default to 50% if queue is empty
 
-    let baseRiskPctMultiplier = 0.5;
+    let dynamicRiskPctMultiplier = 0.5;
     let isContinuationEnabled = false;
-    let baseRegimeLabel = "NEUTRAL";
+    let finalRegimeLabel = "NEUTRAL";
 
     if (rollingWinRate > 0.55) {
-      baseRiskPctMultiplier = 1.0; 
+      dynamicRiskPctMultiplier = 1.0; 
       isContinuationEnabled = ENABLE_CONTINUATION && true;
-      baseRegimeLabel = "HIGH_WINRATE";
-    } else if (rollingWinRate < 0.45) {
-      baseRiskPctMultiplier = 0.25; 
-      isContinuationEnabled = false;
-      baseRegimeLabel = "LOW_WINRATE";
-    } else {
-      baseRiskPctMultiplier = 0.5;
-      isContinuationEnabled = false;
-      baseRegimeLabel = "NEUTRAL";
-    }
-
-    // TỐI ƯU HÓA HOÀN HẢO THEO ĐIỂM SỐ REGIME THỰC TẾ (TQS)
-    let marketFilterMultiplier = 1.0;
-    let finalRegimeLabel = "NEUTRAL";
-    
-    if (realRegime.totalScore < 43) {
-      marketFilterMultiplier = 0.05; // Giảm 95% rủi ro khi thị trường vào CHOPPY thực sự
-      finalRegimeLabel = "CHOPPY";
-    } else if (realRegime.totalScore > 58) {
-      marketFilterMultiplier = 1.0; // Vừng bùng nổ, rủi ro tối đa
       finalRegimeLabel = "TREND_EXPANSION";
+    } else if (rollingWinRate < 0.45) {
+      dynamicRiskPctMultiplier = 0.15; // Giảm rủi ro xuống thấp để bảo toàn vốn khi chuỗi thua kéo dài
+      isContinuationEnabled = false;
+      finalRegimeLabel = "CHOPPY";
     } else {
-      marketFilterMultiplier = 0.4; // Giảm 60% rủi ro khi thị trường trung tính lờ vờ
+      dynamicRiskPctMultiplier = 0.5;
+      isContinuationEnabled = false;
       finalRegimeLabel = "NEUTRAL";
     }
 
-    const dynamicRiskPctMultiplier = Number((baseRiskPctMultiplier * marketFilterMultiplier).toFixed(4));
-    
-    // Nếu điểm số TQS cực thấp (< 39.5) tịt luôn không cho vào lệnh để bảo vệ vốn
-    const isMarketTooChoppy = realRegime.totalScore < 39.5;
+    const isMarketTooChoppy = false; // No TQS choppy boundary
 
     results.marketRegime = {
-      tqs5m: realRegime.tqs5m,
-      tqs1m: realRegime.tqs1m,
-      totalScore: realRegime.totalScore,
+      totalScore: Number((rollingWinRate * 100).toFixed(1)),
       regime: finalRegimeLabel,
       riskPercent: dynamicRiskPctMultiplier
     };

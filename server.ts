@@ -8,7 +8,6 @@ import * as ccxt from "ccxt";
 import WebSocket from "ws";
 import cors from "cors";
 import { runBacktest, stopBacktestExecution } from "./backtester.ts";
-import { calculateMarketRegime, Candle } from "./regime.ts";
 
 dotenv.config();
 
@@ -154,8 +153,6 @@ let botState = {
   efficiencyHistory: [1.5, 1.5, 1.5] as number[],
   efficiencyPending: [] as { entryPrice: number, type: "LONG" | "SHORT", candleCount: number }[],
   marketRegime: {
-    tqs5m: 0,
-    tqs1m: 0,
     totalScore: 0,
     regime: "NEUTRAL",
     riskPercent: 0.5
@@ -709,19 +706,8 @@ async function traderLoop() {
     }
 
     // 3.1 COMPUTE ROLLING SWEEP WINRATE OVER HISTORY
-    const toCandle = (b: any): Candle => ({
-      open: b[1],
-      high: b[2],
-      low: b[3],
-      close: b[4],
-      volume: b[5]
-    });
-
-    const m5Candles = bars5m.map(toCandle);
-    const m1Candles = bars.map(toCandle);
-
     let sweepHistoryQueue: number[] = [];
-    let pendingSweeps: { type: "LONG" | "SHORT", entryPrice: number, sl: number, tp: number, triggerIndex: number }[] = [];
+    let pendingSweeps: { type: "LONG" | "SHORT", entryPrice: number, sl: number, tp: number, triggerIndex: number, isBreakEven?: boolean }[] = [];
 
     for (let idx = 100; idx < bars.length; idx++) {
       const [, , barH, barL, barC] = bars[idx];
@@ -753,6 +739,25 @@ async function traderLoop() {
           } else if (barL <= ps.tp) {
             resolved = true;
             won = true;
+          }
+        }
+        
+        // --- DỜI SL VỀ HUỀ VỐN (BREAK-EVEN) ---
+        // Nếu giá đi đúng hướng đạt 50% chặng đường tới TP, dời SL về huề vốn (entryPrice) để bảo vệ lệnh
+        if (!resolved && !ps.isBreakEven) {
+          const potentialProfit = Math.abs(ps.entryPrice - ps.tp);
+          if (ps.type === "LONG") {
+            const reachedTarget = ps.entryPrice + potentialProfit * 0.50;
+            if (barH >= reachedTarget) {
+              ps.sl = ps.entryPrice;
+              ps.isBreakEven = true;
+            }
+          } else {
+            const reachedTarget = ps.entryPrice - potentialProfit * 0.50;
+            if (barL <= reachedTarget) {
+              ps.sl = ps.entryPrice;
+              ps.isBreakEven = true;
+            }
           }
         }
         
@@ -834,51 +839,29 @@ async function traderLoop() {
       ? (sweepHistoryQueue.reduce((a, b) => a + b, 0) / sweepHistoryQueue.length)
       : 0.50;
 
-    let baseRiskPctMultiplier = 0.5;
+    let dynamicRiskMult = 0.5;
     let isContinuationEnabled = false;
-    let baseRegimeLabel = "NEUTRAL";
+    let finalRegimeLabel = "NEUTRAL";
 
     if (rollingWinRate > 0.55) {
-      baseRiskPctMultiplier = 1.0;
+      dynamicRiskMult = 1.0;
       isContinuationEnabled = ENABLE_CONTINUATION && true;
-      baseRegimeLabel = "HIGH_WINRATE";
-    } else if (rollingWinRate < 0.45) {
-      baseRiskPctMultiplier = 0.25;
-      isContinuationEnabled = false;
-      baseRegimeLabel = "LOW_WINRATE";
-    } else {
-      baseRiskPctMultiplier = 0.5;
-      isContinuationEnabled = false;
-      baseRegimeLabel = "NEUTRAL";
-    }
-
-    const realRegime = calculateMarketRegime(m5Candles, m1Candles);
-
-    // TỐI ƯU HÓA HOÀN HẢO THEO ĐIỂM SỐ REGIME THỰC TẾ (TQS)
-    let marketFilterMultiplier = 1.0;
-    let finalRegimeLabel = "NEUTRAL";
-    
-    if (realRegime.totalScore < 43) {
-      marketFilterMultiplier = 0.05; // Giảm 95% rủi ro khi thị trường vào CHOPPY thực sự
-      finalRegimeLabel = "CHOPPY";
-    } else if (realRegime.totalScore > 58) {
-      marketFilterMultiplier = 1.0; // Vùng xu hướng bùng nổ
       finalRegimeLabel = "TREND_EXPANSION";
+    } else if (rollingWinRate < 0.45) {
+      dynamicRiskMult = 0.15; // Giảm rủi ro xuống thấp để bảo toàn vốn
+      isContinuationEnabled = false;
+      finalRegimeLabel = "CHOPPY";
     } else {
-      marketFilterMultiplier = 0.4; // Giảm 60% rủi ro khi thị trường lờ vờ đi ngang trung tính
+      dynamicRiskMult = 0.5;
+      isContinuationEnabled = false;
       finalRegimeLabel = "NEUTRAL";
     }
 
-    const dynamicRiskMult = Number((baseRiskPctMultiplier * marketFilterMultiplier).toFixed(4));
-    
-    // Nếu điểm số TQS cực thấp (< 39.5) tịt luôn không cho vào lệnh để bảo vệ vốn
-    const isMarketTooChoppy = realRegime.totalScore < 39.5;
+    const isMarketTooChoppy = false; // No TQS choppy boundary
     const regimeLabel = finalRegimeLabel;
 
     const regimeData = {
-      tqs5m: realRegime.tqs5m,
-      tqs1m: realRegime.tqs1m,
-      totalScore: realRegime.totalScore,
+      totalScore: Number((rollingWinRate * 100).toFixed(1)),
       regime: finalRegimeLabel,
       riskPercent: dynamicRiskMult
     };
