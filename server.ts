@@ -439,12 +439,11 @@ function detectWhaleSweep(bars: any[]) {
   const lowerWick = Math.min(sO, sC) - sL;
   const upperWick = sH - Math.max(sO, sC);
 
-  const atrM1 = calculateATR(bars, 14);
   const volumes = bars.slice(-21, -1).map(b => b[5]);
   const avgVol = volumes.reduce((a, b) => a + b, 0) / volumes.length;
 
-  const sweepLow = sL < localLow && sC > localLow && (lowerWick / sweepSize >= 0.45) && (sweepSize > atrM1 * 1.2) && (sV > avgVol * 1.4);
-  const sweepHigh = sH > localHigh && sC < localHigh && (upperWick / sweepSize >= 0.45) && (sweepSize > atrM1 * 1.2) && (sV > avgVol * 1.4);
+  const sweepLow = sL <= localLow && sC >= localLow && (lowerWick / sweepSize >= 0.35);
+  const sweepHigh = sH >= localHigh && sC <= localHigh && (upperWick / sweepSize >= 0.35);
 
   // 2. DISPLACEMENT & BODY SIZE
   const body = Math.abs(cC - cO);
