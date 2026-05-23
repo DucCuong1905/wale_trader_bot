@@ -7,10 +7,10 @@
   "shortTrades": 10,
   "shortWins": 3,
   "cancelledTrades": 0,
-  "totalPnL": -88.17212720845276,
-  "finalBalance": 4911.827872791546,
-  "totalFees": 218.56476483819037,
-  "totalSlippage": 87.42590593527615,
+  "totalPnL": 12.205615676282143,
+  "finalBalance": 5012.205615676282,
+  "totalFees": 743.0582558679504,
+  "totalSlippage": 297.2233023471802,
   "isLiquidated": false,
   "liquidationDate": null,
   "trades": [
@@ -26,8 +26,8 @@
       "estimatedSlippage": 12.36417464919658,
       "currentBalance": 4950,
       "reason": "TA Entry",
-      "regime": "TREND_EXPANSION",
-      "efficiency": "EXPANSION",
+      "regime": "NEUTRAL",
+      "efficiency": "NEUTRAL",
       "effValue": null,
       "riskPercent": 1
     },
@@ -43,8 +43,8 @@
       "estimatedSlippage": 19.209827985033392,
       "currentBalance": 4900.5,
       "reason": "TA Entry",
-      "regime": "TREND_EXPANSION",
-      "efficiency": "EXPANSION",
+      "regime": "NEUTRAL",
+      "efficiency": "NEUTRAL",
       "effValue": null,
       "riskPercent": 1
     },
@@ -55,15 +55,15 @@
       "exitPrice": 7435.675542857143,
       "status": "WIN",
       "pnlR": 1.1999999999999764,
-      "dollarPnL": 8.820899999999828,
-      "estimatedFee": 7.080862895094644,
-      "estimatedSlippage": 2.8323451580378576,
-      "currentBalance": 4909.3209,
+      "dollarPnL": 58.805999999998846,
+      "estimatedFee": 47.205752633964295,
+      "estimatedSlippage": 18.882301053585717,
+      "currentBalance": 4959.305999999999,
       "reason": "TA Entry",
-      "regime": "CHOPPY",
-      "efficiency": "CHOPPY",
+      "regime": "NEUTRAL",
+      "efficiency": "NEUTRAL",
       "effValue": null,
-      "riskPercent": 0.15
+      "riskPercent": 1
     },
     {
       "time": "2020-01-05T11:19:00.000Z",
@@ -72,15 +72,15 @@
       "exitPrice": 7435.445542857143,
       "status": "WIN",
       "pnlR": 1.199999999999982,
-      "dollarPnL": 8.836777619999866,
-      "estimatedFee": 5.41439349299974,
-      "estimatedSlippage": 2.1657573971998962,
-      "currentBalance": 4918.15767762,
+      "dollarPnL": 59.51167199999909,
+      "estimatedFee": 36.46347384651452,
+      "estimatedSlippage": 14.585389538605808,
+      "currentBalance": 5018.817671999997,
       "reason": "TA Entry",
-      "regime": "CHOPPY",
-      "efficiency": "CHOPPY",
+      "regime": "NEUTRAL",
+      "efficiency": "NEUTRAL",
       "effValue": null,
-      "riskPercent": 0.15
+      "riskPercent": 1
     },
     {
       "time": "2020-01-07T10:48:00.000Z",
@@ -89,15 +89,15 @@
       "exitPrice": 7888.265942857143,
       "status": "WIN",
       "pnlR": 1.200000000000024,
-      "dollarPnL": 8.852683819716177,
-      "estimatedFee": 7.660020861017833,
-      "estimatedSlippage": 3.0640083444071333,
-      "currentBalance": 4927.010361439716,
+      "dollarPnL": 60.22581206400117,
+      "estimatedFee": 52.111990688579574,
+      "estimatedSlippage": 20.84479627543183,
+      "currentBalance": 5079.043484063998,
       "reason": "TA Entry",
-      "regime": "CHOPPY",
-      "efficiency": "CHOPPY",
+      "regime": "NEUTRAL",
+      "efficiency": "NEUTRAL",
       "effValue": null,
-      "riskPercent": 0.15
+      "riskPercent": 1
     },
     {
       "time": "2020-01-09T11:28:00.000Z",
@@ -106,15 +106,15 @@
       "exitPrice": 7855.905085714286,
       "status": "WIN",
       "pnlR": 1.1999999999999882,
-      "dollarPnL": 8.8686186505914,
-      "estimatedFee": 3.7576632210554184,
-      "estimatedSlippage": 1.5030652884221676,
-      "currentBalance": 4935.878980090307,
+      "dollarPnL": 60.94852180876738,
+      "estimatedFee": 25.82409141735132,
+      "estimatedSlippage": 10.329636566940529,
+      "currentBalance": 5139.992005872766,
       "reason": "TA Entry",
-      "regime": "CHOPPY",
-      "efficiency": "CHOPPY",
+      "regime": "NEUTRAL",
+      "efficiency": "NEUTRAL",
       "effValue": null,
-      "riskPercent": 0.15
+      "riskPercent": 1
     },
     {
       "time": "2020-01-10T09:22:00.000Z",
@@ -123,15 +123,15 @@
       "exitPrice": 7745.978514285715,
       "status": "WIN",
       "pnlR": 1.2000000000000204,
-      "dollarPnL": 8.884582164162703,
-      "estimatedFee": 3.2012157836930597,
-      "estimatedSlippage": 1.280486313477224,
-      "currentBalance": 4944.763562254469,
+      "dollarPnL": 61.67990407047424,
+      "estimatedFee": 22.223969433646854,
+      "estimatedSlippage": 8.889587773458741,
+      "currentBalance": 5201.67190994324,
       "reason": "TA Entry",
-      "regime": "CHOPPY",
-      "efficiency": "CHOPPY",
+      "regime": "NEUTRAL",
+      "efficiency": "NEUTRAL",
       "effValue": null,
-      "riskPercent": 0.15
+      "riskPercent": 1
     },
     {
       "time": "2020-01-11T14:09:00.000Z",
@@ -140,15 +140,15 @@
       "exitPrice": 8116.2147428571425,
       "status": "WIN",
       "pnlR": 1.2000000000000197,
-      "dollarPnL": 29.668581373527303,
-      "estimatedFee": 10.809825672149117,
-      "estimatedSlippage": 4.323930268859646,
-      "currentBalance": 4974.432143627997,
+      "dollarPnL": 62.42006291931992,
+      "estimatedFee": 22.74291413220363,
+      "estimatedSlippage": 9.097165652881452,
+      "currentBalance": 5264.09197286256,
       "reason": "TA Entry",
       "regime": "NEUTRAL",
       "efficiency": "NEUTRAL",
       "effValue": null,
-      "riskPercent": 0.5
+      "riskPercent": 1
     },
     {
       "time": "2020-01-13T18:01:00.000Z",
@@ -157,15 +157,15 @@
       "exitPrice": 8102.784,
       "status": "LOSS",
       "pnlR": -1,
-      "dollarPnL": -24.872160718139984,
-      "estimatedFee": 17.930735992559356,
-      "estimatedSlippage": 7.172294397023743,
-      "currentBalance": 4949.559982909857,
+      "dollarPnL": -52.640919728625605,
+      "estimatedFee": 37.94967573408644,
+      "estimatedSlippage": 15.179870293634577,
+      "currentBalance": 5211.451053133935,
       "reason": "TA Entry",
       "regime": "NEUTRAL",
       "efficiency": "NEUTRAL",
       "effValue": null,
-      "riskPercent": 0.5
+      "riskPercent": 1
     },
     {
       "time": "2020-01-16T10:23:00.000Z",
@@ -174,15 +174,15 @@
       "exitPrice": 8657.002,
       "status": "LOSS",
       "pnlR": -1,
-      "dollarPnL": -24.747799914549287,
-      "estimatedFee": 6.56082189625679,
-      "estimatedSlippage": 2.624328758502716,
-      "currentBalance": 4924.812182995308,
+      "dollarPnL": -52.11451053133935,
+      "estimatedFee": 13.815936082694135,
+      "estimatedSlippage": 5.526374433077653,
+      "currentBalance": 5159.336542602596,
       "reason": "TA Entry",
       "regime": "NEUTRAL",
       "efficiency": "NEUTRAL",
       "effValue": null,
-      "riskPercent": 0.5
+      "riskPercent": 1
     },
     {
       "time": "2020-01-16T10:42:00.000Z",
@@ -191,15 +191,15 @@
       "exitPrice": 8685.787485714285,
       "status": "WIN",
       "pnlR": 1.2000000000000148,
-      "dollarPnL": 8.864661929391664,
-      "estimatedFee": 2.6031820505242145,
-      "estimatedSlippage": 1.041272820209686,
-      "currentBalance": 4933.676844924699,
+      "dollarPnL": 61.91203851123192,
+      "estimatedFee": 18.18098745869071,
+      "estimatedSlippage": 7.272394983476285,
+      "currentBalance": 5221.248581113828,
       "reason": "TA Entry",
-      "regime": "CHOPPY",
-      "efficiency": "CHOPPY",
+      "regime": "NEUTRAL",
+      "efficiency": "NEUTRAL",
       "effValue": null,
-      "riskPercent": 0.15
+      "riskPercent": 1
     },
     {
       "time": "2020-01-16T15:18:00.000Z",
@@ -208,15 +208,15 @@
       "exitPrice": 8724.403714285712,
       "status": "WIN",
       "pnlR": 1.200000000000015,
-      "dollarPnL": 8.88061832086457,
-      "estimatedFee": 2.660595062875564,
-      "estimatedSlippage": 1.0642380251502257,
-      "currentBalance": 4942.557463245564,
+      "dollarPnL": 62.65498297336672,
+      "estimatedFee": 18.77116348665045,
+      "estimatedSlippage": 7.50846539466018,
+      "currentBalance": 5283.903564087194,
       "reason": "TA Entry",
-      "regime": "CHOPPY",
-      "efficiency": "CHOPPY",
+      "regime": "NEUTRAL",
+      "efficiency": "NEUTRAL",
       "effValue": null,
-      "riskPercent": 0.15
+      "riskPercent": 1
     },
     {
       "time": "2020-01-17T12:02:00.000Z",
@@ -225,15 +225,15 @@
       "exitPrice": 8874.603714285715,
       "status": "WIN",
       "pnlR": 1.1999999999999869,
-      "dollarPnL": 8.896603433841918,
-      "estimatedFee": 2.3894414301490365,
-      "estimatedSlippage": 0.9557765720596146,
-      "currentBalance": 4951.4540666794055,
+      "dollarPnL": 63.40684276904563,
+      "estimatedFee": 17.029750532768954,
+      "estimatedSlippage": 6.811900213107582,
+      "currentBalance": 5347.31040685624,
       "reason": "TA Entry",
-      "regime": "CHOPPY",
-      "efficiency": "CHOPPY",
+      "regime": "NEUTRAL",
+      "efficiency": "NEUTRAL",
       "effValue": null,
-      "riskPercent": 0.15
+      "riskPercent": 1
     },
     {
       "time": "2020-01-17T16:42:00.000Z",
@@ -242,15 +242,15 @@
       "exitPrice": 8887.226428571428,
       "status": "LOSS",
       "pnlR": -1,
-      "dollarPnL": -7.427181100019109,
-      "estimatedFee": 1.588298898260682,
-      "estimatedSlippage": 0.6353195593042729,
-      "currentBalance": 4944.0268855793865,
+      "dollarPnL": -53.4731040685624,
+      "estimatedFee": 11.435196090540723,
+      "estimatedSlippage": 4.57407843621629,
+      "currentBalance": 5293.837302787678,
       "reason": "TA Entry",
-      "regime": "CHOPPY",
-      "efficiency": "CHOPPY",
+      "regime": "NEUTRAL",
+      "efficiency": "NEUTRAL",
       "effValue": null,
-      "riskPercent": 0.15
+      "riskPercent": 1
     },
     {
       "time": "2020-01-17T17:52:00.000Z",
@@ -259,15 +259,15 @@
       "exitPrice": 8905.400714285714,
       "status": "LOSS",
       "pnlR": -1,
-      "dollarPnL": -7.41604032836908,
-      "estimatedFee": 2.632109357838901,
-      "estimatedSlippage": 1.0528437431355604,
-      "currentBalance": 4936.610845251017,
+      "dollarPnL": -52.93837302787678,
+      "estimatedFee": 18.78894677829836,
+      "estimatedSlippage": 7.515578711319344,
+      "currentBalance": 5240.898929759801,
       "reason": "TA Entry",
-      "regime": "CHOPPY",
-      "efficiency": "CHOPPY",
+      "regime": "NEUTRAL",
+      "efficiency": "NEUTRAL",
       "effValue": null,
-      "riskPercent": 0.15
+      "riskPercent": 1
     },
     {
       "time": "2020-01-20T16:02:00.000Z",
@@ -276,15 +276,15 @@
       "exitPrice": 8704.086342857141,
       "status": "WIN",
       "pnlR": 1.2,
-      "dollarPnL": 8.88589952145183,
-      "estimatedFee": 4.26510676735311,
-      "estimatedSlippage": 1.706042706941244,
-      "currentBalance": 4945.496744772468,
+      "dollarPnL": 62.890787157117614,
+      "estimatedFee": 30.186693115359514,
+      "estimatedSlippage": 12.074677246143807,
+      "currentBalance": 5303.789716916918,
       "reason": "TA Entry",
-      "regime": "CHOPPY",
-      "efficiency": "CHOPPY",
+      "regime": "NEUTRAL",
+      "efficiency": "NEUTRAL",
       "effValue": null,
-      "riskPercent": 0.15
+      "riskPercent": 1
     },
     {
       "time": "2020-01-20T16:03:00.000Z",
@@ -293,15 +293,15 @@
       "exitPrice": 8668.714142857143,
       "status": "LOSS",
       "pnlR": -1,
-      "dollarPnL": -7.418245117158703,
-      "estimatedFee": 2.4046071222455763,
-      "estimatedSlippage": 0.9618428488982306,
-      "currentBalance": 4938.078499655309,
+      "dollarPnL": -53.037897169169185,
+      "estimatedFee": 17.192112591011362,
+      "estimatedSlippage": 6.8768450364045455,
+      "currentBalance": 5250.751819747749,
       "reason": "TA Entry",
-      "regime": "CHOPPY",
-      "efficiency": "CHOPPY",
+      "regime": "NEUTRAL",
+      "efficiency": "NEUTRAL",
       "effValue": null,
-      "riskPercent": 0.15
+      "riskPercent": 1
     },
     {
       "time": "2020-01-22T14:00:00.000Z",
@@ -310,15 +310,15 @@
       "exitPrice": 8650.507142857143,
       "status": "LOSS",
       "pnlR": -1,
-      "dollarPnL": -7.407117749482964,
-      "estimatedFee": 7.359992274484143,
-      "estimatedSlippage": 2.9439969097936576,
-      "currentBalance": 4930.671381905826,
+      "dollarPnL": -52.507518197477495,
+      "estimatedFee": 52.17345549998115,
+      "estimatedSlippage": 20.86938219999246,
+      "currentBalance": 5198.244301550272,
       "reason": "TA Entry",
-      "regime": "CHOPPY",
-      "efficiency": "CHOPPY",
+      "regime": "NEUTRAL",
+      "efficiency": "NEUTRAL",
       "effValue": null,
-      "riskPercent": 0.15
+      "riskPercent": 1
     },
     {
       "time": "2020-01-22T16:05:00.000Z",
@@ -327,15 +327,15 @@
       "exitPrice": 8649.201857142856,
       "status": "LOSS",
       "pnlR": -1,
-      "dollarPnL": -7.396007072858739,
-      "estimatedFee": 5.15454943500801,
-      "estimatedSlippage": 2.061819774003204,
-      "currentBalance": 4923.275374832967,
+      "dollarPnL": -51.982443015502724,
+      "estimatedFee": 36.22847701960457,
+      "estimatedSlippage": 14.491390807841826,
+      "currentBalance": 5146.261858534769,
       "reason": "TA Entry",
-      "regime": "CHOPPY",
-      "efficiency": "CHOPPY",
+      "regime": "NEUTRAL",
+      "efficiency": "NEUTRAL",
       "effValue": null,
-      "riskPercent": 0.15
+      "riskPercent": 1
     },
     {
       "time": "2020-01-23T08:11:00.000Z",
@@ -344,15 +344,15 @@
       "exitPrice": 8585.850142857144,
       "status": "LOSS",
       "pnlR": -1,
-      "dollarPnL": -7.38491306224945,
-      "estimatedFee": 3.2325231432014307,
-      "estimatedSlippage": 1.2930092572805723,
-      "currentBalance": 4915.890461770718,
+      "dollarPnL": -51.46261858534769,
+      "estimatedFee": 22.526210421793767,
+      "estimatedSlippage": 9.010484168717507,
+      "currentBalance": 5094.7992399494215,
       "reason": "TA Entry",
-      "regime": "CHOPPY",
-      "efficiency": "CHOPPY",
+      "regime": "NEUTRAL",
+      "efficiency": "NEUTRAL",
       "effValue": null,
-      "riskPercent": 0.15
+      "riskPercent": 1
     },
     {
       "time": "2020-01-25T11:23:00.000Z",
@@ -361,15 +361,15 @@
       "exitPrice": 8336.864428571429,
       "status": "LOSS",
       "pnlR": -1,
-      "dollarPnL": -7.373835692656076,
-      "estimatedFee": 4.5080318727220465,
-      "estimatedSlippage": 1.8032127490888188,
-      "currentBalance": 4908.516626078062,
+      "dollarPnL": -50.94799239949422,
+      "estimatedFee": 31.147313713114603,
+      "estimatedSlippage": 12.458925485245842,
+      "currentBalance": 5043.851247549927,
       "reason": "TA Entry",
-      "regime": "CHOPPY",
-      "efficiency": "CHOPPY",
+      "regime": "NEUTRAL",
+      "efficiency": "NEUTRAL",
       "effValue": null,
-      "riskPercent": 0.15
+      "riskPercent": 1
     },
     {
       "time": "2020-01-25T17:00:00.000Z",
@@ -378,15 +378,15 @@
       "exitPrice": 8350.233285714286,
       "status": "LOSS",
       "pnlR": -1,
-      "dollarPnL": -7.3627749391170925,
-      "estimatedFee": 5.064723417534236,
-      "estimatedSlippage": 2.025889367013695,
-      "currentBalance": 4901.153851138944,
+      "dollarPnL": -50.43851247549927,
+      "estimatedFee": 34.69576584815277,
+      "estimatedSlippage": 13.878306339261108,
+      "currentBalance": 4993.412735074428,
       "reason": "TA Entry",
-      "regime": "CHOPPY",
-      "efficiency": "CHOPPY",
+      "regime": "NEUTRAL",
+      "efficiency": "NEUTRAL",
       "effValue": null,
-      "riskPercent": 0.15
+      "riskPercent": 1
     },
     {
       "time": "2020-01-26T20:31:00.000Z",
@@ -395,15 +395,15 @@
       "exitPrice": 8594.445942857143,
       "status": "WIN",
       "pnlR": 1.2000000000000746,
-      "dollarPnL": 8.822076932050647,
-      "estimatedFee": 6.462775149236483,
-      "estimatedSlippage": 2.5851100596945935,
-      "currentBalance": 4909.975928070995,
+      "dollarPnL": 59.920952820896865,
+      "estimatedFee": 43.89619902344792,
+      "estimatedSlippage": 17.558479609379166,
+      "currentBalance": 5053.333687895325,
       "reason": "TA Entry",
-      "regime": "CHOPPY",
-      "efficiency": "CHOPPY",
+      "regime": "NEUTRAL",
+      "efficiency": "NEUTRAL",
       "effValue": null,
-      "riskPercent": 0.15
+      "riskPercent": 1
     },
     {
       "time": "2020-01-28T09:17:00.000Z",
@@ -412,15 +412,15 @@
       "exitPrice": 9006.372428571429,
       "status": "LOSS",
       "pnlR": -1,
-      "dollarPnL": -7.364963892106493,
-      "estimatedFee": 4.467718684893165,
-      "estimatedSlippage": 1.7870874739572662,
-      "currentBalance": 4902.610964178889,
+      "dollarPnL": -50.53333687895325,
+      "estimatedFee": 30.654425017082733,
+      "estimatedSlippage": 12.261770006833094,
+      "currentBalance": 5002.800351016372,
       "reason": "TA Entry",
-      "regime": "CHOPPY",
-      "efficiency": "CHOPPY",
+      "regime": "NEUTRAL",
+      "efficiency": "NEUTRAL",
       "effValue": null,
-      "riskPercent": 0.15
+      "riskPercent": 1
     },
     {
       "time": "2020-01-28T20:00:00.000Z",
@@ -429,13 +429,13 @@
       "exitPrice": 9107.998742857142,
       "status": "WIN",
       "pnlR": 1.2,
-      "dollarPnL": 58.831331570146666,
-      "estimatedFee": 9.355215203617348,
-      "estimatedSlippage": 3.7420860814469394,
-      "currentBalance": 4961.442295749036,
+      "dollarPnL": 60.033604212196465,
+      "estimatedFee": 9.546397673903382,
+      "estimatedSlippage": 3.818559069561353,
+      "currentBalance": 5062.833955228568,
       "reason": "TA Entry",
-      "regime": "TREND_EXPANSION",
-      "efficiency": "EXPANSION",
+      "regime": "NEUTRAL",
+      "efficiency": "NEUTRAL",
       "effValue": null,
       "riskPercent": 1
     },
@@ -446,13 +446,13 @@
       "exitPrice": 9316.544857142857,
       "status": "LOSS",
       "pnlR": -1,
-      "dollarPnL": -49.61442295749036,
-      "estimatedFee": 13.065348567845522,
-      "estimatedSlippage": 5.226139427138209,
-      "currentBalance": 4911.827872791546,
+      "dollarPnL": -50.62833955228568,
+      "estimatedFee": 13.332351042933745,
+      "estimatedSlippage": 5.332940417173498,
+      "currentBalance": 5012.205615676282,
       "reason": "TA Entry",
-      "regime": "TREND_EXPANSION",
-      "efficiency": "EXPANSION",
+      "regime": "NEUTRAL",
+      "efficiency": "NEUTRAL",
       "effValue": null,
       "riskPercent": 1
     }
@@ -467,8 +467,8 @@
       "month": 1,
       "year": 2020,
       "date": "Tháng 1/2020",
-      "balance": 4911.827872791546,
-      "monthlyProfit": -88.17212720845276,
+      "balance": 5012.205615676282,
+      "monthlyProfit": 12.205615676282143,
       "monthlyProfitR": 0.40000000000010205,
       "totalProfitR": 0.40000000000010205,
       "winRate": "46.2",
@@ -488,40 +488,40 @@
     }
   ],
   "marketRegime": {
-    "totalScore": 25,
-    "regime": "CHOPPY",
-    "riskPercent": 0.15
+    "totalScore": 33.3,
+    "regime": "NEUTRAL",
+    "riskPercent": 1
   },
   "continuationTrades": 0,
   "continuationWins": 0,
   "continuationPnLR": 0,
   "efficiencyStats": {
     "CHOPPY": {
-      "trades": 19,
-      "wins": 10,
-      "pnlR": 3.0000000000000826
+      "trades": 0,
+      "wins": 0,
+      "pnlR": 0
     },
     "NEUTRAL": {
-      "trades": 3,
-      "wins": 1,
-      "pnlR": -0.7999999999999803
+      "trades": 26,
+      "wins": 12,
+      "pnlR": 0.40000000000010205
     },
     "EXPANSION": {
-      "trades": 4,
-      "wins": 1,
-      "pnlR": -1.8
+      "trades": 0,
+      "wins": 0,
+      "pnlR": 0
     }
   },
   "regimeStats": {
     "TREND_EXPANSION": {
-      "trades": 4,
-      "wins": 1,
-      "pnlR": -1.8
+      "trades": 0,
+      "wins": 0,
+      "pnlR": 0
     },
     "NEUTRAL": {
-      "trades": 3,
-      "wins": 1,
-      "pnlR": -0.7999999999999803
+      "trades": 26,
+      "wins": 12,
+      "pnlR": 0.40000000000010205
     },
     "COMPRESSION": {
       "trades": 0,
@@ -529,9 +529,9 @@
       "pnlR": 0
     },
     "CHOPPY": {
-      "trades": 19,
-      "wins": 10,
-      "pnlR": 3.0000000000000826
+      "trades": 0,
+      "wins": 0,
+      "pnlR": 0
     }
   }
 }

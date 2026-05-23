@@ -953,25 +953,6 @@ export async function runBacktest(
         }
       }
       
-      // --- DỜI SL VỀ HUỀ VỐN (BREAK-EVEN) ---
-      // Nếu giá đi đúng hướng đạt 50% chặng đường tới TP, dời SL về huề vốn (entryPrice) để bảo vệ lệnh
-      if (!resolved && !ps.isBreakEven) {
-        const potentialProfit = Math.abs(ps.entryPrice - ps.tp);
-        if (ps.type === "LONG") {
-          const reachedTarget = ps.entryPrice + potentialProfit * 0.50;
-          if (barH >= reachedTarget) {
-            ps.sl = ps.entryPrice;
-            ps.isBreakEven = true;
-          }
-        } else {
-          const reachedTarget = ps.entryPrice - potentialProfit * 0.50;
-          if (barL <= reachedTarget) {
-            ps.sl = ps.entryPrice;
-            ps.isBreakEven = true;
-          }
-        }
-      }
-      
       // Expired after 150 candles
       if (!resolved && (i - ps.triggerIndex >= 150)) {
         resolved = true;
@@ -992,23 +973,9 @@ export async function runBacktest(
       ? (sweepHistoryQueue.reduce((a, b) => a + b, 0) / sweepHistoryQueue.length)
       : 0.50; // default to 50% if queue is empty
 
-    let dynamicRiskPctMultiplier = 0.5;
-    let isContinuationEnabled = false;
-    let finalRegimeLabel = "NEUTRAL";
-
-    if (rollingWinRate > 0.55) {
-      dynamicRiskPctMultiplier = 1.0; 
-      isContinuationEnabled = ENABLE_CONTINUATION && true;
-      finalRegimeLabel = "TREND_EXPANSION";
-    } else if (rollingWinRate < 0.45) {
-      dynamicRiskPctMultiplier = 0.15; // Giảm rủi ro xuống thấp để bảo toàn vốn khi chuỗi thua kéo dài
-      isContinuationEnabled = false;
-      finalRegimeLabel = "CHOPPY";
-    } else {
-      dynamicRiskPctMultiplier = 0.5;
-      isContinuationEnabled = false;
-      finalRegimeLabel = "NEUTRAL";
-    }
+    const dynamicRiskPctMultiplier = 1.0; // Tải cứng 1% rủi ro, tắt Dynamic Risk theo yêu cầu
+    const isContinuationEnabled = false; // Bỏ hoàn toàn chiến lược Continuation
+    const finalRegimeLabel = "NEUTRAL";
 
     const isMarketTooChoppy = false; // No TQS choppy boundary
 
@@ -1218,15 +1185,13 @@ export async function runBacktest(
       allKlines[i][5] > volMA * 1.1 &&
       currentPrice < prevLow;
 
-    // --- ENTRY DECISION (CONTINUATION & WHALE SWEEP) ---
+    // --- ENTRY DECISION (WHALE SWEEP ONLY) ---
     let isLong = !isMarketTooChoppy && (
-      (enableWhaleSweep && !isOverExtendedLong && currentPrice > vwma5m && currentPrice > vwapM1 && adxM1.adx >= adxThreshold && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI && isInSession) ||
-      (regimeData.riskPercent > 0 && isContinuationLong && isInSession)
+      (enableWhaleSweep && !isOverExtendedLong && currentPrice > vwma5m && currentPrice > vwapM1 && adxM1.adx >= adxThreshold && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI && isInSession)
     );
 
     let isShort = !isMarketTooChoppy && (
-      (enableWhaleSweep && !isOverExtendedShort && currentPrice < vwma5m && currentPrice < vwapM1 && adxM1.adx >= adxThreshold && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI && isInSession) ||
-      (regimeData.riskPercent > 0 && isContinuationShort && isInSession)
+      (enableWhaleSweep && !isOverExtendedShort && currentPrice < vwma5m && currentPrice < vwapM1 && adxM1.adx >= adxThreshold && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI && isInSession)
     );
 
     if (isLong || isShort) {
