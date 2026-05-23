@@ -1001,8 +1001,8 @@ export async function runBacktest(
 
     const isInSession = isWithinSessions(allKlines[i][0]);
     const distFromVWMA = Math.abs(currentPrice - vwmaM1);
-    const isOverExtendedLong = distFromVWMA > (atrM1 * 2);
-    const isOverExtendedShort = distFromVWMA > (atrM1 * 2);
+    const isOverExtendedLong = distFromVWMA > (atrM1 * 1.5);
+    const isOverExtendedShort = distFromVWMA > (atrM1 * 1.5);
 
     debugTotalCandles++;
     if (sweep.sweepLow || sweep.sweepHigh) {
