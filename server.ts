@@ -439,8 +439,12 @@ function detectWhaleSweep(bars: any[]) {
   const lowerWick = Math.min(sO, sC) - sL;
   const upperWick = sH - Math.max(sO, sC);
 
-  const sweepLow = sL <= localLow && sC >= localLow && (lowerWick / sweepSize >= 0.25);
-  const sweepHigh = sH >= localHigh && sC <= localHigh && (upperWick / sweepSize >= 0.25);
+  const atrM1 = calculateATR(bars, 14);
+  const volumes = bars.slice(-21, -1).map(b => b[5]);
+  const avgVol = volumes.reduce((a, b) => a + b, 0) / volumes.length;
+
+  const sweepLow = sL < localLow && sC > localLow && (lowerWick / sweepSize >= 0.45) && (sweepSize > atrM1 * 1.2) && (sV > avgVol * 1.4);
+  const sweepHigh = sH > localHigh && sC < localHigh && (upperWick / sweepSize >= 0.45) && (sweepSize > atrM1 * 1.2) && (sV > avgVol * 1.4);
 
   // 2. DISPLACEMENT & BODY SIZE
   const body = Math.abs(cC - cO);
@@ -452,8 +456,6 @@ function detectWhaleSweep(bars: any[]) {
   const displacementBearish = body > avgBody * 1.5 && (cH - cC) / totalSize > 0.7 && cC < sL;
 
   // 4. VOLUME CONFIRM (Standard)
-  const volumes = bars.slice(-21, -1).map(b => b[5]);
-  const avgVol = volumes.reduce((a, b) => a + b, 0) / volumes.length;
   const isConstantVol = volumes.length > 0 && volumes.every(v => v === volumes[0]);
   const volConfirm = isConstantVol ? true : cV > avgVol;
 
