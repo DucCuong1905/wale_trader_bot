@@ -580,7 +580,7 @@ export async function runBacktest(
   enableSessionFilter: boolean = true,
   vwmaPeriod: number = 20, 
   onProgress?: (p: number) => void,
-  adxThreshold: number = 10,
+  adxThreshold: number = 14,
   enableWhaleSweep: boolean = true
 ) {
   shouldStopBacktest = false;
@@ -904,7 +904,7 @@ export async function runBacktest(
   };
 
   let sweepHistoryQueue: number[] = [];
-  let pendingSweeps: { type: "LONG" | "SHORT", entryPrice: number, sl: number, tp: number, triggerIndex: number, isBreakEven?: boolean }[] = [];
+  let pendingSweeps: { type: "LONG" | "SHORT", entryPrice: number, sl: number, tp: number, triggerIndex: number }[] = [];
 
   for (let i = 100; i < allKlines.length; i++) {
     if (shouldStopBacktest) break;
@@ -1188,11 +1188,11 @@ export async function runBacktest(
 
     // --- ENTRY DECISION (WHALE SWEEP ONLY) ---
     let isLong = !isMarketTooChoppy && (
-      (enableWhaleSweep && !isOverExtendedLong && currentPrice > vwma5m && currentPrice > vwapM1 && adxM1.adx >= adxThreshold && slopeM1 > 0 && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && adxM1.pDI > adxM1.mDI && isInSession)
+      (enableWhaleSweep && !isOverExtendedLong && currentPrice > vwma5m && currentPrice > vwapM1 && adxM1.adx >= adxThreshold && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isInSession)
     );
 
     let isShort = !isMarketTooChoppy && (
-      (enableWhaleSweep && !isOverExtendedShort && currentPrice < vwma5m && currentPrice < vwapM1 && adxM1.adx >= adxThreshold && slopeM1 < 0 && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && adxM1.mDI > adxM1.pDI && isInSession)
+      (enableWhaleSweep && !isOverExtendedShort && currentPrice < vwma5m && currentPrice < vwapM1 && adxM1.adx >= adxThreshold && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isInSession)
     );
 
     if (isLong || isShort) {

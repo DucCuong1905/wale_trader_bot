@@ -16,7 +16,7 @@ async function main() {
   let timeframe = "1m";
   let rr = 1.2;
   let enableSessionFilter = true;
-  let adxThreshold = 10;
+  let adxThreshold = 14;
   let enableWhaleSweep = true;
 
   // Hỗ trợ truyền nhanh qua lệnh: npx tsx run_backtest.ts [startDate] [endDate] [timeframe] [rr]

@@ -31,7 +31,7 @@ let ENABLE_SESSION_FILTER = true;
 let ENABLE_WHALE_SWEEP = true; 
 let ENABLE_CONTINUATION = false; // Tạm thời tắt chiến lược continuation theo yêu cầu
 const VWMA_PERIOD = 20; // Cố định VWMA 20
-let ADX_THRESHOLD = 10; // Ngưỡng ADX mặc định
+let ADX_THRESHOLD = 14; // Ngưỡng ADX mặc định
 const SESSION_START_GMT = 8;  // 08:00 GMT (Mở phiên Âu)
 const SESSION_END_GMT = 21;    // 21:00 GMT (Đóng phiên Mỹ)
 
@@ -708,7 +708,7 @@ async function traderLoop() {
 
     // 3.1 COMPUTE ROLLING SWEEP WINRATE OVER HISTORY
     let sweepHistoryQueue: number[] = [];
-    let pendingSweeps: { type: "LONG" | "SHORT", entryPrice: number, sl: number, tp: number, triggerIndex: number, isBreakEven?: boolean }[] = [];
+    let pendingSweeps: { type: "LONG" | "SHORT", entryPrice: number, sl: number, tp: number, triggerIndex: number }[] = [];
 
     for (let idx = 100; idx < bars.length; idx++) {
       const [, , barH, barL, barC] = bars[idx];
@@ -951,7 +951,7 @@ async function traderLoop() {
     // LONG ENTRY
     if (
       !isMarketTooChoppy && (
-        (ENABLE_WHALE_SWEEP && !isOverExtendedLong && currentPrice > vwma5m && currentPrice > vwapM1 && slopeM1 > 0 && adxM1.adx >= ADX_THRESHOLD && adxM1.pDI > adxM1.mDI && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isWithinTradingSessions())
+        (ENABLE_WHALE_SWEEP && !isOverExtendedLong && currentPrice > vwma5m && currentPrice > vwapM1 && adxM1.adx >= ADX_THRESHOLD && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isWithinTradingSessions())
       )
     ) {
       sig = "LONG";
@@ -960,7 +960,7 @@ async function traderLoop() {
     // SHORT ENTRY
     if (
       !isMarketTooChoppy && (
-        (ENABLE_WHALE_SWEEP && !isOverExtendedShort && currentPrice < vwma5m && currentPrice < vwapM1 && slopeM1 < 0 && adxM1.adx >= ADX_THRESHOLD && adxM1.mDI > adxM1.pDI && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isWithinTradingSessions())
+        (ENABLE_WHALE_SWEEP && !isOverExtendedShort && currentPrice < vwma5m && currentPrice < vwapM1 && adxM1.adx >= ADX_THRESHOLD && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isWithinTradingSessions())
       )
     ) {
       sig = "SHORT";
