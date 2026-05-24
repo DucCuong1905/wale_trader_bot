@@ -894,7 +894,12 @@ export async function runBacktest(
     if (!enableSessionFilter) return true;
     const date = new Date(ts);
     const hour = date.getUTCHours();
-    const result = hour >= SESSION_START_GMT && hour < SESSION_END_GMT;
+    let result = false;
+    if (SESSION_START_GMT <= SESSION_END_GMT) {
+      result = hour >= SESSION_START_GMT && hour < SESSION_END_GMT;
+    } else {
+      result = hour >= SESSION_START_GMT || hour < SESSION_END_GMT;
+    }
     if (!result) sessionSkippedCount++;
     return result;
   };

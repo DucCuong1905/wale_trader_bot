@@ -779,8 +779,8 @@ async function traderLoop() {
           atrVal = sum / 14;
         }
 
-        const isNewSweepLong = sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm;
-        const isNewSweepShort = sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm;
+        const isNewSweepLong = sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isWithinTradingSessions(bars[idx][0]);
+        const isNewSweepShort = sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isWithinTradingSessions(bars[idx][0]);
 
         const currentPriceVal = barC;
         if (isNewSweepLong) {
@@ -956,7 +956,7 @@ async function traderLoop() {
     // LONG ENTRY
     if (
       !isMarketTooChoppy && (
-        (ENABLE_WHALE_SWEEP && !isOverExtendedLong && !hasBadEntryPriceLong && currentPrice > vwmaM1 && slopeM1 > 0 && adxM1.adx >= ADX_THRESHOLD && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isWithinTradingSessions())
+        (ENABLE_WHALE_SWEEP && !isOverExtendedLong && !hasBadEntryPriceLong && currentPrice > vwmaM1 && slopeM1 > 0 && adxM1.adx >= ADX_THRESHOLD && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isWithinTradingSessions(lastCandle[0]))
       )
     ) {
       sig = "LONG";
@@ -965,7 +965,7 @@ async function traderLoop() {
     // SHORT ENTRY
     if (
       !isMarketTooChoppy && (
-        (ENABLE_WHALE_SWEEP && !isOverExtendedShort && !hasBadEntryPriceShort && currentPrice < vwmaM1 && slopeM1 < 0 && adxM1.adx >= ADX_THRESHOLD && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isWithinTradingSessions())
+        (ENABLE_WHALE_SWEEP && !isOverExtendedShort && !hasBadEntryPriceShort && currentPrice < vwmaM1 && slopeM1 < 0 && adxM1.adx >= ADX_THRESHOLD && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isWithinTradingSessions(lastCandle[0]))
       )
     ) {
       sig = "SHORT";
