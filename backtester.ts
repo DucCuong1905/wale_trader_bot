@@ -905,6 +905,7 @@ export async function runBacktest(
 
   let sweepHistoryQueue: number[] = [];
   let pendingSweeps: { type: "LONG" | "SHORT", entryPrice: number, sl: number, tp: number, triggerIndex: number }[] = [];
+  let lastVwmaM1 = 0;
 
   for (let i = 100; i < allKlines.length; i++) {
     if (shouldStopBacktest) break;
@@ -919,7 +920,7 @@ export async function runBacktest(
     }
 
     // --- KHUNG 5P FILTER ---
-    const calcWindow5mRaw = allKlines.slice(Math.max(0, i - 1500), i + 1);
+    const calcWindow5mRaw = allKlines.slice(Math.max(0, i - 110), i + 1);
     const bars5m = aggregateCandles(calcWindow5mRaw, 5);
     const vwma5m = calculateVWMA(bars5m, 20);
 
@@ -992,10 +993,10 @@ export async function runBacktest(
     const calcWindow = allKlines.slice(Math.max(0, i - 100), i + 1);
     const vwapM1 = calculateVWAP(calcWindow);
     const vwmaM1 = calculateVWMA(calcWindow, 20); // VWMA 20 M1
-    const vwmaM1Prev = calculateVWMA(allKlines.slice(Math.max(0, i - 101), i), 20);
+    const vwmaM1Prev = i === 100 ? calculateVWMA(allKlines.slice(Math.max(0, i - 101), i), 20) : lastVwmaM1;
+    lastVwmaM1 = vwmaM1;
     const slopeM1 = vwmaM1 - vwmaM1Prev;
     const adxM1 = calcADX(calcWindow);
-    const prevAdxM1 = calcADX(allKlines.slice(Math.max(0, i - 101), i));
     const sweep = detectSweep(calcWindow);
     const atrM1 = calculateATR(calcWindow, 14);
 
@@ -1123,68 +1124,71 @@ export async function runBacktest(
     lastYear = currentYear;
 
     // --- MINI COMPRESSION & CONTINUATION LOGIC (COMPRESSION -> EXPANSION) ---
-    const recent5 = allKlines.slice(Math.max(0, i - 5), i);
-    const recentHigh = Math.max(...recent5.map(b => b[2]));
-    const recentLow = Math.min(...recent5.map(b => b[3]));
-    const compRange = recentHigh - recentLow;
-    
-    const volMA = allKlines.slice(Math.max(0, i - 20), i).reduce((s, b) => s + b[5], 0) / 20;
-    const atrMA = allKlines.slice(Math.max(0, i - 14), i).reduce((s, b) => s + (b[2] - b[3]), 0) / 14; // Đơn giản hóa ATR MA
-    const atrPrev = i > 0 ? (allKlines[i-1][2] - allKlines[i-1][3]) : atrM1;
-    
-    const bodySize = Math.abs(allKlines[i][4] - allKlines[i][1]);
-    const prevHigh = allKlines[i-1][2];
-    const prevLow = allKlines[i-1][3];
+    let isContinuationLong = false;
+    let isContinuationShort = false;
 
-    // Detect mini compression (Overlap Count)
-    let overlapCount = 0;
-    for (let j = 0; j < recent5.length - 1; j++) {
-      const h1 = recent5[j][2];
-      const l1 = recent5[j][3];
-      const h2 = recent5[j+1][2];
-      const l2 = recent5[j+1][3];
-      if (l1 <= h2 && h1 >= l2) overlapCount++;
+    if (isContinuationEnabled) {
+      const recent5 = allKlines.slice(Math.max(0, i - 5), i);
+      const recentHigh = Math.max(...recent5.map(b => b[2]));
+      const recentLow = Math.min(...recent5.map(b => b[3]));
+      const compRange = recentHigh - recentLow;
+      
+      const volMA = allKlines.slice(Math.max(0, i - 20), i).reduce((s, b) => s + b[5], 0) / 20;
+      const atrMA = allKlines.slice(Math.max(0, i - 14), i).reduce((s, b) => s + (b[2] - b[3]), 0) / 14; // Đơn giản hóa ATR MA
+      const atrPrev = i > 0 ? (allKlines[i-1][2] - allKlines[i-1][3]) : atrM1;
+      
+      const bodySize = Math.abs(allKlines[i][4] - allKlines[i][1]);
+      const prevHigh = allKlines[i-1][2];
+      const prevLow = allKlines[i-1][3];
+
+      // Detect mini compression (Overlap Count)
+      let overlapCount = 0;
+      for (let j = 0; j < recent5.length - 1; j++) {
+        const h1 = recent5[j][2];
+        const l1 = recent5[j][3];
+        const h2 = recent5[j+1][2];
+        const l2 = recent5[j+1][3];
+        if (l1 <= h2 && h1 >= l2) overlapCount++;
+      }
+
+      const isAtrExpansion = (atrM1 > atrPrev) || (atrM1 > atrMA * 1.03);
+
+      // LONG CONTINUATION V11 (Targeting 10-15 trades/month - Balanced)
+      isContinuationLong = 
+        currentPrice > vwma5m &&
+        currentPrice > vwapM1 &&
+        slopeM1 > 0 &&
+        adxM1.adx >= 10 &&              
+        adxM1.pDI > adxM1.mDI &&
+        distFromVWMA < (atrM1 * 1.8) && 
+        compRange < (atrM1 * 1.45) &&   
+        overlapCount >= 2 &&            
+        recentLow > vwma5m &&           
+        allKlines.slice(Math.max(0, i-3), i).every(b => b[4] > vwma5m) && 
+        isAtrExpansion &&               
+        currentPrice > recentHigh &&    
+        bodySize > (atrM1 * 0.5) &&    
+        allKlines[i][5] > volMA * 1.1 && 
+        currentPrice > prevHigh;
+
+      // SHORT CONTINUATION V11 (Targeting 10-15 trades/month - Balanced)
+      isContinuationShort = 
+        currentPrice < vwma5m &&
+        currentPrice < vwapM1 &&
+        slopeM1 < 0 &&
+        adxM1.adx >= 10 &&
+        adxM1.mDI > adxM1.pDI &&
+        distFromVWMA < (atrM1 * 1.8) &&
+        compRange < (atrM1 * 1.45) &&
+        overlapCount >= 2 &&
+        recentHigh < vwma5m &&
+        allKlines.slice(Math.max(0, i-3), i).every(b => b[4] < vwma5m) &&
+        isAtrExpansion &&
+        currentPrice < recentLow &&
+        bodySize > (atrM1 * 0.5) &&
+        allKlines[i][5] > volMA * 1.1 &&
+        currentPrice < prevLow;
     }
-
-    const isAtrExpansion = (atrM1 > atrPrev) || (atrM1 > atrMA * 1.03);
-
-    // LONG CONTINUATION V11 (Targeting 10-15 trades/month - Balanced)
-    const isContinuationLong = 
-      isContinuationEnabled &&   
-      currentPrice > vwma5m &&
-      currentPrice > vwapM1 &&
-      slopeM1 > 0 &&
-      adxM1.adx >= 10 &&              
-      adxM1.pDI > adxM1.mDI &&
-      distFromVWMA < (atrM1 * 1.8) && 
-      compRange < (atrM1 * 1.45) &&   
-      overlapCount >= 2 &&            
-      recentLow > vwma5m &&           
-      allKlines.slice(Math.max(0, i-3), i).every(b => b[4] > vwma5m) && 
-      isAtrExpansion &&               
-      currentPrice > recentHigh &&    
-      bodySize > (atrM1 * 0.5) &&    
-      allKlines[i][5] > volMA * 1.1 && 
-      currentPrice > prevHigh;
-
-    // SHORT CONTINUATION V11 (Targeting 10-15 trades/month - Balanced)
-    const isContinuationShort = 
-      isContinuationEnabled &&
-      currentPrice < vwma5m &&
-      currentPrice < vwapM1 &&
-      slopeM1 < 0 &&
-      adxM1.adx >= 10 &&
-      adxM1.mDI > adxM1.pDI &&
-      distFromVWMA < (atrM1 * 1.8) &&
-      compRange < (atrM1 * 1.45) &&
-      overlapCount >= 2 &&
-      recentHigh < vwma5m &&
-      allKlines.slice(Math.max(0, i-3), i).every(b => b[4] < vwma5m) &&
-      isAtrExpansion &&
-      currentPrice < recentLow &&
-      bodySize > (atrM1 * 0.5) &&
-      allKlines[i][5] > volMA * 1.1 &&
-      currentPrice < prevLow;
 
     // --- ENTRY DECISION (WHALE SWEEP ONLY) ---
     let isLong = !isMarketTooChoppy && (
