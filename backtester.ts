@@ -273,8 +273,8 @@ function detectSweep(bars: any[]) {
   const bodySizes = bars.slice(-21, -1).map(b => Math.abs(b[4] - b[1]));
   const avgBody = bodySizes.reduce((a, b) => a + b, 0) / bodySizes.length;
   
-  const displacementBullish = body > avgBody * 1.5 && (cC - cL) / totalSize > 0.7 && cC > sH;
-  const displacementBearish = body > avgBody * 1.5 && (cH - cC) / totalSize > 0.7 && cC < sL;
+  const displacementBullish = body > avgBody * 1.2 && (cC - cL) / totalSize > 0.7 && cC > sH;
+  const displacementBearish = body > avgBody * 1.2 && (cH - cC) / totalSize > 0.7 && cC < sL;
 
   const isConstantVol = volumes.length > 0 && volumes.every(v => v === volumes[0]);
   const volConfirm = isConstantVol ? true : cV > avgVol;
