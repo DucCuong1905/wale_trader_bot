@@ -273,8 +273,8 @@ function detectSweep(bars: any[]) {
   const bodySizes = bars.slice(-21, -1).map(b => Math.abs(b[4] - b[1]));
   const avgBody = bodySizes.reduce((a, b) => a + b, 0) / bodySizes.length;
   
-  const displacementBullish = body > avgBody * 1.2 && (cC - cL) / totalSize > 0.7 && cC > sH;
-  const displacementBearish = body > avgBody * 1.2 && (cH - cC) / totalSize > 0.7 && cC < sL;
+  const displacementBullish = body > avgBody * 1.2 && (cC - cL) / totalSize > 0.7 && cC > Math.max(sO, sC);
+  const displacementBearish = body > avgBody * 1.2 && (cH - cC) / totalSize > 0.7 && cC < Math.min(sO, sC);
 
   const isConstantVol = volumes.length > 0 && volumes.every(v => v === volumes[0]);
   const volConfirm = isConstantVol ? true : cV > avgVol;
@@ -998,8 +998,13 @@ export async function runBacktest(
 
     const isInSession = isWithinSessions(allKlines[i][0]);
     const distFromVWMA = Math.abs(currentPrice - vwmaM1);
-    const isOverExtendedLong = distFromVWMA > (atrM1 * 1.2);
-    const isOverExtendedShort = distFromVWMA > (atrM1 * 1.2);
+    const isOverExtendedLong = distFromVWMA > (atrM1 * 1.8);
+    const isOverExtendedShort = distFromVWMA > (atrM1 * 1.8);
+
+    const slDistanceLong = Math.abs(currentPrice - sweep.low);
+    const slDistanceShort = Math.abs(sweep.high - currentPrice);
+    const hasBadEntryPriceLong = slDistanceLong > (atrM1 * 2.0);
+    const hasBadEntryPriceShort = slDistanceShort > (atrM1 * 2.0);
 
     debugTotalCandles++;
     if (sweep.sweepLow || sweep.sweepHigh) {
@@ -1026,8 +1031,8 @@ export async function runBacktest(
       if (slopeM1 > 0) debugWhaleLongConditions.slope_gt_0++;
 
       if (isInSession) {
-        const slRaw = sweep.low - atrM1 * 0.6;
-        const minRisk = atrM1 * 1.2;
+        const slRaw = sweep.low - atrM1 * 0.8;
+        const minRisk = atrM1 * 1.5;
         const slPrice = Math.min(slRaw, currentPrice - minRisk);
         const riskAmt = Math.max(0.0001, Math.abs(currentPrice - slPrice));
         const tpPrice = currentPrice + riskAmt * rr;
@@ -1053,8 +1058,8 @@ export async function runBacktest(
       if (slopeM1 > -0.02) debugWhaleShortConditions.slope_gt_neg_0_02++;
 
       if (isInSession) {
-        const slRaw = sweep.high + atrM1 * 0.6;
-        const minRisk = atrM1 * 1.2;
+        const slRaw = sweep.high + atrM1 * 0.8;
+        const minRisk = atrM1 * 1.5;
         const slPrice = Math.max(slRaw, currentPrice + minRisk);
         const riskAmt = Math.max(0.0001, Math.abs(currentPrice - slPrice));
         const tpPrice = currentPrice - riskAmt * rr;
@@ -1184,11 +1189,11 @@ export async function runBacktest(
 
     // --- ENTRY DECISION (WHALE SWEEP ONLY) ---
     let isLong = !isMarketTooChoppy && (
-      (enableWhaleSweep && !isOverExtendedLong && currentPrice > vwma5m && slopeM1 > 0 && adxM1.adx >= adxThreshold && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isInSession)
+      (enableWhaleSweep && !isOverExtendedLong && !hasBadEntryPriceLong && currentPrice > vwmaM1 && slopeM1 > 0 && adxM1.adx >= adxThreshold && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isInSession)
     );
 
     let isShort = !isMarketTooChoppy && (
-      (enableWhaleSweep && !isOverExtendedShort && currentPrice < vwma5m && slopeM1 > -0.02 && adxM1.adx >= adxThreshold && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isInSession)
+      (enableWhaleSweep && !isOverExtendedShort && !hasBadEntryPriceShort && currentPrice < vwmaM1 && slopeM1 < 0 && adxM1.adx >= adxThreshold && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isInSession)
     );
 
     if (isLong || isShort) {

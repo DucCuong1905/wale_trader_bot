@@ -451,8 +451,8 @@ function detectWhaleSweep(bars: any[]) {
   const bodySizes = bars.slice(-21, -1).map(b => Math.abs(b[4] - b[1]));
   const avgBody = bodySizes.reduce((a, b) => a + b, 0) / bodySizes.length;
   
-  const displacementBullish = body > avgBody * 1.2 && (cC - cL) / totalSize > 0.7 && cC > sH;
-  const displacementBearish = body > avgBody * 1.2 && (cH - cC) / totalSize > 0.7 && cC < sL;
+  const displacementBullish = body > avgBody * 1.2 && (cC - cL) / totalSize > 0.7 && cC > Math.max(sO, sC);
+  const displacementBearish = body > avgBody * 1.2 && (cH - cC) / totalSize > 0.7 && cC < Math.min(sO, sC);
 
   // 4. VOLUME CONFIRM (Standard)
   const isConstantVol = volumes.length > 0 && volumes.every(v => v === volumes[0]);
@@ -884,8 +884,13 @@ async function traderLoop() {
     // ========================================================
     // 5. ĐIỀU KIỆN VÀO LỆNH (SWEP & CONTINUATION)
     // ========================================================
-    const isOverExtendedLong = distFromVWMA > (atrM1 * 1.2);
-    const isOverExtendedShort = distFromVWMA > (atrM1 * 1.2);
+    const isOverExtendedLong = distFromVWMA > (atrM1 * 1.8);
+    const isOverExtendedShort = distFromVWMA > (atrM1 * 1.8);
+
+    const slDistanceLong = Math.abs(currentPrice - sweep.low);
+    const slDistanceShort = Math.abs(sweep.high - currentPrice);
+    const hasBadEntryPriceLong = slDistanceLong > (atrM1 * 2.0);
+    const hasBadEntryPriceShort = slDistanceShort > (atrM1 * 2.0);
 
     // --- MINI COMPRESSION & CONTINUATION LOGIC ---
     const recent5 = bars.slice(-6, -1);
@@ -951,7 +956,7 @@ async function traderLoop() {
     // LONG ENTRY
     if (
       !isMarketTooChoppy && (
-        (ENABLE_WHALE_SWEEP && !isOverExtendedLong && currentPrice > vwma5m && slopeM1 > 0 && adxM1.adx >= ADX_THRESHOLD && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isWithinTradingSessions())
+        (ENABLE_WHALE_SWEEP && !isOverExtendedLong && !hasBadEntryPriceLong && currentPrice > vwmaM1 && slopeM1 > 0 && adxM1.adx >= ADX_THRESHOLD && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isWithinTradingSessions())
       )
     ) {
       sig = "LONG";
@@ -960,7 +965,7 @@ async function traderLoop() {
     // SHORT ENTRY
     if (
       !isMarketTooChoppy && (
-        (ENABLE_WHALE_SWEEP && !isOverExtendedShort && currentPrice < vwma5m && slopeM1 > -0.02 && adxM1.adx >= ADX_THRESHOLD && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isWithinTradingSessions())
+        (ENABLE_WHALE_SWEEP && !isOverExtendedShort && !hasBadEntryPriceShort && currentPrice < vwmaM1 && slopeM1 < 0 && adxM1.adx >= ADX_THRESHOLD && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isWithinTradingSessions())
       )
     ) {
       sig = "SHORT";
@@ -978,8 +983,8 @@ async function traderLoop() {
       if (isContTrade) {
         sl = sig === "LONG" ? (currentPrice - atrM1 * 1.5) : (currentPrice + atrM1 * 1.5);
       } else {
-        const slRaw = sig === "LONG" ? (sweep.low - atrM1 * 0.6) : (sweep.high + atrM1 * 0.6);
-        const minRisk = atrM1 * 1.2;
+        const slRaw = sig === "LONG" ? (sweep.low - atrM1 * 0.8) : (sweep.high + atrM1 * 0.8);
+        const minRisk = atrM1 * 1.5;
         if (sig === "LONG") {
           sl = Math.min(slRaw, currentPrice - minRisk);
         } else {
