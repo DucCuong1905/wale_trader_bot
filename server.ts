@@ -951,7 +951,7 @@ async function traderLoop() {
     // LONG ENTRY
     if (
       !isMarketTooChoppy && (
-        (ENABLE_WHALE_SWEEP && !isOverExtendedLong && currentPrice > vwma5m && slopeM1 > 0 && adxM1.adx >= ADX_THRESHOLD && adxM1.pDI > adxM1.mDI && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isWithinTradingSessions())
+        (ENABLE_WHALE_SWEEP && !isOverExtendedLong && currentPrice > vwma5m && slopeM1 > 0 && adxM1.adx >= ADX_THRESHOLD && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isWithinTradingSessions())
       )
     ) {
       sig = "LONG";
@@ -960,7 +960,7 @@ async function traderLoop() {
     // SHORT ENTRY
     if (
       !isMarketTooChoppy && (
-        (ENABLE_WHALE_SWEEP && !isOverExtendedShort && currentPrice < vwma5m && slopeM1 < 0 && adxM1.adx >= ADX_THRESHOLD && adxM1.mDI > adxM1.pDI && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isWithinTradingSessions())
+        (ENABLE_WHALE_SWEEP && !isOverExtendedShort && currentPrice < vwma5m && slopeM1 < 0 && adxM1.adx >= ADX_THRESHOLD && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isWithinTradingSessions())
       )
     ) {
       sig = "SHORT";

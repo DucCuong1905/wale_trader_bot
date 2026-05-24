@@ -1192,11 +1192,11 @@ export async function runBacktest(
 
     // --- ENTRY DECISION (WHALE SWEEP ONLY) ---
     let isLong = !isMarketTooChoppy && (
-      (enableWhaleSweep && !isOverExtendedLong && currentPrice > vwma5m && slopeM1 > 0 && adxM1.adx >= adxThreshold && adxM1.pDI > adxM1.mDI && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isInSession)
+      (enableWhaleSweep && !isOverExtendedLong && currentPrice > vwma5m && slopeM1 > 0 && adxM1.adx >= adxThreshold && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isInSession)
     );
 
     let isShort = !isMarketTooChoppy && (
-      (enableWhaleSweep && !isOverExtendedShort && currentPrice < vwma5m && slopeM1 < 0 && adxM1.adx >= adxThreshold && adxM1.mDI > adxM1.pDI && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isInSession)
+      (enableWhaleSweep && !isOverExtendedShort && currentPrice < vwma5m && slopeM1 < 0 && adxM1.adx >= adxThreshold && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isInSession)
     );
 
     if (isLong || isShort) {
