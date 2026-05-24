@@ -884,8 +884,8 @@ async function traderLoop() {
     // ========================================================
     // 5. ĐIỀU KIỆN VÀO LỆNH (SWEP & CONTINUATION)
     // ========================================================
-    const isOverExtendedLong = distFromVWMA > (atrM1 * 1.5);
-    const isOverExtendedShort = distFromVWMA > (atrM1 * 1.5);
+    const isOverExtendedLong = distFromVWMA > (atrM1 * 1.2);
+    const isOverExtendedShort = distFromVWMA > (atrM1 * 1.2);
 
     // --- MINI COMPRESSION & CONTINUATION LOGIC ---
     const recent5 = bars.slice(-6, -1);

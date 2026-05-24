@@ -1,16 +1,16 @@
 {
-  "totalTrades": 13,
-  "wins": 8,
+  "totalTrades": 12,
+  "wins": 7,
   "losses": 5,
-  "longTrades": 8,
-  "longWins": 7,
+  "longTrades": 7,
+  "longWins": 6,
   "shortTrades": 5,
   "shortWins": 1,
   "cancelledTrades": 0,
-  "totalPnL": 231.0645284463236,
-  "finalBalance": 5231.064528446325,
-  "totalFees": 361.02695375018413,
-  "totalSlippage": 144.41078150007365,
+  "totalPnL": 169.03609530269128,
+  "finalBalance": 5169.036095302693,
+  "totalFees": 351.16334323322735,
+  "totalSlippage": 140.46533729329093,
   "isLiquidated": false,
   "liquidationDate": null,
   "trades": [
@@ -217,53 +217,36 @@
       "efficiency": "NEUTRAL",
       "effValue": null,
       "riskPercent": 1
-    },
-    {
-      "time": "2020-01-28T20:00:00.000Z",
-      "type": "LONG",
-      "entryPrice": 9051.08,
-      "exitPrice": 9107.998742857142,
-      "status": "WIN",
-      "pnlR": 1.2,
-      "dollarPnL": 62.02843314363231,
-      "estimatedFee": 9.8636105169568,
-      "estimatedSlippage": 3.94544420678272,
-      "currentBalance": 5231.064528446325,
-      "reason": "TA Entry",
-      "regime": "NEUTRAL",
-      "efficiency": "NEUTRAL",
-      "effValue": null,
-      "riskPercent": 1
     }
   ],
   "startTime": "2020-01-01T00:00:00Z",
   "endTime": "2020-02-01T00:00:00Z",
-  "displaceTrades": 13,
-  "displaceWins": 8,
-  "totalProfitR": 4.6000000000000645,
+  "displaceTrades": 12,
+  "displaceWins": 7,
+  "totalProfitR": 3.4000000000000643,
   "monthlySnapshots": [
     {
       "month": 1,
       "year": 2020,
       "date": "Tháng 1/2020",
-      "balance": 5231.064528446325,
-      "monthlyProfit": 231.0645284463236,
-      "monthlyProfitR": 4.6000000000000645,
-      "totalProfitR": 4.6000000000000645,
-      "winRate": "61.5",
-      "trades": 13,
-      "wins": 8,
+      "balance": 5169.036095302693,
+      "monthlyProfit": 169.03609530269128,
+      "monthlyProfitR": 3.4000000000000643,
+      "totalProfitR": 3.4000000000000643,
+      "winRate": "58.3",
+      "trades": 12,
+      "wins": 7,
       "losses": 5,
-      "longTrades": 8,
-      "longWins": 7,
+      "longTrades": 7,
+      "longWins": 6,
       "shortTrades": 5,
       "shortWins": 1,
       "continuationTrades": 0,
       "continuationWins": 0,
       "continuationPnLR": 0,
-      "whaleTrades": 13,
-      "whaleWins": 8,
-      "whalePnLR": 4.6000000000000645
+      "whaleTrades": 12,
+      "whaleWins": 7,
+      "whalePnLR": 3.4000000000000643
     }
   ],
   "marketRegime": {
@@ -281,9 +264,9 @@
       "pnlR": 0
     },
     "NEUTRAL": {
-      "trades": 13,
-      "wins": 8,
-      "pnlR": 4.6000000000000645
+      "trades": 12,
+      "wins": 7,
+      "pnlR": 3.4000000000000643
     },
     "EXPANSION": {
       "trades": 0,
@@ -298,9 +281,9 @@
       "pnlR": 0
     },
     "NEUTRAL": {
-      "trades": 13,
-      "wins": 8,
-      "pnlR": 4.6000000000000645
+      "trades": 12,
+      "wins": 7,
+      "pnlR": 3.4000000000000643
     },
     "COMPRESSION": {
       "trades": 0,
