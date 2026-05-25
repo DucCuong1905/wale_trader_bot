@@ -1003,8 +1003,8 @@ export async function runBacktest(
 
     const isInSession = isWithinSessions(allKlines[i][0]);
     const distFromVWMA = Math.abs(currentPrice - vwmaM1);
-    const isOverExtendedLong = distFromVWMA > (atrM1 * 1.8);
-    const isOverExtendedShort = distFromVWMA > (atrM1 * 1.8);
+    const isOverExtendedLong = distFromVWMA > (atrM1 * 1.4);
+    const isOverExtendedShort = distFromVWMA > (atrM1 * 1.4);
 
     const slDistanceLong = Math.abs(currentPrice - sweep.low);
     const slDistanceShort = Math.abs(sweep.high - currentPrice);

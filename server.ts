@@ -884,8 +884,8 @@ async function traderLoop() {
     // ========================================================
     // 5. ĐIỀU KIỆN VÀO LỆNH (SWEP & CONTINUATION)
     // ========================================================
-    const isOverExtendedLong = distFromVWMA > (atrM1 * 1.8);
-    const isOverExtendedShort = distFromVWMA > (atrM1 * 1.8);
+    const isOverExtendedLong = distFromVWMA > (atrM1 * 1.4);
+    const isOverExtendedShort = distFromVWMA > (atrM1 * 1.4);
 
     const slDistanceLong = Math.abs(currentPrice - sweep.low);
     const slDistanceShort = Math.abs(sweep.high - currentPrice);
