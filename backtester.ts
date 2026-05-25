@@ -1,5 +1,4 @@
 
-import * as ccxt from "ccxt";
 import fs from "fs";
 import path from "path";
 import dotenv from "dotenv";
@@ -52,8 +51,7 @@ function getCleanEnv(key: string) {
   return val.trim().replace(/^["']|["']$/g, "").trim();
 }
 
-const MT5_ENABLED = getCleanEnv("MT5_ENABLED") === "true";
-const PAIR = MT5_ENABLED ? (getCleanEnv("MT5_SYMBOL") || "XAUUSD") : "BTC/USDT";
+const PAIR = getCleanEnv("MT5_SYMBOL") || "XAUUSD";
 const START_DATE = "2024-01-01T00:00:00Z"; 
 const END_DATE = "2026-01-01T00:00:00Z";
 const RR = 1.2; 
@@ -607,34 +605,49 @@ export async function runBacktest(
   shouldStopBacktest = false;
   backtestDataCache = null; // Clear static memory cache of previous runs to free RAM immediately
   console.log(`[BACKTEST] Start ${PAIR} from ${startDate} to ${endDate} (RR: ${rr}, TF: ${timeframe}, SessionFilter: ${enableSessionFilter}, VWMA: ${vwmaPeriod}, ADX: ${adxThreshold}, WhaleSweep: ${enableWhaleSweep})`);
-  const exchange = new ccxt.binance({ 
-    timeout: 30000,
-    options: { defaultType: 'future' } 
-  });
-
-  async function fetchOHLCVWithRetry(ex: ccxt.Exchange, symbol: string, tf: string, sinceVal: number, limit: number, retries: number = 3) {
-    for (let i = 0; i < retries; i++) {
-      if (shouldStopBacktest) return [];
-      try {
-        const data = await ex.fetchOHLCV(symbol, tf, sinceVal, limit);
-        console.log(`[BACKTEST FETCH] Lấy thành công ${data.length} nến (${tf}) từ Binance cho cặp ${symbol}`);
-        return data;
-      } catch (e: any) {
-        if (i === retries - 1) {
-          console.error(`[BACKTEST FETCH] ❌ Lỗi lấy nến (${tf}) cho cặp ${symbol} sau ${retries} lần thử: ${e.message}`);
-          throw e;
-        }
-        const delay = Math.pow(2, i) * 2000;
-        console.warn(`[BACKTEST FETCH] Lấy nến thất bại (lần thử ${i + 1}/${retries}). Thử lại sau ${delay}ms... Lỗi: ${e.message}`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
-    }
-    return [];
-  }
   
+  let results: BacktestResult = {
+    totalTrades: 0,
+    wins: 0,
+    losses: 0,
+    longTrades: 0,
+    longWins: 0,
+    shortTrades: 0,
+    shortWins: 0,
+    cancelledTrades: 0,
+    totalPnL: 0,
+    finalBalance: INITIAL_BALANCE,
+    totalFees: 0,
+    totalSlippage: 0,
+    isLiquidated: false,
+    liquidationDate: null,
+    trades: [],
+    startTime: startDate,
+    endTime: endDate,
+    displaceTrades: 0,
+    displaceWins: 0,
+    totalProfitR: 0,
+    monthlySnapshots: [],
+    marketRegime: null,
+    continuationTrades: 0,
+    continuationWins: 0,
+    continuationPnLR: 0,
+    efficiencyStats: {
+      "CHOPPY": { trades: 0, wins: 0, pnlR: 0 },
+      "NEUTRAL": { trades: 0, wins: 0, pnlR: 0 },
+      "EXPANSION": { trades: 0, wins: 0, pnlR: 0 }
+    },
+    regimeStats: {
+      "TREND_EXPANSION": { trades: 0, wins: 0, pnlR: 0 },
+      "NEUTRAL": { trades: 0, wins: 0, pnlR: 0 },
+      "COMPRESSION": { trades: 0, wins: 0, pnlR: 0 },
+      "CHOPPY": { trades: 0, wins: 0, pnlR: 0 }
+    }
+  };
+
   let allKlines: any[] = [];
-  const startTs = exchange.parse8601(startDate);
-  const endTs = exchange.parse8601(endDate);
+  const startTs = new Date(startDate).getTime();
+  const endTs = new Date(endDate).getTime();
 
   try {
 
@@ -735,80 +748,7 @@ export async function runBacktest(
       console.log(`[BACKTEST] ⚡ Sử dụng dữ liệu từ Cache bộ nhớ (${backtestDataCache.data.length} nến)`);
       allKlines = backtestDataCache.data;
     } else {
-      console.log(`[BACKTEST] 🌐 Fetching dữ liệu mới từ sàn...`);
-      let since = startTs;
-      while (since < endTs) {
-        if (shouldStopBacktest) break;
-        try {
-          const klines = await fetchOHLCVWithRetry(exchange, PAIR, timeframe, since, 1000);
-          if (!klines.length) break;
-          allKlines.push(...klines);
-          since = klines[klines.length - 1][0] + 1;
-          console.log(`Fetched ${allKlines.length} klines...`);
-          if (onProgress) onProgress(Math.min(50, (allKlines.length / 3000) * 50));
-        } catch (err: any) {
-          console.error("❌ Lỗi nghiêm trọng khi tải dữ liệu backtest:", err.message);
-          throw new Error(`Không thể kết nối với sàn Binance để tải dữ liệu: ${err.message}`);
-        }
-      }
-      
-      // Lưu vào Cache bộ nhớ
-      if (!shouldStopBacktest && allKlines.length > 0) {
-        backtestDataCache = null; // Do not use RAM cache to optimize heap memory and prevent leak
-        console.log(`[BACKTEST] 🚫 Bỏ qua lưu cache bộ nhớ RAM để tránh rò rỉ bộ nhớ.`);
-
-        // NẾU LÀ KHUNG ĐẶC BIỆT THÌ LƯU VÀO FILE TƯƠNG ỨNG TIMEFRAME
-        if (isSpecialRange) {
-          try {
-            console.log(`[BACKTEST] 💾 Đang lưu dữ liệu CACHE VĨNH VIỄN vào ổ đĩa: ${specialCachePath}`);
-            fs.writeFileSync(specialCachePath, JSON.stringify(allKlines));
-            console.log(`[BACKTEST] ✅ Hoàn tất lưu cache vĩnh viễn.`);
-          } catch (e) {
-            console.error("[BACKTEST] ❌ Lỗi khi ghi cache vĩnh viễn:", e);
-          }
-        } else if (is2224Range) {
-          try {
-            console.log(`[BACKTEST] 💾 Đang lưu dữ liệu CACHE 2022-2024 vào ổ đĩa: ${cache2224Path}`);
-            fs.writeFileSync(cache2224Path, JSON.stringify(allKlines));
-            console.log(`[BACKTEST] ✅ Hoàn tất lưu cache 2022-2024.`);
-          } catch (e) {
-            console.error("[BACKTEST] ❌ Lỗi khi ghi cache 2022-2024:", e);
-          }
-        } else if (is2426Range) {
-          try {
-            console.log(`[BACKTEST] 💾 Đang lưu dữ liệu CACHE 2024-2026 vào ổ đĩa: ${cache2426Path}`);
-            fs.writeFileSync(cache2426Path, JSON.stringify(allKlines));
-            console.log(`[BACKTEST] ✅ Hoàn tất lưu cache 2024-2026.`);
-          } catch (e) {
-            console.error("[BACKTEST] ❌ Lỗi khi ghi cache 2024-2026:", e);
-          }
-        } else if (is2022Range) {
-          try {
-            console.log(`[BACKTEST] 💾 Đang lưu dữ liệu CACHE 2020-2022 vào ổ đĩa: ${cache2022Path}`);
-            fs.writeFileSync(cache2022Path, JSON.stringify(allKlines));
-            console.log(`[BACKTEST] ✅ Hoàn tất lưu cache 2020-2022.`);
-          } catch (e) {
-            console.error("[BACKTEST] ❌ Lỗi khi ghi cache 2020-2022:", e);
-          }
-        } else if (is1820Range) {
-          try {
-            console.log(`[BACKTEST] 💾 Đang lưu dữ liệu CACHE 2018-2020 vào ổ đĩa: ${cache1820Path}`);
-            fs.writeFileSync(cache1820Path, JSON.stringify(allKlines));
-            console.log(`[BACKTEST] ✅ Hoàn tất lưu cache 2018-2020.`);
-          } catch (e) {
-            console.error("[BACKTEST] ❌ Lỗi khi ghi cache 18-20:", e);
-          }
-        } else {
-          // Lưu vào custom file cache để các lần sau chạy không phải online fetch nữa!
-          try {
-            console.log(`[BACKTEST] 💾 Đang lưu dữ liệu CACHE của khoảng thời gian này vào ổ đĩa: ${customCachePath}`);
-            fs.writeFileSync(customCachePath, JSON.stringify(allKlines));
-            console.log(`[BACKTEST] ✅ Hoàn tất lưu cache của khoảng thời gian này.`);
-          } catch (e) {
-            console.error("[BACKTEST] ❌ Lỗi khi ghi cache custom:", e);
-          }
-        }
-      }
+      throw new Error(`Không tìm thấy dữ liệu XAUUSD cho khoảng thời gian từ ${startDate} đến ${endDate}. Vui lòng kiểm tra lại file CSV tại C:/xau_data/{year}.csv hoặc các file cache local trong thư mục "data/".`);
     }
   }
 

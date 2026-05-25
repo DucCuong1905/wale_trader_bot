@@ -105,19 +105,23 @@ export default function App() {
     fetchData();
     
     // Poll backtest status
+    let pollTimeoutId: any = null;
     const pollBacktest = async () => {
+      let isRunning = false;
       try {
         const res = await fetch('/api/backtest/status');
         const json = await res.json();
         setBacktestStatus(json);
         setIsBacktestRunning(json.isRunning);
+        isRunning = json.isRunning;
       } catch (e) {}
-      setTimeout(pollBacktest, 2000);
+      pollTimeoutId = setTimeout(pollBacktest, isRunning ? 2000 : 10000);
     };
     pollBacktest();
 
     return () => {
       if (timerId) clearTimeout(timerId);
+      if (pollTimeoutId) clearTimeout(pollTimeoutId);
     };
   }, []);
 

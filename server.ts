@@ -67,8 +67,7 @@ const BACKTEST_RESULTS_FILE = path.join(DATA_DIR, "backtest_results.json");
 
 let backtestStatus = {
   isRunning: false,
-  progress: 0,
-  lastResult: null as any
+  progress: 0
 };
 
 // Load last backtest result on startup (disabled as requested)
@@ -1112,7 +1111,6 @@ async function startServer() {
       backtestStatus.progress = p; 
     }, adxThreshold || 10, enableWhaleSweep !== undefined ? enableWhaleSweep : true).then(async (r: any) => { 
       backtestStatus.isRunning = false; 
-      backtestStatus.lastResult = r; 
       
       // Gửi báo cáo Telegram khi hoàn tất backtest
         if (r && !r.error) {
@@ -1175,7 +1173,9 @@ async function startServer() {
     }).catch(err => {
       console.error("Backtest Error:", err);
       backtestStatus.isRunning = false;
-      backtestStatus.lastResult = { error: err.message };
+      try {
+        fs.writeFileSync(BACKTEST_RESULTS_FILE, JSON.stringify({ error: err.message }));
+      } catch (e) {}
     });
     res.json({ message: "Started" });
   });
@@ -1184,7 +1184,31 @@ async function startServer() {
     res.json({ status: "Stopping" });
   });
 
-  app.get("/api/backtest/status", (req, res) => res.json(backtestStatus));
+  app.get("/api/backtest/status", (req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    if (backtestStatus.isRunning) {
+      return res.send(JSON.stringify({
+        isRunning: true,
+        progress: backtestStatus.progress,
+        lastResult: null
+      }));
+    }
+    
+    if (fs.existsSync(BACKTEST_RESULTS_FILE)) {
+      try {
+        const data = fs.readFileSync(BACKTEST_RESULTS_FILE, "utf-8");
+        return res.send(`{"isRunning":false,"progress":100,"lastResult":${data}}`);
+      } catch (e) {
+        console.error("Lỗi đọc kết quả backtest từ ổ đĩa:", e);
+      }
+    }
+    
+    return res.send(JSON.stringify({
+      isRunning: false,
+      progress: 0,
+      lastResult: null
+    }));
+  });
   app.get("/api/trading/status", (req, res) => {
     const avgEfficiency = botState.efficiencyHistory.reduce((a, b) => a + b, 0) / botState.efficiencyHistory.length;
     res.json({
