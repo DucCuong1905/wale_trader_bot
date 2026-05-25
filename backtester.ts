@@ -1565,5 +1565,11 @@ export async function runBacktest(
     console.log(`[SESSION] Filtered out ${sessionSkippedCount} candles outside of 08:00 - 21:00 UTC.`);
   }
   allKlines = []; // Free large kline arrays from heap memory
+  backtestDataCache = null; // Clear static memory cache of previous runs to free RAM immediately
+  if (global && typeof (global as any).gc === 'function') {
+    try {
+      (global as any).gc();
+    } catch (e) {}
+  }
   return results;
 }
