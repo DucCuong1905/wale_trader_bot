@@ -220,9 +220,6 @@
     "regime": "NEUTRAL",
     "riskPercent": 1
   },
-  "continuationTrades": 0,
-  "continuationWins": 0,
-  "continuationPnLR": 0,
   "efficiencyStats": {
     "CHOPPY": {
       "trades": 0,

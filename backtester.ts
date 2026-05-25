@@ -528,7 +528,12 @@ function tryLoadFromXauCsv(startDate: string, endDate: string, timeframe: string
         if (cols.length < 5) continue;
         
         const timeStr = cols[timeIdx];
-        const timestamp = new Date(timeStr).getTime();
+        let safeTimeStr = timeStr.trim();
+        safeTimeStr = safeTimeStr.replace(/[\.\/]/g, "-");
+        if (!safeTimeStr.includes("Z") && !safeTimeStr.includes("+") && !safeTimeStr.match(/-\d{2}:\d{2}$/)) {
+          safeTimeStr = safeTimeStr.replace(" ", "T") + "Z";
+        }
+        const timestamp = new Date(safeTimeStr).getTime();
         if (isNaN(timestamp)) continue;
         
         const open = parseFloat(cols[openIdx]);
@@ -1151,19 +1156,23 @@ export async function runBacktest(
       let status = "LOSS";
       const initialRiskDist = Math.abs(entryPrice - sl);
 
+      let tradeResolvedIdx = i;
       for (let j = i + 1; j < Math.min(i + 150, allKlines.length); j++) {
         const [, , h, l, c] = allKlines[j];
         
         if (type === "LONG") {
-          if (l <= sl) { exitPrice = sl; status = "LOSS"; break; }
-          if (h >= tp) { exitPrice = tp; status = "WIN"; break; }
+          if (l <= sl) { exitPrice = sl; status = "LOSS"; tradeResolvedIdx = j; break; }
+          if (h >= tp) { exitPrice = tp; status = "WIN"; tradeResolvedIdx = j; break; }
         } else {
-          if (h >= sl) { exitPrice = sl; status = "LOSS"; break; }
-          if (l <= tp) { exitPrice = tp; status = "WIN"; break; }
+          if (h >= sl) { exitPrice = sl; status = "LOSS"; tradeResolvedIdx = j; break; }
+          if (l <= tp) { exitPrice = tp; status = "WIN"; tradeResolvedIdx = j; break; }
         }
       }
 
-      if (exitPrice === 0) exitPrice = allKlines[Math.min(i + 149, allKlines.length - 1)][4];
+      if (exitPrice === 0) {
+        tradeResolvedIdx = Math.min(i + 149, allKlines.length - 1);
+        exitPrice = allKlines[tradeResolvedIdx][4];
+      }
       
       // Tính PnL R thực tế dựa trên rủi ro ban đầu
       pnlR = (type === "LONG" ? (exitPrice - entryPrice) : (entryPrice - exitPrice)) / initialRiskDist;
@@ -1273,6 +1282,7 @@ export async function runBacktest(
     console.log(`[${formattedTradeTime}] ${status === "WIN" ? "Win" : "Loss"} ${formattedPnL}R Balance: $${results.finalBalance.toFixed(2)} risk: ${formattedRiskPercent}%`);
       
       // Nhảy vòng lặp đến điểm nến hiện tại
+      i = tradeResolvedIdx;
     }
   }
 
