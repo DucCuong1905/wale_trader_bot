@@ -213,30 +213,33 @@ function getLiquidityZones(bars: any[], type: 'high' | 'low') {
 
 function calculateATR(bars: any[], period: number = 14) {
   if (bars.length < period + 1) return 0;
-  let trs: number[] = [];
-  for (let i = 1; i < bars.length; i++) {
+  let trSum = 0;
+  const startIdx = bars.length - period;
+  for (let i = startIdx; i < bars.length; i++) {
     const h = bars[i][2], l = bars[i][3], pc = bars[i-1][4];
-    trs.push(Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)));
+    trSum += Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc));
   }
-  return trs.slice(-period).reduce((a, b) => a + b, 0) / period;
+  return trSum / period;
 }
 
 function calculateVWAP(bars: any[]) {
-  if (bars.length === 0) return 0;
-  const lastBarDate = new Date(bars[bars.length - 1][0]).getUTCDate();
+  const len = bars.length;
+  if (len === 0) return 0;
+  const lastBarDayIndex = Math.floor(bars[len - 1][0] / 86400000);
   let totalPV = 0, totalV = 0;
-  for (let i = bars.length - 1; i >= 0; i--) {
-    const date = new Date(bars[i][0]).getUTCDate();
-    if (date !== lastBarDate) break;
+  for (let i = len - 1; i >= 0; i--) {
+    const dayIndex = Math.floor(bars[i][0] / 86400000);
+    if (dayIndex !== lastBarDayIndex) break;
     const typicalPrice = (bars[i][2] + bars[i][3] + bars[i][4]) / 3;
     totalPV += typicalPrice * bars[i][5];
     totalV += bars[i][5];
   }
-  return totalV === 0 ? bars[bars.length - 1][4] : totalPV / totalV;
+  return totalV === 0 ? bars[len - 1][4] : totalPV / totalV;
 }
 
 function detectSweep(bars: any[]) {
-  if (bars.length < 20) return { 
+  const len = bars.length;
+  if (len < 20) return { 
     sweepHigh: false, 
     sweepLow: false, 
     displacementBullish: false, 
@@ -248,35 +251,52 @@ function detectSweep(bars: any[]) {
     confirmLow: 0 
   };
   
-  const sweepCandle = bars[bars.length - 2];
-  const confirmCandle = bars[bars.length - 1];
+  const sweepCandle = bars[len - 2];
+  const confirmCandle = bars[len - 1];
 
-  const [, sO, sH, sL, sC, sV] = sweepCandle;
-  const [, cO, cH, cL, cC, cV] = confirmCandle;
+  const sO = sweepCandle[1], sH = sweepCandle[2], sL = sweepCandle[3], sC = sweepCandle[4];
+  const cO = confirmCandle[1], cH = confirmCandle[2], cL = confirmCandle[3], cC = confirmCandle[4], cV = confirmCandle[5];
 
-  const prevBars = bars.slice(bars.length - 7, bars.length - 2);
-  const localLow = Math.min(...prevBars.map(b => b[3]));
-  const localHigh = Math.max(...prevBars.map(b => b[2]));
+  let localLow = Infinity;
+  let localHigh = -Infinity;
+  for (let j = len - 7; j < len - 2; j++) {
+    const lowVal = bars[j][3];
+    const highVal = bars[j][2];
+    if (lowVal < localLow) localLow = lowVal;
+    if (highVal > localHigh) localHigh = highVal;
+  }
 
   const sweepSize = sH - sL || 1;
   const lowerWick = Math.min(sO, sC) - sL;
   const upperWick = sH - Math.max(sO, sC);
 
-  const volumes = bars.slice(-21, -1).map(b => b[5]);
-  const avgVol = volumes.reduce((a, b) => a + b, 0) / volumes.length;
+  let sumVol = 0;
+  let isConstantVol = true;
+  const firstVol = bars[len - 21][5];
+  for (let j = len - 21; j < len - 1; j++) {
+    const v = bars[j][5];
+    sumVol += v;
+    if (v !== firstVol) {
+      isConstantVol = false;
+    }
+  }
+  const avgVol = sumVol / 20;
 
   const sweepLow = sL <= localLow && sC >= localLow && (lowerWick / sweepSize >= 0.35);
   const sweepHigh = sH >= localHigh && sC <= localHigh && (upperWick / sweepSize >= 0.35);
 
   const body = Math.abs(cC - cO);
   const totalSize = cH - cL || 1;
-  const bodySizes = bars.slice(-21, -1).map(b => Math.abs(b[4] - b[1]));
-  const avgBody = bodySizes.reduce((a, b) => a + b, 0) / bodySizes.length;
+  
+  let sumBody = 0;
+  for (let j = len - 21; j < len - 1; j++) {
+    sumBody += Math.abs(bars[j][4] - bars[j][1]);
+  }
+  const avgBody = sumBody / 20;
   
   const displacementBullish = body > avgBody * 1.2 && (cC - cL) / totalSize > 0.7 && cC > Math.max(sO, sC);
   const displacementBearish = body > avgBody * 1.2 && (cH - cC) / totalSize > 0.7 && cC < Math.min(sO, sC);
 
-  const isConstantVol = volumes.length > 0 && volumes.every(v => v === volumes[0]);
   const volConfirm = isConstantVol ? true : cV > avgVol;
 
   return {
@@ -336,12 +356,13 @@ function calcBB(ohlcv: any[], period: number = 20, stdDev: number = 2) {
 }
 
 function calcADX(ohlcv: any[]) {
+  const data = ohlcv.length > 35 ? ohlcv.slice(-35) : ohlcv;
   const period = 14;
-  if (ohlcv.length < period * 2) return { adx: 0, pDI: 0, mDI: 0 };
+  if (data.length < period * 2) return { adx: 0, pDI: 0, mDI: 0 };
   let tr: number[] = [], plusDM: number[] = [], minusDM: number[] = [];
 
-  for (let i = 1; i < ohlcv.length; i++) {
-    const [ts, o, h, l, c] = ohlcv[i], prevC = ohlcv[i-1][4], prevH = ohlcv[i-1][2], prevL = ohlcv[i-1][3];
+  for (let i = 1; i < data.length; i++) {
+    const h = data[i][2], l = data[i][3], prevC = data[i-1][4], prevH = data[i-1][2], prevL = data[i-1][3];
     tr.push(Math.max(h - l, Math.abs(h - prevC), Math.abs(l - prevC)));
     const upMove = h - prevH, downMove = prevL - l;
     plusDM.push(upMove > downMove && upMove > 0 ? upMove : 0);
@@ -584,6 +605,7 @@ export async function runBacktest(
   enableWhaleSweep: boolean = true
 ) {
   shouldStopBacktest = false;
+  backtestDataCache = null; // Clear static memory cache of previous runs to free RAM immediately
   console.log(`[BACKTEST] Start ${PAIR} from ${startDate} to ${endDate} (RR: ${rr}, TF: ${timeframe}, SessionFilter: ${enableSessionFilter}, VWMA: ${vwmaPeriod}, ADX: ${adxThreshold}, WhaleSweep: ${enableWhaleSweep})`);
   const exchange = new ccxt.binance({ 
     timeout: 30000,
@@ -920,11 +942,6 @@ export async function runBacktest(
       break;
     }
 
-    // --- KHUNG 5P FILTER ---
-    const calcWindow5mRaw = allKlines.slice(Math.max(0, i - 110), i + 1);
-    const bars5m = aggregateCandles(calcWindow5mRaw, 5);
-    const vwma5m = calculateVWMA(bars5m, 20);
-
     // --- 1. RESOLVE PENDING SWEEPS ON CURRENT BAR ---
     const [, , barH, barL, barC] = allKlines[i];
     for (let sIdx = pendingSweeps.length - 1; sIdx >= 0; sIdx--) {
@@ -1031,6 +1048,10 @@ export async function runBacktest(
       if (isInSession) debugWhaleLongConditions.isInSession++;
       if (enableWhaleSweep) debugWhaleLongConditions.enableWhaleSweep++;
       if (!isOverExtendedLong) debugWhaleLongConditions.notOverExtendedLong++;
+      
+      const calcWindow5mRaw = allKlines.slice(Math.max(0, i - 110), i + 1);
+      const bars5m = aggregateCandles(calcWindow5mRaw, 5);
+      const vwma5m = calculateVWMA(bars5m, 20);
       if (currentPrice > vwma5m) debugWhaleLongConditions.currentPrice_gt_vwma5m++;
       if (adxM1.adx >= adxThreshold) debugWhaleLongConditions.adx_ge_threshold++;
       if (slopeM1 > 0) debugWhaleLongConditions.slope_gt_0++;
@@ -1058,6 +1079,10 @@ export async function runBacktest(
       if (isInSession) debugWhaleShortConditions.isInSession++;
       if (enableWhaleSweep) debugWhaleShortConditions.enableWhaleSweep++;
       if (!isOverExtendedShort) debugWhaleShortConditions.notOverExtendedShort++;
+
+      const calcWindow5mRaw = allKlines.slice(Math.max(0, i - 110), i + 1);
+      const bars5m = aggregateCandles(calcWindow5mRaw, 5);
+      const vwma5m = calculateVWMA(bars5m, 20);
       if (currentPrice < vwma5m) debugWhaleShortConditions.currentPrice_lt_vwma5m++;
       if (adxM1.adx >= adxThreshold) debugWhaleShortConditions.adx_ge_threshold++;
       if (slopeM1 > -0.02) debugWhaleShortConditions.slope_gt_neg_0_02++;
@@ -1128,6 +1153,7 @@ export async function runBacktest(
     // --- MINI COMPRESSION & CONTINUATION LOGIC (COMPRESSION -> EXPANSION) ---
     let isContinuationLong = false;
     let isContinuationShort = false;
+    let vwma5m = 0;
 
     if (isContinuationEnabled) {
       const recent5 = allKlines.slice(Math.max(0, i - 5), i);
@@ -1538,5 +1564,6 @@ export async function runBacktest(
   if (enableSessionFilter) {
     console.log(`[SESSION] Filtered out ${sessionSkippedCount} candles outside of 08:00 - 21:00 UTC.`);
   }
+  allKlines = []; // Free large kline arrays from heap memory
   return results;
 }
