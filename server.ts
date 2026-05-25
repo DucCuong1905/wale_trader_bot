@@ -29,7 +29,6 @@ const MAX_DAILY_LOSS = 0.06; // Giới hạn lỗ tối đa trong ngày (6%)
 // CẤU HÌNH PHIÊN GIAO DỊCH (LONDON & NEW YORK)
 let ENABLE_SESSION_FILTER = true; 
 let ENABLE_WHALE_SWEEP = true; 
-let ENABLE_CONTINUATION = false; // Tạm thời tắt chiến lược continuation theo yêu cầu
 const VWMA_PERIOD = 20; // Cố định VWMA 20
 let ADX_THRESHOLD = 10; // Ngưỡng ADX mặc định
 const SESSION_START_GMT = 8;  // 08:00 GMT (Mở phiên Âu)
@@ -821,7 +820,6 @@ async function traderLoop() {
       : 0.50;
 
     const dynamicRiskMult = 1.0; // Tải cứng 1% rủi ro, tắt Dynamic Risk theo yêu cầu
-    const isContinuationEnabled = false; // Bỏ hoàn toàn chiến lược Continuation
     const finalRegimeLabel = "NEUTRAL";
 
     const isMarketTooChoppy = false; // No TQS choppy boundary
@@ -866,8 +864,6 @@ async function traderLoop() {
 
     // lastCandle already defined at top
     const lastCandleTime = lastCandle[0];
-    const lastCandleLow = lastCandle[3];
-    const lastCandleHigh = lastCandle[2];
 
     // Chỉ phân tích khi có nến mới (M1)
     if (lastCandleTime <= botState.lastProcessedCandleTime) {
@@ -881,7 +877,7 @@ async function traderLoop() {
     let sig: "LONG" | "SHORT" | null = null;
     
     // ========================================================
-    // 5. ĐIỀU KIỆN VÀO LỆNH (SWEP & CONTINUATION)
+    // 5. ĐIỀU KIỆN VÀO LỆNH (WHALE SWEEP ONLY)
     // ========================================================
     const isOverExtendedLong = distFromVWMA > (atrM1 * 1.4);
     const isOverExtendedShort = distFromVWMA > (atrM1 * 1.4);
@@ -890,67 +886,6 @@ async function traderLoop() {
     const slDistanceShort = Math.abs(sweep.high - currentPrice);
     const hasBadEntryPriceLong = slDistanceLong > (atrM1 * 2.0);
     const hasBadEntryPriceShort = slDistanceShort > (atrM1 * 2.0);
-
-    // --- MINI COMPRESSION & CONTINUATION LOGIC ---
-    const recent5 = bars.slice(-6, -1);
-    const recentHigh = Math.max(...recent5.map(b => b[2]));
-    const recentLow = Math.min(...recent5.map(b => b[3]));
-    const compRange = recentHigh - recentLow;
-    const volMA = bars.slice(-21, -1).reduce((s, b) => s + b[5], 0) / 20;
-    const atrMA = bars.slice(-15, -1).reduce((s, b) => s + (b[2] - b[3]), 0) / 14;
-    const atrPrev = bars.length >= 2 ? (bars[bars.length - 2][2] - bars[bars.length - 2][3]) : atrM1;
-    const bodySize = Math.abs(bars[bars.length - 1][4] - bars[bars.length - 1][1]);
-    const prevHigh = bars[bars.length - 2][2];
-    const prevLow = bars[bars.length - 2][3];
-
-    let overlapCount = 0;
-    for (let j = 0; j < recent5.length - 1; j++) {
-      const h1 = recent5[j][2];
-      const l1 = recent5[j][3];
-      const h2 = recent5[j+1][2];
-      const l2 = recent5[j+1][3];
-      if (l1 <= h2 && h1 >= l2) overlapCount++;
-    }
-
-    const isAtrExpansion = (atrM1 > atrPrev) || (atrM1 > atrMA * 1.03);
-
-    // LONG CONTINUATION V11 (Targeting 10-15 trades/month - Balanced)
-    const isContinuationLong = 
-      isContinuationEnabled &&   
-      currentPrice > vwma5m &&
-      currentPrice > vwapM1 &&
-      slopeM1 > 0 &&
-      adxM1.adx >= 10 &&              
-      adxM1.pDI > adxM1.mDI &&
-      distFromVWMA < (atrM1 * 1.8) && 
-      compRange < (atrM1 * 1.45) &&    
-      overlapCount >= 2 &&            
-      recentLow > vwma5m &&           
-      bars.slice(-3, -1).every(b => b[4] > vwma5m) && 
-      isAtrExpansion &&               
-      currentPrice > recentHigh &&    
-      bodySize > (atrM1 * 0.5) &&     
-      bars[bars.length - 1][5] > volMA * 1.1 && 
-      currentPrice > prevHigh;
-
-    // SHORT CONTINUATION V11 (Targeting 10-15 trades/month - Balanced)
-    const isContinuationShort = 
-      isContinuationEnabled &&
-      currentPrice < vwma5m &&
-      currentPrice < vwapM1 &&
-      slopeM1 < 0 &&
-      adxM1.adx >= 10 &&
-      adxM1.mDI > adxM1.pDI &&
-      distFromVWMA < (atrM1 * 1.8) &&
-      compRange < (atrM1 * 1.45) &&
-      overlapCount >= 2 &&
-      recentHigh < vwma5m &&
-      bars.slice(-3, -1).every(b => b[4] < vwma5m) &&
-      isAtrExpansion &&
-      currentPrice < recentLow &&
-      bodySize > (atrM1 * 0.5) &&
-      bars[bars.length - 1][5] > volMA * 1.1 &&
-      currentPrice < prevLow;
 
     // LONG ENTRY
     if (
@@ -970,25 +905,19 @@ async function traderLoop() {
       sig = "SHORT";
     }
 
-    const isContTrade = (sig === "LONG" && isContinuationLong) || (sig === "SHORT" && isContinuationShort);
     const currentRR = RR;
-    const strategyLabel = isContTrade ? "CONTINUATION" : "WHALE SWEEP";
+    const strategyLabel = "WHALE SWEEP";
 
     // 7. XỬ LÝ LỆNH (MARKET ENTRY)
     if (sig) {
       const e = currentPrice; 
-      // Set SL cho Continuation
-      let sl = sig === "LONG" ? (currentPrice - atrM1 * 2) : (currentPrice + atrM1 * 2);
-      if (isContTrade) {
-        sl = sig === "LONG" ? (currentPrice - atrM1 * 1.5) : (currentPrice + atrM1 * 1.5);
+      const slRaw = sig === "LONG" ? (sweep.low - atrM1 * 0.8) : (sweep.high + atrM1 * 0.8);
+      const minRisk = atrM1 * 1.5;
+      let sl = 0;
+      if (sig === "LONG") {
+        sl = Math.min(slRaw, currentPrice - minRisk);
       } else {
-        const slRaw = sig === "LONG" ? (sweep.low - atrM1 * 0.8) : (sweep.high + atrM1 * 0.8);
-        const minRisk = atrM1 * 1.5;
-        if (sig === "LONG") {
-          sl = Math.min(slRaw, currentPrice - minRisk);
-        } else {
-          sl = Math.max(slRaw, currentPrice + minRisk);
-        }
+        sl = Math.max(slRaw, currentPrice + minRisk);
       }
       
       const risk = Math.abs(e - sl);
@@ -1017,7 +946,7 @@ async function traderLoop() {
         const vnTime = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
         botState.lastTradeTime = Date.now(); 
 
-        const strategyName = isContTrade ? "CONTINUATION (Bùng nổ tiếp diễn)" : "WHALE SWEEP (Quét thanh khoản)";
+        const strategyName = "WHALE SWEEP (Quét thanh khoản)";
 
         const conditions = [
           `📡 Chiến lược: **${strategyName}**`,
@@ -1025,7 +954,7 @@ async function traderLoop() {
           `2. Giá vs VWMA 5m: ${sig === 'LONG' ? (currentPrice > vwma5m ? '✅ Trên' : '❌ Dưới') : (currentPrice < vwma5m ? '✅ Dưới' : '❌ Trên')}`,
           `3. Slope M1: ${sig === 'LONG' ? (slopeM1 > 0 ? `✅ Positive (${slopeM1.toFixed(4)})` : `❌ Negative (${slopeM1.toFixed(4)})`) : (slopeM1 > -0.02 ? `✅ > -0.02 (${slopeM1.toFixed(4)})` : `❌ <= -0.02 (${slopeM1.toFixed(4)})`)}`,
           `4. ADX M1 (>=${ADX_THRESHOLD}): ${adxM1.adx >= ADX_THRESHOLD ? '✅' : '❌'} (${adxM1.adx.toFixed(1)})`,
-          `5. Sweep M1: ${isContTrade ? 'N/A (Continuation)' : '✅ Confirmed'}`
+          `5. Sweep M1: ✅ Confirmed`
         ].join('\n');
 
         const rollingWRPercent = (rollingWinRate * 100).toFixed(1);
@@ -1127,9 +1056,9 @@ async function startServer() {
               return `• ${m.date}: ${m.whalePnLR.toFixed(1)}R | WR: ${wr}% (${m.whaleTrades} lệnh)`;
             }).join('\n');
           }
-          const whaleTrades = r.totalTrades - (r.continuationTrades || 0);
-          const whaleWins = r.wins - (r.continuationWins || 0);
-          const whalePnLR = r.totalProfitR - (r.continuationPnLR || 0);
+          const whaleTrades = r.totalTrades;
+          const whaleWins = r.wins;
+          const whalePnLR = r.totalProfitR;
           const whaleWR = whaleTrades > 0 ? (whaleWins / whaleTrades * 100).toFixed(1) : "0.0";
 
           // 2. Chi tiết theo Efficiency
@@ -1141,12 +1070,6 @@ async function startServer() {
           const choppyStr = getEffStatsStr("CHOPPY");
           const neutralStr = getEffStatsStr("NEUTRAL");
           const expansionStr = getEffStatsStr("EXPANSION");
-
-          // 3. Thống kê Continuation
-          const contTrades = r.continuationTrades || 0;
-          const contWins = r.continuationWins || 0;
-          const contPnLR = r.continuationPnLR || 0;
-          const contWR = contTrades > 0 ? (contWins / contTrades * 100).toFixed(1) : "0.0";
 
           // Gửi đúng 1 tin nhắn duy nhất chứa toàn bộ thông tin
           const reportMsg = [
@@ -1162,10 +1085,7 @@ async function startServer() {
             `Chi tiết theo Efficiency (Dynamic Risk):`,
             choppyStr,
             neutralStr,
-            expansionStr,
-            ``,
-            `🚀 Continuation Strategy:`,
-            `• Lệnh: ${contTrades} | WR: ${contWR}% | ${contPnLR.toFixed(1)}R`
+            expansionStr
           ].join('\n');
 
           await sendTelegram(reportMsg);

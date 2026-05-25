@@ -60,7 +60,6 @@ const RISK_PER_TRADE = 0.01; // 1%
 
 // CẤU HÌNH PHIÊN GIAO DỊCH
 const ENABLE_SESSION_FILTER = true;
-const ENABLE_CONTINUATION = false; // Tạm thời tắt chiến lược continuation theo yêu cầu
 const SESSION_START_GMT = 8;
 const SESSION_END_GMT = 21;
 
@@ -87,9 +86,6 @@ interface BacktestResult {
   totalProfitR: number;
   monthlySnapshots: any[];
   marketRegime?: any;
-  continuationTrades: number;
-  continuationWins: number;
-  continuationPnLR: number;
   efficiencyStats: {
     [key: string]: {
       trades: number;
@@ -129,9 +125,6 @@ let results: BacktestResult = {
   totalProfitR: 0,
   monthlySnapshots: [],
   marketRegime: null,
-  continuationTrades: 0,
-  continuationWins: 0,
-  continuationPnLR: 0,
   efficiencyStats: {
     "CHOPPY": { trades: 0, wins: 0, pnlR: 0 },
     "NEUTRAL": { trades: 0, wins: 0, pnlR: 0 },
@@ -629,9 +622,6 @@ export async function runBacktest(
     totalProfitR: 0,
     monthlySnapshots: [],
     marketRegime: null,
-    continuationTrades: 0,
-    continuationWins: 0,
-    continuationPnLR: 0,
     efficiencyStats: {
       "CHOPPY": { trades: 0, wins: 0, pnlR: 0 },
       "NEUTRAL": { trades: 0, wins: 0, pnlR: 0 },
@@ -677,8 +667,9 @@ export async function runBacktest(
       try {
         console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ VÀNG (2026-01-01 -> 2026-05-01) - Timeframe: ${timeframe}`);
         console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE từ ổ đĩa: ${specialCachePath}`);
-        const rawData = fs.readFileSync(specialCachePath, "utf-8");
+        let rawData: string | null = fs.readFileSync(specialCachePath, "utf-8");
         allKlines = JSON.parse(rawData);
+        rawData = null;
         console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
       } catch (e) {
         console.error("[BACKTEST] ❌ Lỗi khi đọc cache vĩnh viễn, sẽ fetch lại:", e);
@@ -687,8 +678,9 @@ export async function runBacktest(
       try {
         console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ 2020-2022 - Timeframe: ${timeframe}`);
         console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE từ ổ đĩa: ${cache2022Path}`);
-        const rawData = fs.readFileSync(cache2022Path, "utf-8");
+        let rawData: string | null = fs.readFileSync(cache2022Path, "utf-8");
         allKlines = JSON.parse(rawData);
+        rawData = null;
         console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
       } catch (e) {
         console.error("[BACKTEST] ❌ Lỗi khi đọc cache 2020-2022:", e);
@@ -697,8 +689,9 @@ export async function runBacktest(
       try {
         console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ 2022-2024 - Timeframe: ${timeframe}`);
         console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE từ ổ đĩa: ${cache2224Path}`);
-        const rawData = fs.readFileSync(cache2224Path, "utf-8");
+        let rawData: string | null = fs.readFileSync(cache2224Path, "utf-8");
         allKlines = JSON.parse(rawData);
+        rawData = null;
         console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
       } catch (e) {
         console.error("[BACKTEST] ❌ Lỗi khi đọc cache 22-24:", e);
@@ -707,8 +700,9 @@ export async function runBacktest(
       try {
         console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ 2024-2026 - Timeframe: ${timeframe}`);
         console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE từ ổ đĩa: ${cache2426Path}`);
-        const rawData = fs.readFileSync(cache2426Path, "utf-8");
+        let rawData: string | null = fs.readFileSync(cache2426Path, "utf-8");
         allKlines = JSON.parse(rawData);
+        rawData = null;
         console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
       } catch (e) {
         console.error("[BACKTEST] ❌ Lỗi khi đọc cache 24-26:", e);
@@ -717,8 +711,9 @@ export async function runBacktest(
       try {
         console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ 2018-2020 - Timeframe: ${timeframe}`);
         console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE từ ổ đĩa: ${cache1820Path}`);
-        const rawData = fs.readFileSync(cache1820Path, "utf-8");
+        let rawData: string | null = fs.readFileSync(cache1820Path, "utf-8");
         allKlines = JSON.parse(rawData);
+        rawData = null;
         console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
       } catch (e) {
         console.error("[BACKTEST] ❌ Lỗi khi đọc cache 18-20:", e);
@@ -727,8 +722,9 @@ export async function runBacktest(
       try {
         console.log(`[BACKTEST] 💠 PHÁT HIỆN CÓ CACHE DỮ LIỆU PHÙ HỢP - Timeframe: ${timeframe}`);
         console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE từ ổ đĩa: ${customCachePath}`);
-        const rawData = fs.readFileSync(customCachePath, "utf-8");
+        let rawData: string | null = fs.readFileSync(customCachePath, "utf-8");
         allKlines = JSON.parse(rawData);
+        rawData = null;
         console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
       } catch (e) {
         console.error("[BACKTEST] ❌ Lỗi khi đọc cache custom:", e);
@@ -778,9 +774,6 @@ export async function runBacktest(
     displaceWins: 0,
     totalProfitR: 0,
     monthlySnapshots: [],
-    continuationTrades: 0,
-    continuationWins: 0,
-    continuationPnLR: 0,
     efficiencyStats: {
       "CHOPPY": { trades: 0, wins: 0, pnlR: 0 },
       "NEUTRAL": { trades: 0, wins: 0, pnlR: 0 },
@@ -804,18 +797,10 @@ export async function runBacktest(
   let monthlyShortWins = 0;
   let monthlyPnL = 0;
   let monthlyProfitR = 0;
-  let monthlyContTrades = 0;
-  let monthlyContWins = 0;
-  let monthlyContPnLR = 0;
   let monthlyWhaleTrades = 0;
   let monthlyWhaleWins = 0;
   let monthlyWhalePnLR = 0;
   let monthlySnapshots: any[] = [];
-  
-  // Tracking for NEW Continuation strategy
-  let continuationTrades = 0;
-  let continuationWins = 0;
-  let continuationPnLR = 0;
 
   // Diagnostics/Debug Tracking
   let debugTotalCandles = 0;
@@ -1069,99 +1054,28 @@ export async function runBacktest(
         longWins: monthlyLongWins,
         shortTrades: monthlyShortTrades,
         shortWins: monthlyShortWins,
-        // Continuation stats for UI
-        continuationTrades: monthlyContTrades,
-        continuationWins: monthlyContWins,
-        continuationPnLR: monthlyContPnLR,
-        whaleTrades: monthlyWhaleTrades,
-        whaleWins: monthlyWhaleWins,
-        whalePnLR: monthlyWhalePnLR
+        // Continuation stats (completely disabled)
+        continuationTrades: 0,
+        continuationWins: 0,
+        continuationPnLR: 0,
+        whaleTrades: totalMonthTrades,
+        whaleWins: monthlyWins,
+        whalePnLR: monthlyProfitR
       });
 
       monthlyWins = 0; monthlyLosses = 0; monthlyLongTrades = 0; monthlyLongWins = 0;
       monthlyShortTrades = 0; monthlyShortWins = 0; monthlyPnL = 0; monthlyProfitR = 0;
-      monthlyContTrades = 0; monthlyContWins = 0; monthlyContPnLR = 0;
       monthlyWhaleTrades = 0; monthlyWhaleWins = 0; monthlyWhalePnLR = 0;
     }
     lastMonth = currentMonth;
     lastYear = currentYear;
 
-    // --- MINI COMPRESSION & CONTINUATION LOGIC (COMPRESSION -> EXPANSION) ---
-    let isContinuationLong = false;
-    let isContinuationShort = false;
-    let vwma5m = 0;
-
-    if (isContinuationEnabled) {
-      const recent5 = allKlines.slice(Math.max(0, i - 5), i);
-      const recentHigh = Math.max(...recent5.map(b => b[2]));
-      const recentLow = Math.min(...recent5.map(b => b[3]));
-      const compRange = recentHigh - recentLow;
-      
-      const volMA = allKlines.slice(Math.max(0, i - 20), i).reduce((s, b) => s + b[5], 0) / 20;
-      const atrMA = allKlines.slice(Math.max(0, i - 14), i).reduce((s, b) => s + (b[2] - b[3]), 0) / 14; // Đơn giản hóa ATR MA
-      const atrPrev = i > 0 ? (allKlines[i-1][2] - allKlines[i-1][3]) : atrM1;
-      
-      const bodySize = Math.abs(allKlines[i][4] - allKlines[i][1]);
-      const prevHigh = allKlines[i-1][2];
-      const prevLow = allKlines[i-1][3];
-
-      // Detect mini compression (Overlap Count)
-      let overlapCount = 0;
-      for (let j = 0; j < recent5.length - 1; j++) {
-        const h1 = recent5[j][2];
-        const l1 = recent5[j][3];
-        const h2 = recent5[j+1][2];
-        const l2 = recent5[j+1][3];
-        if (l1 <= h2 && h1 >= l2) overlapCount++;
-      }
-
-      const isAtrExpansion = (atrM1 > atrPrev) || (atrM1 > atrMA * 1.03);
-
-      // LONG CONTINUATION V11 (Targeting 10-15 trades/month - Balanced)
-      isContinuationLong = 
-        currentPrice > vwma5m &&
-        currentPrice > vwapM1 &&
-        slopeM1 > 0 &&
-        adxM1.adx >= 10 &&              
-        adxM1.pDI > adxM1.mDI &&
-        distFromVWMA < (atrM1 * 1.8) && 
-        compRange < (atrM1 * 1.45) &&   
-        overlapCount >= 2 &&            
-        recentLow > vwma5m &&           
-        allKlines.slice(Math.max(0, i-3), i).every(b => b[4] > vwma5m) && 
-        isAtrExpansion &&               
-        currentPrice > recentHigh &&    
-        bodySize > (atrM1 * 0.5) &&    
-        allKlines[i][5] > volMA * 1.1 && 
-        currentPrice > prevHigh;
-
-      // SHORT CONTINUATION V11 (Targeting 10-15 trades/month - Balanced)
-      isContinuationShort = 
-        currentPrice < vwma5m &&
-        currentPrice < vwapM1 &&
-        slopeM1 < 0 &&
-        adxM1.adx >= 10 &&
-        adxM1.mDI > adxM1.pDI &&
-        distFromVWMA < (atrM1 * 1.8) &&
-        compRange < (atrM1 * 1.45) &&
-        overlapCount >= 2 &&
-        recentHigh < vwma5m &&
-        allKlines.slice(Math.max(0, i-3), i).every(b => b[4] < vwma5m) &&
-        isAtrExpansion &&
-        currentPrice < recentLow &&
-        bodySize > (atrM1 * 0.5) &&
-        allKlines[i][5] > volMA * 1.1 &&
-        currentPrice < prevLow;
-    }
-
     // --- ENTRY DECISION (WHALE SWEEP ONLY) ---
-    let isLong = !isMarketTooChoppy && (
-      (enableWhaleSweep && !isOverExtendedLong && !hasBadEntryPriceLong && currentPrice > vwmaM1 && slopeM1 > 0 && adxM1.adx >= adxThreshold && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isInSession)
-    );
+    let isLong = !isMarketTooChoppy && 
+      enableWhaleSweep && !isOverExtendedLong && !hasBadEntryPriceLong && currentPrice > vwmaM1 && slopeM1 > 0 && adxM1.adx >= adxThreshold && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isInSession;
 
-    let isShort = !isMarketTooChoppy && (
-      (enableWhaleSweep && !isOverExtendedShort && !hasBadEntryPriceShort && currentPrice < vwmaM1 && slopeM1 < 0 && adxM1.adx >= adxThreshold && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isInSession)
-    );
+    let isShort = !isMarketTooChoppy && 
+      enableWhaleSweep && !isOverExtendedShort && !hasBadEntryPriceShort && currentPrice < vwmaM1 && slopeM1 < 0 && adxM1.adx >= adxThreshold && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isInSession;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
@@ -1210,24 +1124,17 @@ export async function runBacktest(
         efficiencyLabel = "NEUTRAL";
       }
 
-      const isContTrade = (type === "LONG" ? isContinuationLong : isContinuationShort);
       const currentRR = rr;
       const entryPrice = currentPrice; 
       
       const time = new Date(allKlines[i][0]).toISOString();
-      // Nếu là lệnh Continuation, ta dùng ATR để đặt SL thay vì dùng nến Sweep (vì Sweep có thể ko tồn tại)
-      let sl = type === "LONG" ? (currentPrice - atrM1 * 2) : (currentPrice + atrM1 * 2);
-      
-      if (isContinuationLong || isContinuationShort) {
-         sl = type === "LONG" ? (currentPrice - atrM1 * 1.5) : (currentPrice + atrM1 * 1.5);
+      const slRaw = type === "LONG" ? (sweep.low - atrM1 * 0.6) : (sweep.high + atrM1 * 0.6);
+      const minRisk = atrM1 * 1.2;
+      let sl = 0;
+      if (type === "LONG") {
+        sl = Math.min(slRaw, currentPrice - minRisk);
       } else {
-         const slRaw = type === "LONG" ? (sweep.low - atrM1 * 0.6) : (sweep.high + atrM1 * 0.6);
-         const minRisk = atrM1 * 1.2;
-         if (type === "LONG") {
-           sl = Math.min(slRaw, currentPrice - minRisk);
-         } else {
-           sl = Math.max(slRaw, currentPrice + minRisk);
-         }
+        sl = Math.max(slRaw, currentPrice + minRisk);
       }
       const risk = Math.abs(entryPrice - sl);
       const tp = type === "LONG" ? entryPrice + risk * rr : entryPrice - risk * rr;
@@ -1235,7 +1142,7 @@ export async function runBacktest(
       const baseRiskPercent = 0.01;
       const currentRiskPercent = baseRiskPercent * dynamicRiskMult;
 
-      const strategyLabel = isContTrade ? "CONTINUATION" : "WHALE SWEEP";
+      const strategyLabel = "WHALE SWEEP";
       console.log(`[SIGNAL] ${type} | ${strategyLabel} | Entry: $${entryPrice.toFixed(2)} | SL: $${sl.toFixed(2)} | TP: $${tp.toFixed(2)}`);
       
       // Tìm kết quả trong các nến tiếp theo
@@ -1315,23 +1222,11 @@ export async function runBacktest(
     results.totalPnL += dollarPnL;
     results.totalProfitR += effectiveR;
     
-    // Track Continuation stats
-    if (isContTrade) {
-      continuationTrades++;
-      continuationPnLR += effectiveR;
-      monthlyContTrades++;
-      monthlyContPnLR += effectiveR;
-      if (status === "WIN") {
-        continuationWins++;
-        monthlyContWins++;
-      }
-    } else {
-      // Whale Sweep stats
-      monthlyWhaleTrades++;
-      monthlyWhalePnLR += effectiveR;
-      if (status === "WIN") {
-        monthlyWhaleWins++;
-      }
+    // Whale Sweep stats
+    monthlyWhaleTrades++;
+    monthlyWhalePnLR += effectiveR;
+    if (status === "WIN") {
+      monthlyWhaleWins++;
     }
 
     // Track regime stats
@@ -1348,7 +1243,7 @@ export async function runBacktest(
        results.efficiencyStats[efficiencyLabel].trades++;
        results.efficiencyStats[efficiencyLabel].pnlR += effectiveR;
        if (status === "WIN") results.efficiencyStats[efficiencyLabel].wins++;
-    }
+     }
 
     results.trades.push({ 
       time, 
@@ -1368,7 +1263,7 @@ export async function runBacktest(
       riskPercent: Number((currentRiskPercent * 100).toFixed(2))
     });
     
-    const strategyLabelResult = isContTrade ? "CONTINUATION" : "WHALE SWEEP";
+    const strategyLabelResult = "WHALE SWEEP";
     console.log(`[TRADE] ${status} | ${strategyLabelResult} | Risk: ${(currentRiskPercent * 100).toFixed(1)}% (${efficiencyLabel}) | PnL: ${pnlR.toFixed(1)}R | Balance: $${results.finalBalance.toFixed(2)}`);
     
     // Log format requested by user
@@ -1382,7 +1277,7 @@ export async function runBacktest(
   }
 
   // Đẩy tháng cuối cùng chưa lưu nếu kết thúc loop xuyên tháng
-  if (lastMonth !== -1 && (monthlyWins + monthlyLosses > 0 || monthlyContTrades > 0 || monthlyWhaleTrades > 0)) {
+  if (lastMonth !== -1 && (monthlyWins + monthlyLosses > 0 || monthlyWhaleTrades > 0)) {
     const totalMonthTrades = monthlyWins + monthlyLosses;
     const monthWinRate = totalMonthTrades > 0 ? (monthlyWins / totalMonthTrades * 100) : 0;
     
@@ -1402,20 +1297,17 @@ export async function runBacktest(
       longWins: monthlyLongWins,
       shortTrades: monthlyShortTrades,
       shortWins: monthlyShortWins,
-      // Continuation stats for UI
-      continuationTrades: monthlyContTrades,
-      continuationWins: monthlyContWins,
-      continuationPnLR: monthlyContPnLR,
-      whaleTrades: monthlyWhaleTrades,
-      whaleWins: monthlyWhaleWins,
-      whalePnLR: monthlyWhalePnLR
+      // Continuation stats (completely disabled)
+      continuationTrades: 0,
+      continuationWins: 0,
+      continuationPnLR: 0,
+      whaleTrades: totalMonthTrades,
+      whaleWins: monthlyWins,
+      whalePnLR: monthlyProfitR
     });
   }
 
   results.monthlySnapshots = monthlySnapshots;
-  results.continuationTrades = continuationTrades;
-  results.continuationWins = continuationWins;
-  results.continuationPnLR = continuationPnLR;
   fs.writeFileSync(RESULTS_FILE, JSON.stringify(results, null, 2));
   console.log(`[DONE] Backtest complete. Results: ${RESULTS_FILE}`);
 
@@ -1423,15 +1315,9 @@ export async function runBacktest(
   if (results.monthlySnapshots && results.monthlySnapshots.length > 0) {
     results.monthlySnapshots.forEach((m: any) => {
       const wr = m.whaleTrades > 0 ? (m.whaleWins / m.whaleTrades * 100).toFixed(1) : "0.0";
-      const totalPnLR = m.whalePnLR + (m.continuationPnLR || 0);
+      const totalPnLR = m.whalePnLR;
       console.log(`• ${m.date}: PnL: ${totalPnLR.toFixed(1)}R | Whale PnL: ${m.whalePnLR.toFixed(1)}R (WR: ${wr}%, ${m.whaleTrades} lđ) | Số dư: $${m.balance.toFixed(2)}`);
     });
-  }
-
-  if (continuationTrades > 0) {
-    const contWR = ((continuationWins / continuationTrades) * 100).toFixed(1);
-    console.log(`\n🚀 --- THỐNG KÊ CHIẾN LƯỢC CONTINUATION (PULLBACK/BREAKOUT) ---`);
-    console.log(`• Số lệnh: ${continuationTrades} | Winrate: ${contWR}% | PnL: ${continuationPnLR.toFixed(1)}R`);
   }
 
   console.log("\n📊 --- THỐNG KÊ THEO EFFICIENCY (DYNAMIC RISK) ---");
@@ -1462,12 +1348,6 @@ export async function runBacktest(
      const wr = stats.trades > 0 ? ((stats.wins / stats.trades) * 100).toFixed(1) : "0";
      teleMsg += `• ${eff}: ${stats.trades} lệnh | WR: ${wr}% | ${stats.pnlR.toFixed(1)}R\n`;
   });
-
-  if (continuationTrades > 0) {
-    const contWR = ((continuationWins / continuationTrades) * 100).toFixed(1);
-    teleMsg += `\n🚀 **Continuation Strategy:**\n`;
-    teleMsg += `• Lệnh: ${continuationTrades} | WR: ${contWR}% | ${continuationPnLR.toFixed(1)}R`;
-  }
 
   await sendTelegramBacktest(teleMsg);
 
@@ -1528,9 +1408,6 @@ export async function runBacktest(
       displaceWins: 0,
       totalProfitR: 0,
       monthlySnapshots: [],
-      continuationTrades: 0,
-      continuationWins: 0,
-      continuationPnLR: 0,
       efficiencyStats: {},
       regimeStats: {}
     };
