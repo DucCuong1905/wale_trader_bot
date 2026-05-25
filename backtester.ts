@@ -1133,8 +1133,8 @@ export async function runBacktest(
       const entryPrice = currentPrice; 
       
       const time = new Date(allKlines[i][0]).toISOString();
-      const slRaw = type === "LONG" ? (sweep.low - atrM1 * 0.6) : (sweep.high + atrM1 * 0.6);
-      const minRisk = atrM1 * 1.2;
+      const slRaw = type === "LONG" ? (sweep.low - atrM1 * 0.8) : (sweep.high + atrM1 * 0.8);
+      const minRisk = atrM1 * 1.5;
       let sl = 0;
       if (type === "LONG") {
         sl = Math.min(slRaw, currentPrice - minRisk);

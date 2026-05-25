@@ -782,8 +782,8 @@ async function traderLoop() {
 
         const currentPriceVal = barC;
         if (isNewSweepLong) {
-          const slRaw = sweep.low - atrVal * 0.6;
-          const minRisk = atrVal * 1.2;
+          const slRaw = sweep.low - atrVal * 0.8;
+          const minRisk = atrVal * 1.5;
           const slPrice = Math.min(slRaw, currentPriceVal - minRisk);
           const riskAmt = Math.max(0.0001, Math.abs(currentPriceVal - slPrice));
           const tpPrice = currentPriceVal + riskAmt * RR;
@@ -797,8 +797,8 @@ async function traderLoop() {
             });
           }
         } else if (isNewSweepShort) {
-          const slRaw = sweep.high + atrVal * 0.6;
-          const minRisk = atrVal * 1.2;
+          const slRaw = sweep.high + atrVal * 0.8;
+          const minRisk = atrVal * 1.5;
           const slPrice = Math.max(slRaw, currentPriceVal + minRisk);
           const riskAmt = Math.max(0.0001, Math.abs(currentPriceVal - slPrice));
           const tpPrice = currentPriceVal - riskAmt * RR;
@@ -836,19 +836,31 @@ async function traderLoop() {
     if (regimeData.regime === "CHOPPY") efficiencyLabel = "CHOPPY";
     else if (regimeData.regime === "TREND_EXPANSION") efficiencyLabel = "EXPANSION";
 
-    // 4. TÍNH TOÁN CÁC CHỈ BÁO KỸ THUẬT
+    // 4. TÍNH TOÁN CÁC CHỈ BÁO KỸ THUẬT dựa trên nến đã đóng hoàn toàn (Khớp 100% với Mô hình Backtest)
+    const closedBars = bars.slice(0, -1);
+    const lastClosedCandle = closedBars[closedBars.length - 1];
+    const lastClosedCandleTime = lastClosedCandle[0];
+
+    // Chỉ phân tích khi có nến mới đã đóng hoàn toàn (M1)
+    if (lastClosedCandleTime <= botState.lastProcessedCandleTime) {
+      setTimeout(traderLoop, 5000);
+      return;
+    }
+    botState.lastProcessedCandleTime = lastClosedCandleTime;
+
     // --- Khung M1 ---
-    const atrM1 = calculateATR(bars, 14);
-    const vwapM1 = calculateVWAP(bars);
-    const vwmaM1 = calculateVWMA(bars, 20); // VWMA 20 M1
-    const vwmaM1Prev = calculateVWMA(bars.slice(0, -1), 20);
+    const atrM1 = calculateATR(closedBars, 14);
+    const vwapM1 = calculateVWAP(closedBars);
+    const vwmaM1 = calculateVWMA(closedBars, 20); // VWMA 20 M1
+    const vwmaM1Prev = calculateVWMA(closedBars.slice(0, -1), 20);
     const slopeM1 = vwmaM1 - vwmaM1Prev;
-    const adxM1 = calcADX(bars, 14);
-    const prevAdxM1 = calcADX(bars.slice(0, -1), 14);
-    // currentPrice already defined at top
+    const adxM1 = calcADX(closedBars, 14);
+    const prevAdxM1 = calcADX(closedBars.slice(0, -1), 14);
     
     // --- Khung M5 Filter ---
-    const vwma5m = calculateVWMA(bars5m, 20);
+    // Loại bỏ nến M5 chưa hoàn thành để đồng bộ chỉ báo
+    const closedBars5m = bars5m.slice(0, -1);
+    const vwma5m = calculateVWMA(closedBars5m, 20);
     
     // --- Mean Reversion Filter (Check if price is too far from VWMA) ---
     const distFromVWMA = Math.abs(currentPrice - vwmaM1);
@@ -862,17 +874,7 @@ async function traderLoop() {
       console.log(`🤖 WHALE BOT SẴN SÀNG! Regime: ${regimeData.regime} (Tỷ lệ thắng lăn Sweep: ${regimeData.totalScore}%)`);
     }
 
-    // lastCandle already defined at top
-    const lastCandleTime = lastCandle[0];
-
-    // Chỉ phân tích khi có nến mới (M1)
-    if (lastCandleTime <= botState.lastProcessedCandleTime) {
-      setTimeout(traderLoop, 5000);
-      return;
-    }
-    botState.lastProcessedCandleTime = lastCandleTime;
-
-    const sweep = detectWhaleSweep(bars);
+    const sweep = detectWhaleSweep(closedBars);
 
     let sig: "LONG" | "SHORT" | null = null;
     
@@ -890,7 +892,7 @@ async function traderLoop() {
     // LONG ENTRY
     if (
       !isMarketTooChoppy && (
-        (ENABLE_WHALE_SWEEP && !isOverExtendedLong && !hasBadEntryPriceLong && currentPrice > vwmaM1 && slopeM1 > 0 && adxM1.adx >= ADX_THRESHOLD && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isWithinTradingSessions(lastCandle[0]))
+        (ENABLE_WHALE_SWEEP && !isOverExtendedLong && !hasBadEntryPriceLong && currentPrice > vwmaM1 && slopeM1 > 0 && adxM1.adx >= ADX_THRESHOLD && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isWithinTradingSessions(lastClosedCandleTime))
       )
     ) {
       sig = "LONG";
@@ -899,7 +901,7 @@ async function traderLoop() {
     // SHORT ENTRY
     if (
       !isMarketTooChoppy && (
-        (ENABLE_WHALE_SWEEP && !isOverExtendedShort && !hasBadEntryPriceShort && currentPrice < vwmaM1 && slopeM1 < 0 && adxM1.adx >= ADX_THRESHOLD && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isWithinTradingSessions(lastCandle[0]))
+        (ENABLE_WHALE_SWEEP && !isOverExtendedShort && !hasBadEntryPriceShort && currentPrice < vwmaM1 && slopeM1 < 0 && adxM1.adx >= ADX_THRESHOLD && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isWithinTradingSessions(lastClosedCandleTime))
       )
     ) {
       sig = "SHORT";
