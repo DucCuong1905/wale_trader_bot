@@ -636,6 +636,8 @@ export async function runBacktest(
   const startTs = exchange.parse8601(startDate);
   const endTs = exchange.parse8601(endDate);
 
+  try {
+
   // 1. CHỈNH SỬA THEO YÊU CẦU: ƯU TIÊN LOAD FILE CSV XAU_DATA TỪ VPS (C:/xau_data/{year}.csv)
   const csvCandles = tryLoadFromXauCsv(startDate, endDate, timeframe);
   if (csvCandles && csvCandles.length > 0) {
@@ -752,14 +754,8 @@ export async function runBacktest(
       
       // Lưu vào Cache bộ nhớ
       if (!shouldStopBacktest && allKlines.length > 0) {
-        backtestDataCache = {
-          pair: PAIR,
-          timeframe,
-          start: startDate,
-          end: endDate,
-          data: allKlines
-        };
-        console.log(`[BACKTEST] ✅ Đã lưu dữ liệu vào Cache bộ nhớ (${allKlines.length} nến)`);
+        backtestDataCache = null; // Do not use RAM cache to optimize heap memory and prevent leak
+        console.log(`[BACKTEST] 🚫 Bỏ qua lưu cache bộ nhớ RAM để tránh rò rỉ bộ nhớ.`);
 
         // NẾU LÀ KHUNG ĐẶC BIỆT THÌ LƯU VÀO FILE TƯƠNG ỨNG TIMEFRAME
         if (isSpecialRange) {
@@ -1561,15 +1557,47 @@ export async function runBacktest(
   console.log(`  [6] Đường dốc M1 (Slope > -0.02):           ${debugWhaleShortConditions.slope_gt_neg_0_02} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
   console.log("===============================================================================\n");
 
-  if (enableSessionFilter) {
-    console.log(`[SESSION] Filtered out ${sessionSkippedCount} candles outside of 08:00 - 21:00 UTC.`);
+    if (enableSessionFilter) {
+      console.log(`[SESSION] Filtered out ${sessionSkippedCount} candles outside of 08:00 - 21:00 UTC.`);
+    }
+    
+    // Trả về bản sao lưu kết quả để an toàn dereference biến global lưu kết quả
+    return JSON.parse(JSON.stringify(results));
+  } finally {
+    allKlines = []; // Free large kline arrays from heap memory
+    backtestDataCache = null; // Clear static memory cache of previous runs to free RAM immediately
+    results = {
+      totalTrades: 0,
+      wins: 0,
+      losses: 0,
+      longTrades: 0,
+      longWins: 0,
+      shortTrades: 0,
+      shortWins: 0,
+      cancelledTrades: 0,
+      totalPnL: 0,
+      finalBalance: 5000,
+      totalFees: 0,
+      totalSlippage: 0,
+      isLiquidated: false,
+      liquidationDate: null,
+      trades: [],
+      startTime: "",
+      endTime: "",
+      displaceTrades: 0,
+      displaceWins: 0,
+      totalProfitR: 0,
+      monthlySnapshots: [],
+      continuationTrades: 0,
+      continuationWins: 0,
+      continuationPnLR: 0,
+      efficiencyStats: {},
+      regimeStats: {}
+    };
+    if (global && typeof (global as any).gc === 'function') {
+      try {
+        (global as any).gc();
+      } catch (e) {}
+    }
   }
-  allKlines = []; // Free large kline arrays from heap memory
-  backtestDataCache = null; // Clear static memory cache of previous runs to free RAM immediately
-  if (global && typeof (global as any).gc === 'function') {
-    try {
-      (global as any).gc();
-    } catch (e) {}
-  }
-  return results;
 }
