@@ -213,6 +213,25 @@ function calculateATR(bars: any[], period: number = 14) {
   return trSum / period;
 }
 
+function calculateBollingerBands(bars: any[], period: number = 20, multiplier: number = 2) {
+  if (bars.length < period) {
+    return { middle: 0, upper: 0, lower: 0 };
+  }
+  const slice = bars.slice(-period).map(b => b[4]); // close prices
+  const sum = slice.reduce((acc, val) => acc + val, 0);
+  const mean = sum / period;
+  
+  const squareDiffs = slice.map(val => Math.pow(val - mean, 2));
+  const variance = squareDiffs.reduce((acc, val) => acc + val, 0) / period;
+  const stdDev = Math.sqrt(variance);
+  
+  return {
+    middle: mean,
+    upper: mean + (multiplier * stdDev),
+    lower: mean - (multiplier * stdDev)
+  };
+}
+
 function calculateVWAP(bars: any[]) {
   const len = bars.length;
   if (len === 0) return 0;
@@ -945,6 +964,20 @@ export async function runBacktest(
     const atrM1 = calculateATR(calcWindow, 14);
 
     const isInSession = isWithinSessions(allKlines[i][0]);
+    
+    // Bollinger Bands Target-Room Filter logic
+    const bbCurrent = calculateBollingerBands(calcWindow, 20, 2);
+    const calcWindowPrev = allKlines.slice(Math.max(0, i - 101), i);
+    const bbPrev = calculateBollingerBands(calcWindowPrev, 20, 2);
+
+    const isBBOpeningOutwardsLong = bbPrev.upper > 0 && bbCurrent.upper > bbPrev.upper;
+    const isBBUpperFarEnough = bbCurrent.upper - currentPrice >= atrM1 * 1.5;
+    const isBBLongOk = !enableSessionFilter || (isBBOpeningOutwardsLong || isBBUpperFarEnough);
+
+    const isBBOpeningOutwardsShort = bbPrev.lower > 0 && bbCurrent.lower < bbPrev.lower;
+    const isBBLowerFarEnough = currentPrice - bbCurrent.lower >= atrM1 * 1.5;
+    const isBBShortOk = !enableSessionFilter || (isBBOpeningOutwardsShort || isBBLowerFarEnough);
+
     const distFromVWMA = Math.abs(currentPrice - vwmaM1);
     const isOverExtendedLong = distFromVWMA > (atrM1 * 1.1);
     const isOverExtendedShort = distFromVWMA > (atrM1 * 1.1);
@@ -971,7 +1004,7 @@ export async function runBacktest(
     if (isNewSweepLongAtBar) {
       debugTotalNewSweepsLong++;
       debugWhaleLongConditions.isNewSweepLongAtBar++;
-      if (isInSession) debugWhaleLongConditions.isInSession++;
+      if (isBBLongOk) debugWhaleLongConditions.isInSession++;
       if (enableWhaleSweep) debugWhaleLongConditions.enableWhaleSweep++;
       if (!isOverExtendedLong) debugWhaleLongConditions.notOverExtendedLong++;
       
@@ -982,7 +1015,7 @@ export async function runBacktest(
       if (adxM1.adx >= adxThreshold) debugWhaleLongConditions.adx_ge_threshold++;
       if (slopeM1 > 0) debugWhaleLongConditions.slope_gt_0++;
 
-      if (isInSession) {
+      if (isBBLongOk) {
         const slRaw = sweep.low - atrM1 * 0.8;
         const minRisk = atrM1 * 1.5;
         const slPrice = Math.min(slRaw, currentPrice - minRisk);
@@ -1002,7 +1035,7 @@ export async function runBacktest(
     } else if (isNewSweepShortAtBar) {
       debugTotalNewSweepsShort++;
       debugWhaleShortConditions.isNewSweepShortAtBar++;
-      if (isInSession) debugWhaleShortConditions.isInSession++;
+      if (isBBShortOk) debugWhaleShortConditions.isInSession++;
       if (enableWhaleSweep) debugWhaleShortConditions.enableWhaleSweep++;
       if (!isOverExtendedShort) debugWhaleShortConditions.notOverExtendedShort++;
 
@@ -1013,7 +1046,7 @@ export async function runBacktest(
       if (adxM1.adx >= adxThreshold) debugWhaleShortConditions.adx_ge_threshold++;
       if (slopeM1 > -0.02) debugWhaleShortConditions.slope_gt_neg_0_02++;
 
-      if (isInSession) {
+      if (isBBShortOk) {
         const slRaw = sweep.high + atrM1 * 0.8;
         const minRisk = atrM1 * 1.5;
         const slPrice = Math.max(slRaw, currentPrice + minRisk);
@@ -1077,10 +1110,10 @@ export async function runBacktest(
 
     // --- ENTRY DECISION (WHALE SWEEP ONLY) ---
     let isLong = !isMarketTooChoppy && 
-      enableWhaleSweep && !isOverExtendedLong && !hasBadEntryPriceLong && currentPrice > vwmaM1 && slopeM1 > 0 && adxM1.adx >= adxThreshold && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isInSession;
+      enableWhaleSweep && !isOverExtendedLong && !hasBadEntryPriceLong && currentPrice > vwmaM1 && slopeM1 > 0 && adxM1.adx >= adxThreshold && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isBBLongOk;
 
     let isShort = !isMarketTooChoppy && 
-      enableWhaleSweep && !isOverExtendedShort && !hasBadEntryPriceShort && currentPrice < vwmaM1 && slopeM1 < 0 && adxM1.adx >= adxThreshold && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isInSession;
+      enableWhaleSweep && !isOverExtendedShort && !hasBadEntryPriceShort && currentPrice < vwmaM1 && slopeM1 < 0 && adxM1.adx >= adxThreshold && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isBBShortOk;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";

@@ -401,6 +401,25 @@ function calculateATR(bars: any[], period: number = 14) {
   return trs.slice(-period).reduce((a, b) => a + b, 0) / period;
 }
 
+function calculateBollingerBands(bars: any[], period: number = 20, multiplier: number = 2) {
+  if (bars.length < period) {
+    return { middle: 0, upper: 0, lower: 0 };
+  }
+  const slice = bars.slice(-period).map(b => b[4]); // close prices
+  const sum = slice.reduce((acc, val) => acc + val, 0);
+  const mean = sum / period;
+  
+  const squareDiffs = slice.map(val => Math.pow(val - mean, 2));
+  const variance = squareDiffs.reduce((acc, val) => acc + val, 0) / period;
+  const stdDev = Math.sqrt(variance);
+  
+  return {
+    middle: mean,
+    upper: mean + (multiplier * stdDev),
+    lower: mean - (multiplier * stdDev)
+  };
+}
+
 function calculateVWAP(bars: any[]) {
   if (bars.length === 0) return 0;
   const lastBarDate = new Date(bars[bars.length - 1][0]).getUTCDate();
@@ -777,8 +796,20 @@ async function traderLoop() {
           atrVal = sum / 14;
         }
 
-        const isNewSweepLong = sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isWithinTradingSessions(bars[idx][0]);
-        const isNewSweepShort = sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isWithinTradingSessions(bars[idx][0]);
+        const bbCurrent = calculateBollingerBands(calcWindow, 20, 2);
+        const calcWindowPrev = bars.slice(Math.max(0, idx - 101), idx);
+        const bbPrev = calculateBollingerBands(calcWindowPrev, 20, 2);
+
+        const isBBOpeningOutwardsLong = bbPrev.upper > 0 && bbCurrent.upper > bbPrev.upper;
+        const isBBUpperFarEnough = bbCurrent.upper - bars[idx][4] >= atrVal * 1.5;
+        const isBBLongOk = !ENABLE_SESSION_FILTER || (isBBOpeningOutwardsLong || isBBUpperFarEnough);
+
+        const isBBOpeningOutwardsShort = bbPrev.lower > 0 && bbCurrent.lower < bbPrev.lower;
+        const isBBLowerFarEnough = bars[idx][4] - bbCurrent.lower >= atrVal * 1.5;
+        const isBBShortOk = !ENABLE_SESSION_FILTER || (isBBOpeningOutwardsShort || isBBLowerFarEnough);
+
+        const isNewSweepLong = sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isBBLongOk;
+        const isNewSweepShort = sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isBBShortOk;
 
         const currentPriceVal = barC;
         if (isNewSweepLong) {
@@ -865,6 +896,18 @@ async function traderLoop() {
     // --- Mean Reversion Filter (Check if price is too far from VWMA) ---
     const distFromVWMA = Math.abs(currentPrice - vwmaM1);
     
+    // Bollinger Bands Target-Room Filter logic
+    const bbCurrent = calculateBollingerBands(closedBars, 20, 2);
+    const bbPrev = calculateBollingerBands(closedBars.slice(0, -1), 20, 2);
+
+    const isBBOpeningOutwardsLong = bbPrev.upper > 0 && bbCurrent.upper > bbPrev.upper;
+    const isBBUpperFarEnough = bbCurrent.upper - currentPrice >= atrM1 * 1.5;
+    const isBBLongOk = !ENABLE_SESSION_FILTER || (isBBOpeningOutwardsLong || isBBUpperFarEnough);
+
+    const isBBOpeningOutwardsShort = bbPrev.lower > 0 && bbCurrent.lower < bbPrev.lower;
+    const isBBLowerFarEnough = currentPrice - bbCurrent.lower >= atrM1 * 1.5;
+    const isBBShortOk = !ENABLE_SESSION_FILTER || (isBBOpeningOutwardsShort || isBBLowerFarEnough);
+    
     botState.adx = adxM1.adx; // Lưu ADX M1 vào botState để hiển thị
     botState.vwap = vwapM1;
 
@@ -892,7 +935,7 @@ async function traderLoop() {
     // LONG ENTRY
     if (
       !isMarketTooChoppy && (
-        (ENABLE_WHALE_SWEEP && !isOverExtendedLong && !hasBadEntryPriceLong && currentPrice > vwmaM1 && slopeM1 > 0 && adxM1.adx >= ADX_THRESHOLD && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isWithinTradingSessions(lastClosedCandleTime))
+        (ENABLE_WHALE_SWEEP && !isOverExtendedLong && !hasBadEntryPriceLong && currentPrice > vwmaM1 && slopeM1 > 0 && adxM1.adx >= ADX_THRESHOLD && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isBBLongOk)
       )
     ) {
       sig = "LONG";
@@ -901,7 +944,7 @@ async function traderLoop() {
     // SHORT ENTRY
     if (
       !isMarketTooChoppy && (
-        (ENABLE_WHALE_SWEEP && !isOverExtendedShort && !hasBadEntryPriceShort && currentPrice < vwmaM1 && slopeM1 < 0 && adxM1.adx >= ADX_THRESHOLD && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isWithinTradingSessions(lastClosedCandleTime))
+        (ENABLE_WHALE_SWEEP && !isOverExtendedShort && !hasBadEntryPriceShort && currentPrice < vwmaM1 && slopeM1 < 0 && adxM1.adx >= ADX_THRESHOLD && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isBBShortOk)
       )
     ) {
       sig = "SHORT";
