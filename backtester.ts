@@ -102,40 +102,7 @@ interface BacktestResult {
   };
 }
 
-let results: BacktestResult = {
-  totalTrades: 0,
-  wins: 0,
-  losses: 0,
-  longTrades: 0,
-  longWins: 0,
-  shortTrades: 0,
-  shortWins: 0,
-  cancelledTrades: 0,
-  totalPnL: 0,
-  finalBalance: INITIAL_BALANCE,
-  totalFees: 0,
-  totalSlippage: 0,
-  isLiquidated: false,
-  liquidationDate: null,
-  trades: [],
-  startTime: START_DATE,
-  endTime: END_DATE,
-  displaceTrades: 0,
-  displaceWins: 0,
-  totalProfitR: 0,
-  monthlySnapshots: [],
-  marketRegime: null,
-  efficiencyStats: {
-    "CHOPPY": { trades: 0, wins: 0, pnlR: 0 },
-    "NEUTRAL": { trades: 0, wins: 0, pnlR: 0 },
-    "EXPANSION": { trades: 0, wins: 0, pnlR: 0 }
-  },
-  regimeStats: {
-    "TREND_EXPANSION": { trades: 0, wins: 0, pnlR: 0 },
-    "NEUTRAL": { trades: 0, wins: 0, pnlR: 0 },
-    "CHOPPY": { trades: 0, wins: 0, pnlR: 0 }
-  }
-};
+// Results structure is defined locally within runBacktest. Removed global results variable to save memory.
 
 // --- LOGIC FUNCTIONS (COPIED & ADAPTED FROM SERVER.TS) ---
 
@@ -505,6 +472,8 @@ function tryLoadFromXauCsv(startDate: string, endDate: string, timeframe: string
   try {
     const startYear = new Date(startDate).getUTCFullYear();
     const endYear = new Date(endDate).getUTCFullYear();
+    const startTs = new Date(startDate).getTime();
+    const endTs = new Date(endDate).getTime();
     
     let candles: any[] | null = [];
     let loadedAny = false;
@@ -584,6 +553,9 @@ function tryLoadFromXauCsv(startDate: string, endDate: string, timeframe: string
         const timestamp = new Date(safeTimeStr).getTime();
         if (isNaN(timestamp)) continue;
         
+        // Lọc trong vòng lặp parse để không cấp phát bộ nhớ cho nến ngoài phạm vi
+        if (timestamp < startTs || timestamp > endTs) continue;
+        
         const open = parseFloat(cols[openIdx]);
         const high = parseFloat(cols[highIdx]);
         const low = parseFloat(cols[lowIdx]);
@@ -604,7 +576,7 @@ function tryLoadFromXauCsv(startDate: string, endDate: string, timeframe: string
       }
       
       content = null; // Free up gold thô string memory immediately
-      console.log(`[CSV LOAD] ✅ Đã tải thành công ${yearCandlesCount} nến M1 từ ${filePath}`);
+      console.log(`[CSV LOAD] ✅ Đã tải thành công ${yearCandlesCount} nến M1 trong phạm vi từ ${filePath}`);
       loadedAny = true;
     }
     
@@ -615,10 +587,8 @@ function tryLoadFromXauCsv(startDate: string, endDate: string, timeframe: string
     
     candles.sort((a, b) => a[0] - b[0]);
     
-    const startTs = new Date(startDate).getTime();
-    const endTs = new Date(endDate).getTime();
-    let filtered: any[] | null = candles.filter((k: any) => k[0] >= startTs && k[0] <= endTs);
-    candles = null; // Free un-filtered catalog
+    let filtered: any[] | null = candles;
+    candles = null;
     
     console.log(`[CSV LOAD] 📊 Tổng nến M1 nạp từ CSV: ${filtered.length} nến (Từ ${startDate} đến ${endDate})`);
     
@@ -806,7 +776,7 @@ export async function runBacktest(
     }
   }
 
-  allKlines = allKlines.filter(k => k[0] <= endTs);
+  allKlines = allKlines.filter(k => k[0] >= startTs && k[0] <= endTs);
   console.log(`[DATA] Loaded ${allKlines.length} klines.`);
 
   results = { 
@@ -1383,7 +1353,7 @@ export async function runBacktest(
   }
 
   results.monthlySnapshots = monthlySnapshots;
-  fs.writeFileSync(RESULTS_FILE, JSON.stringify(results, null, 2));
+  fs.writeFileSync(RESULTS_FILE, JSON.stringify(results));
   console.log(`[DONE] Backtest complete. Results: ${RESULTS_FILE}`);
 
   console.log("\n📅 --- THỐNG KÊ CHI TIẾT THEO TỪNG THÁNG ---");
@@ -1456,36 +1426,11 @@ export async function runBacktest(
       console.log(`[SESSION] Filtered out ${sessionSkippedCount} candles outside of 08:00 - 21:00 UTC.`);
     }
     
-    // Trả về bản sao lưu kết quả để an toàn dereference biến global lưu kết quả
-    return JSON.parse(JSON.stringify(results));
+    // Trả về trực tiếp đối tượng kết quả cục bộ để không phải sao chép qua JSON.stringify/parse tốn RAM
+    return results;
   } finally {
-    allKlines = []; // Free large kline arrays from heap memory
+    allKlines = []; // Giải phóng mảng kline lớn khỏi RAM ngay lập tức
     backtestDataCache = null; // Clear static memory cache of previous runs to free RAM immediately
-    results = {
-      totalTrades: 0,
-      wins: 0,
-      losses: 0,
-      longTrades: 0,
-      longWins: 0,
-      shortTrades: 0,
-      shortWins: 0,
-      cancelledTrades: 0,
-      totalPnL: 0,
-      finalBalance: 5000,
-      totalFees: 0,
-      totalSlippage: 0,
-      isLiquidated: false,
-      liquidationDate: null,
-      trades: [],
-      startTime: "",
-      endTime: "",
-      displaceTrades: 0,
-      displaceWins: 0,
-      totalProfitR: 0,
-      monthlySnapshots: [],
-      efficiencyStats: {},
-      regimeStats: {}
-    };
     if (global && typeof (global as any).gc === 'function') {
       try {
         (global as any).gc();
