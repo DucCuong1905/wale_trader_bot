@@ -824,14 +824,12 @@ async function traderLoop() {
 
     // Tái update dynamic regime chỉ mang vai trò thống kê theo dõi, CHƯA thay đổi trực tiếp đến risk/choppy block
     // dynamic lấy 10 tín hiệu sweep gần nhất để xem bao nhiêu win và loss sau đó định hình cho lệnh tiếp theo
-    let finalRegimeLabel: "TREND_EXPANSION" | "NEUTRAL" | "CHOPPY" | "COMPRESSION" = "NEUTRAL";
+    let finalRegimeLabel: "TREND_EXPANSION" | "NEUTRAL" | "CHOPPY" = "NEUTRAL";
     if (sweepHistoryQueue.length >= 4) {
       if (rollingWinRate <= 0.3) {
         finalRegimeLabel = "CHOPPY";
       } else if (rollingWinRate >= 0.7) {
         finalRegimeLabel = "TREND_EXPANSION";
-      } else if (rollingWinRate >= 0.4 && rollingWinRate < 0.5) {
-        finalRegimeLabel = "COMPRESSION";
       } else {
         finalRegimeLabel = "NEUTRAL";
       }
@@ -1090,7 +1088,6 @@ async function startServer() {
           };
           const choppyStr = getEffStatsStr("CHOPPY");
           const neutralStr = getEffStatsStr("NEUTRAL");
-          const compressionStr = getEffStatsStr("COMPRESSION");
           const expansionStr = getEffStatsStr("EXPANSION");
 
           // Gửi đúng 1 tin nhắn duy nhất chứa toàn bộ thông tin
@@ -1107,7 +1104,6 @@ async function startServer() {
             `Chi tiết theo Efficiency (Dynamic Risk):`,
             choppyStr,
             neutralStr,
-            compressionStr,
             expansionStr
           ].join('\n');
 

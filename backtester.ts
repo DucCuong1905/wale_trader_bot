@@ -128,13 +128,11 @@ let results: BacktestResult = {
   efficiencyStats: {
     "CHOPPY": { trades: 0, wins: 0, pnlR: 0 },
     "NEUTRAL": { trades: 0, wins: 0, pnlR: 0 },
-    "COMPRESSION": { trades: 0, wins: 0, pnlR: 0 },
     "EXPANSION": { trades: 0, wins: 0, pnlR: 0 }
   },
   regimeStats: {
     "TREND_EXPANSION": { trades: 0, wins: 0, pnlR: 0 },
     "NEUTRAL": { trades: 0, wins: 0, pnlR: 0 },
-    "COMPRESSION": { trades: 0, wins: 0, pnlR: 0 },
     "CHOPPY": { trades: 0, wins: 0, pnlR: 0 }
   }
 };
@@ -631,13 +629,11 @@ export async function runBacktest(
     efficiencyStats: {
       "CHOPPY": { trades: 0, wins: 0, pnlR: 0 },
       "NEUTRAL": { trades: 0, wins: 0, pnlR: 0 },
-      "COMPRESSION": { trades: 0, wins: 0, pnlR: 0 },
       "EXPANSION": { trades: 0, wins: 0, pnlR: 0 }
     },
     regimeStats: {
       "TREND_EXPANSION": { trades: 0, wins: 0, pnlR: 0 },
       "NEUTRAL": { trades: 0, wins: 0, pnlR: 0 },
-      "COMPRESSION": { trades: 0, wins: 0, pnlR: 0 },
       "CHOPPY": { trades: 0, wins: 0, pnlR: 0 }
     }
   };
@@ -784,13 +780,11 @@ export async function runBacktest(
     efficiencyStats: {
       "CHOPPY": { trades: 0, wins: 0, pnlR: 0 },
       "NEUTRAL": { trades: 0, wins: 0, pnlR: 0 },
-      "COMPRESSION": { trades: 0, wins: 0, pnlR: 0 },
       "EXPANSION": { trades: 0, wins: 0, pnlR: 0 }
     },
     regimeStats: {
       "TREND_EXPANSION": { trades: 0, wins: 0, pnlR: 0 },
       "NEUTRAL": { trades: 0, wins: 0, pnlR: 0 },
-      "COMPRESSION": { trades: 0, wins: 0, pnlR: 0 },
       "CHOPPY": { trades: 0, wins: 0, pnlR: 0 }
     }
   };
@@ -941,14 +935,12 @@ export async function runBacktest(
     
     // Tái update dynamic regime chỉ mang vai trò thống kê theo dõi, CHƯA thay đổi trực tiếp đến risk/choppy block
     // dynamic lấy 10 tín hiệu sweep gần nhất để xem bao nhiêu win và loss sau đó định hình cho lệnh tiếp theo
-    let finalRegimeLabel: "TREND_EXPANSION" | "NEUTRAL" | "CHOPPY" | "COMPRESSION" = "NEUTRAL";
+    let finalRegimeLabel: "TREND_EXPANSION" | "NEUTRAL" | "CHOPPY" = "NEUTRAL";
     if (sweepHistoryQueue.length >= 4) {
       if (rollingWinRate <= 0.3) {
         finalRegimeLabel = "CHOPPY";
       } else if (rollingWinRate >= 0.7) {
         finalRegimeLabel = "TREND_EXPANSION";
-      } else if (rollingWinRate >= 0.4 && rollingWinRate < 0.5) {
-        finalRegimeLabel = "COMPRESSION";
       } else {
         finalRegimeLabel = "NEUTRAL";
       }
@@ -1145,8 +1137,6 @@ export async function runBacktest(
         efficiencyLabel = "CHOPPY";
       } else if (regimeData.regime === "TREND_EXPANSION") {
         efficiencyLabel = "EXPANSION";
-      } else if (regimeData.regime === "COMPRESSION") {
-        efficiencyLabel = "COMPRESSION";
       } else {
         efficiencyLabel = "NEUTRAL";
       }
