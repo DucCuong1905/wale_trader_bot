@@ -875,7 +875,7 @@ export async function runBacktest(
     isInSession: 0,
     enableWhaleSweep: 0,
     notOverExtendedLong: 0,
-    currentPrice_gt_vwma5m: 0,
+    currentPrice_gt_vwma1m: 0,
     adx_ge_threshold: 0,
     slope_gt_0: 0
   };
@@ -884,7 +884,7 @@ export async function runBacktest(
     isInSession: 0,
     enableWhaleSweep: 0,
     notOverExtendedShort: 0,
-    currentPrice_lt_vwma5m: 0,
+    currentPrice_lt_vwma1m: 0,
     adx_ge_threshold: 0,
     slope_gt_neg_0_02: 0
   };
@@ -980,18 +980,6 @@ export async function runBacktest(
 
     const isInSession = isWithinSessions(allKlines[i][0]);
 
-    // --- Khung M5 VWMA ---
-    let vwma5m = currentPrice;
-    if (timeframe === "1m") {
-      vwma5m = calculateVWMA5mOptimized(allKlines, i);
-    } else if (timeframe === "5m") {
-      const slice5m = allKlines.slice(Math.max(0, i - 19), i + 1);
-      vwma5m = calculateVWMA(slice5m, 20);
-    } else {
-      const sliceTF = allKlines.slice(Math.max(0, i - 19), i + 1);
-      vwma5m = calculateVWMA(sliceTF, 20);
-    }
-
     // --- 2. CALCULATE ROLLING WINRATE & RISK ENGINE ---
     const rollingWinRate = sweepHistoryQueue.length > 0
       ? (sweepHistoryQueue.reduce((a, b) => a + b, 0) / sweepHistoryQueue.length)
@@ -1054,8 +1042,8 @@ export async function runBacktest(
       if (enableWhaleSweep) debugWhaleLongConditions.enableWhaleSweep++;
       if (!isOverExtendedLong) debugWhaleLongConditions.notOverExtendedLong++;
       
-      if (currentPrice > vwma5m) {
-        debugWhaleLongConditions.currentPrice_gt_vwma5m++;
+      if (currentPrice > vwmaM1) {
+        debugWhaleLongConditions.currentPrice_gt_vwma1m++;
       }
       if (adxM1.adx >= adxThreshold) debugWhaleLongConditions.adx_ge_threshold++;
       if (slopeM1 > 0) debugWhaleLongConditions.slope_gt_0++;
@@ -1084,8 +1072,8 @@ export async function runBacktest(
       if (enableWhaleSweep) debugWhaleShortConditions.enableWhaleSweep++;
       if (!isOverExtendedShort) debugWhaleShortConditions.notOverExtendedShort++;
 
-      if (currentPrice < vwma5m) {
-        debugWhaleShortConditions.currentPrice_lt_vwma5m++;
+      if (currentPrice < vwmaM1) {
+        debugWhaleShortConditions.currentPrice_lt_vwma1m++;
       }
       if (adxM1.adx >= adxThreshold) debugWhaleShortConditions.adx_ge_threshold++;
       if (slopeM1 > -0.02) debugWhaleShortConditions.slope_gt_neg_0_02++;
@@ -1154,10 +1142,10 @@ export async function runBacktest(
 
     // --- ENTRY DECISION (WHALE SWEEP ONLY) ---
     let isLong = !isMarketTooChoppy && 
-      enableWhaleSweep && !isOverExtendedLong && !hasBadEntryPriceLong && currentPrice > vwmaM1 && slopeM1 > 0 && adxM1.adx >= adxThreshold && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isInSession && (currentPrice > vwma5m);
+      enableWhaleSweep && !isOverExtendedLong && !hasBadEntryPriceLong && currentPrice > vwmaM1 && slopeM1 > 0 && adxM1.adx >= adxThreshold && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isInSession;
 
     let isShort = !isMarketTooChoppy && 
-      enableWhaleSweep && !isOverExtendedShort && !hasBadEntryPriceShort && currentPrice < vwmaM1 && slopeM1 < 0 && adxM1.adx >= adxThreshold && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isInSession && (currentPrice < vwma5m);
+      enableWhaleSweep && !isOverExtendedShort && !hasBadEntryPriceShort && currentPrice < vwmaM1 && slopeM1 < 0 && adxM1.adx >= adxThreshold && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isInSession;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
@@ -1451,7 +1439,7 @@ export async function runBacktest(
   console.log(`  [1] Nằm trong phiên giao dịch:                     ${debugWhaleLongConditions.isInSession} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
   console.log(`  [2] Bật Whale Sweep:                               ${debugWhaleLongConditions.enableWhaleSweep} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
   console.log(`  [3] Biên độ giá không quá xa (Not Overextend):        ${debugWhaleLongConditions.notOverExtendedLong} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
-  console.log(`  [4] GIÁ NẰM TRÊN VWMA 5M (BỘ LỌC BẮT BUỘC LONG):     ${debugWhaleLongConditions.currentPrice_gt_vwma5m} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
+  console.log(`  [4] GIÁ NẰM TRÊN VWMA 1M (BỘ LỌC BẮT BUỘC LONG):     ${debugWhaleLongConditions.currentPrice_gt_vwma1m} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
   console.log(`  [5] Chỉ số ADX M1 >= Ngưỡng (${adxThreshold}):                  ${debugWhaleLongConditions.adx_ge_threshold} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
   console.log(`  [6] Đường dốc M1 có xu hướng đi lên (Slope):         ${debugWhaleLongConditions.slope_gt_0} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
   
@@ -1459,7 +1447,7 @@ export async function runBacktest(
   console.log(`  [1] Nằm trong phiên giao dịch:                     ${debugWhaleShortConditions.isInSession} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
   console.log(`  [2] Bật Whale Sweep:                               ${debugWhaleShortConditions.enableWhaleSweep} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
   console.log(`  [3] Biên độ giá không quá xa (Not Overextend):        ${debugWhaleShortConditions.notOverExtendedShort} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
-  console.log(`  [4] GIÁ NẰM DƯỚI VWMA 5M (BỘ LỌC BẮT BUỘC SHORT):    ${debugWhaleShortConditions.currentPrice_lt_vwma5m} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
+  console.log(`  [4] GIÁ NẰM DƯỚI VWMA 1M (BỘ LỌC BẮT BUỘC SHORT):    ${debugWhaleShortConditions.currentPrice_lt_vwma1m} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
   console.log(`  [5] Chỉ số ADX M1 >= Ngưỡng (${adxThreshold}):                  ${debugWhaleShortConditions.adx_ge_threshold} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
   console.log(`  [6] Đường dốc M1 (Slope > -0.02):                  ${debugWhaleShortConditions.slope_gt_neg_0_02} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
   console.log("===============================================================================\n");

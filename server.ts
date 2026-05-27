@@ -872,10 +872,8 @@ async function traderLoop() {
     const adxM1 = calcADX(closedBars, 14);
     const prevAdxM1 = calcADX(closedBars.slice(0, -1), 14);
     
-    // --- Khung M5 Filter ---
-    // Loại bỏ nến M5 chưa hoàn thành để đồng bộ chỉ báo
-    const closedBars5m = bars5m.slice(0, -1);
-    const vwma5m = calculateVWMA(closedBars5m, 20);
+    // --- Khung M1 Filter ---
+    const vwma1m = vwmaM1;
     
     // --- Mean Reversion Filter (Check if price is too far from VWMA) ---
     const distFromVWMA = Math.abs(currentPrice - vwmaM1);
@@ -909,7 +907,7 @@ async function traderLoop() {
     // LONG ENTRY
     if (
       !isMarketTooChoppy && (
-        (ENABLE_WHALE_SWEEP && !isOverExtendedLong && !hasBadEntryPriceLong && currentPrice > vwmaM1 && slopeM1 > 0 && adxM1.adx >= ADX_THRESHOLD && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isInSession && currentPrice > vwma5m)
+        (ENABLE_WHALE_SWEEP && !isOverExtendedLong && !hasBadEntryPriceLong && currentPrice > vwmaM1 && slopeM1 > 0 && adxM1.adx >= ADX_THRESHOLD && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isInSession && currentPrice > vwma1m)
       )
     ) {
       sig = "LONG";
@@ -918,7 +916,7 @@ async function traderLoop() {
     // SHORT ENTRY
     if (
       !isMarketTooChoppy && (
-        (ENABLE_WHALE_SWEEP && !isOverExtendedShort && !hasBadEntryPriceShort && currentPrice < vwmaM1 && slopeM1 < 0 && adxM1.adx >= ADX_THRESHOLD && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isInSession && currentPrice < vwma5m)
+        (ENABLE_WHALE_SWEEP && !isOverExtendedShort && !hasBadEntryPriceShort && currentPrice < vwmaM1 && slopeM1 < 0 && adxM1.adx >= ADX_THRESHOLD && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isInSession && currentPrice < vwma1m)
       )
     ) {
       sig = "SHORT";
@@ -970,7 +968,7 @@ async function traderLoop() {
         const conditions = [
           `📡 Chiến lược: **${strategyName}**`,
           `1. Khoảng cách VWMA: ${sig === 'LONG' ? (!isOverExtendedLong ? '✅ Ok' : '❌ Quá xa') : (!isOverExtendedShort ? '✅ Ok' : '❌ Quá xa')} (${distFromVWMA.toFixed(2)})`,
-          `2. Giá vs VWMA 5m: ${sig === 'LONG' ? (currentPrice > vwma5m ? '✅ Trên' : '❌ Dưới') : (currentPrice < vwma5m ? '✅ Dưới' : '❌ Trên')}`,
+          `2. Giá vs VWMA 1m: ${sig === 'LONG' ? (currentPrice > vwma1m ? '✅ Trên' : '❌ Dưới') : (currentPrice < vwma1m ? '✅ Dưới' : '❌ Trên')}`,
           `3. Slope M1: ${sig === 'LONG' ? (slopeM1 > 0 ? `✅ Positive (${slopeM1.toFixed(4)})` : `❌ Negative (${slopeM1.toFixed(4)})`) : (slopeM1 > -0.02 ? `✅ > -0.02 (${slopeM1.toFixed(4)})` : `❌ <= -0.02 (${slopeM1.toFixed(4)})`)}`,
           `4. ADX M1 (>=${ADX_THRESHOLD}): ${adxM1.adx >= ADX_THRESHOLD ? '✅' : '❌'} (${adxM1.adx.toFixed(1)})`,
           `5. Sweep M1: ✅ Confirmed`
@@ -1017,7 +1015,7 @@ async function traderLoop() {
             const vnTime = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
             const conditions = [
               `1. Khoảng cách VWMA: ${sig === 'LONG' ? (!isOverExtendedLong ? '✅ Ok' : '❌ Quá xa') : (!isOverExtendedShort ? '✅ Ok' : '❌ Quá xa')} (${distFromVWMA.toFixed(2)})`,
-              `2. Giá vs VWMA 5m: ${sig === 'LONG' ? (currentPrice > vwma5m ? '✅ Trên' : '❌ Dưới') : (currentPrice < vwma5m ? '✅ Dưới' : '❌ Trên')}`,
+              `2. Giá vs VWMA 1m: ${sig === 'LONG' ? (currentPrice > vwma1m ? '✅ Trên' : '❌ Dưới') : (currentPrice < vwma1m ? '✅ Dưới' : '❌ Trên')}`,
               `3. Slope M1: ${sig === 'LONG' ? (slopeM1 > 0 ? `✅ Positive (${slopeM1.toFixed(4)})` : `❌ Negative (${slopeM1.toFixed(4)})`) : (slopeM1 > -0.02 ? `✅ > -0.02 (${slopeM1.toFixed(4)})` : `❌ <= -0.02 (${slopeM1.toFixed(4)})`)}`,
               `4. ADX M1 (>=${ADX_THRESHOLD}): ${adxM1.adx >= ADX_THRESHOLD ? '✅' : '❌'} (${adxM1.adx.toFixed(1)})`,
               `5. Sweep M1: ✅ Confirmed`
