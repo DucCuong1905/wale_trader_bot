@@ -488,12 +488,16 @@ function aggregateCandlesByTime(oneMinBars: any[], timeframeStr: string): any[] 
     aggregated.push([
       openTime,
       slice[0][1], // Open
-      Math.max(...slice.map(b => b[2])), // High
-      Math.min(...slice.map(b => b[3])), // Low
+      Math.max(...slice.map((b: any) => b[2])), // High
+      Math.min(...slice.map((b: any) => b[3])), // Low
       slice[slice.length - 1][4], // Close
-      slice.reduce((acc, b) => acc + b[5], 0) // Volume
+      slice.reduce((acc: number, b: any) => acc + b[5], 0) // Volume
     ]);
   }
+  
+  groups.clear(); // Giải phóng Map khổng lồ
+  sortedKeys.length = 0; // Giải phóng mảng keys
+  
   return aggregated;
 }
 
@@ -502,7 +506,7 @@ function tryLoadFromXauCsv(startDate: string, endDate: string, timeframe: string
     const startYear = new Date(startDate).getUTCFullYear();
     const endYear = new Date(endDate).getUTCFullYear();
     
-    const candles: any[] = [];
+    let candles: any[] | null = [];
     let loadedAny = false;
     
     for (let year = startYear; year <= endYear; year++) {
@@ -525,11 +529,17 @@ function tryLoadFromXauCsv(startDate: string, endDate: string, timeframe: string
       }
       
       console.log(`[CSV LOAD] 📂 Phát hiện file CSV dữ liệu vàng: ${filePath}`);
-      const content = fs.readFileSync(filePath, "utf-8");
-      const lines = content.split(/\r?\n/);
-      if (lines.length < 2) continue;
+      let content: string | null = fs.readFileSync(filePath, "utf-8");
       
-      const header = lines[0].toLowerCase().split(",");
+      let headerLine = "";
+      let firstNewline = content.indexOf("\n");
+      if (firstNewline !== -1) {
+        headerLine = content.slice(0, firstNewline).trim();
+      } else {
+        headerLine = content.trim();
+      }
+      
+      const header = headerLine.toLowerCase().split(",");
       const timeIdx = header.indexOf("time");
       const openIdx = header.indexOf("open");
       const highIdx = header.indexOf("high");
@@ -542,18 +552,30 @@ function tryLoadFromXauCsv(startDate: string, endDate: string, timeframe: string
       
       if (timeIdx === -1 || openIdx === -1 || highIdx === -1 || lowIdx === -1 || closeIdx === -1) {
         console.error(`[CSV LOAD] ❌ Header không hợp lệ trong file ${filePath}`);
+        content = null;
         continue;
       }
       
       let yearCandlesCount = 0;
-      for (let i = 1; i < lines.length; i++) {
-        const line = lines[i].trim();
+      let pos = firstNewline !== -1 ? firstNewline + 1 : content.length;
+      const len = content.length;
+      
+      while (pos < len) {
+        let nextNewline = content.indexOf("\n", pos);
+        if (nextNewline === -1) {
+          nextNewline = len;
+        }
+        
+        const line = content.slice(pos, nextNewline).trim();
+        pos = nextNewline + 1;
+        
         if (!line) continue;
         
         const cols = line.split(",");
         if (cols.length < 5) continue;
         
         const timeStr = cols[timeIdx];
+        if (!timeStr) continue;
         let safeTimeStr = timeStr.trim();
         safeTimeStr = safeTimeStr.replace(/[\.\/]/g, "-");
         if (!safeTimeStr.includes("Z") && !safeTimeStr.includes("+") && !safeTimeStr.match(/-\d{2}:\d{2}$/)) {
@@ -581,11 +603,13 @@ function tryLoadFromXauCsv(startDate: string, endDate: string, timeframe: string
         yearCandlesCount++;
       }
       
+      content = null; // Free up gold thô string memory immediately
       console.log(`[CSV LOAD] ✅ Đã tải thành công ${yearCandlesCount} nến M1 từ ${filePath}`);
       loadedAny = true;
     }
     
-    if (!loadedAny || candles.length === 0) {
+    if (!loadedAny || !candles || candles.length === 0) {
+      candles = null;
       return null;
     }
     
@@ -593,12 +617,16 @@ function tryLoadFromXauCsv(startDate: string, endDate: string, timeframe: string
     
     const startTs = new Date(startDate).getTime();
     const endTs = new Date(endDate).getTime();
-    let filtered = candles.filter(k => k[0] >= startTs && k[0] <= endTs);
+    let filtered: any[] | null = candles.filter((k: any) => k[0] >= startTs && k[0] <= endTs);
+    candles = null; // Free un-filtered catalog
+    
     console.log(`[CSV LOAD] 📊 Tổng nến M1 nạp từ CSV: ${filtered.length} nến (Từ ${startDate} đến ${endDate})`);
     
     if (timeframe !== "1m") {
       console.log(`[CSV LOAD] 🔄 Đang gộp nến từ M1 sang ${timeframe}...`);
-      filtered = aggregateCandlesByTime(filtered, timeframe);
+      const tempFiltered = aggregateCandlesByTime(filtered, timeframe);
+      filtered = null; // Free original 1m arrays immediately
+      filtered = tempFiltered;
       console.log(`[CSV LOAD] 🔄 Sau khi gộp: còn lại ${filtered.length} nến ${timeframe}`);
     }
     
@@ -953,7 +981,16 @@ export async function runBacktest(
     const isInSession = isWithinSessions(allKlines[i][0]);
 
     // --- Khung M5 VWMA ---
-    const vwma5m = calculateVWMA5mOptimized(allKlines, i);
+    let vwma5m = currentPrice;
+    if (timeframe === "1m") {
+      vwma5m = calculateVWMA5mOptimized(allKlines, i);
+    } else if (timeframe === "5m") {
+      const slice5m = allKlines.slice(Math.max(0, i - 19), i + 1);
+      vwma5m = calculateVWMA(slice5m, 20);
+    } else {
+      const sliceTF = allKlines.slice(Math.max(0, i - 19), i + 1);
+      vwma5m = calculateVWMA(sliceTF, 20);
+    }
 
     // --- 2. CALCULATE ROLLING WINRATE & RISK ENGINE ---
     const rollingWinRate = sweepHistoryQueue.length > 0
