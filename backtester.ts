@@ -128,6 +128,7 @@ let results: BacktestResult = {
   efficiencyStats: {
     "CHOPPY": { trades: 0, wins: 0, pnlR: 0 },
     "NEUTRAL": { trades: 0, wins: 0, pnlR: 0 },
+    "COMPRESSION": { trades: 0, wins: 0, pnlR: 0 },
     "EXPANSION": { trades: 0, wins: 0, pnlR: 0 }
   },
   regimeStats: {
@@ -630,6 +631,7 @@ export async function runBacktest(
     efficiencyStats: {
       "CHOPPY": { trades: 0, wins: 0, pnlR: 0 },
       "NEUTRAL": { trades: 0, wins: 0, pnlR: 0 },
+      "COMPRESSION": { trades: 0, wins: 0, pnlR: 0 },
       "EXPANSION": { trades: 0, wins: 0, pnlR: 0 }
     },
     regimeStats: {
@@ -782,6 +784,7 @@ export async function runBacktest(
     efficiencyStats: {
       "CHOPPY": { trades: 0, wins: 0, pnlR: 0 },
       "NEUTRAL": { trades: 0, wins: 0, pnlR: 0 },
+      "COMPRESSION": { trades: 0, wins: 0, pnlR: 0 },
       "EXPANSION": { trades: 0, wins: 0, pnlR: 0 }
     },
     regimeStats: {
@@ -1142,6 +1145,8 @@ export async function runBacktest(
         efficiencyLabel = "CHOPPY";
       } else if (regimeData.regime === "TREND_EXPANSION") {
         efficiencyLabel = "EXPANSION";
+      } else if (regimeData.regime === "COMPRESSION") {
+        efficiencyLabel = "COMPRESSION";
       } else {
         efficiencyLabel = "NEUTRAL";
       }

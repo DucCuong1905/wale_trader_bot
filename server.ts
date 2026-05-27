@@ -1090,6 +1090,7 @@ async function startServer() {
           };
           const choppyStr = getEffStatsStr("CHOPPY");
           const neutralStr = getEffStatsStr("NEUTRAL");
+          const compressionStr = getEffStatsStr("COMPRESSION");
           const expansionStr = getEffStatsStr("EXPANSION");
 
           // Gửi đúng 1 tin nhắn duy nhất chứa toàn bộ thông tin
@@ -1106,6 +1107,7 @@ async function startServer() {
             `Chi tiết theo Efficiency (Dynamic Risk):`,
             choppyStr,
             neutralStr,
+            compressionStr,
             expansionStr
           ].join('\n');
 
