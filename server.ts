@@ -420,7 +420,7 @@ function calculateVWAP(bars: any[]) {
  * Sử dụng logic 2 nến: Nến quét (n-2) và nến xác nhận (n-1).
  */
 function detectWhaleSweep(bars: any[]) {
-  if (bars.length < 20) return { sweepLow: false, sweepHigh: false };
+  if (bars.length < 22) return { sweepLow: false, sweepHigh: false };
   
   const sweepCandle = bars[bars.length - 2]; // Nến quét thanh khoản
   const confirmCandle = bars[bars.length - 1]; // Nến xác nhận (Displacement)
@@ -428,8 +428,8 @@ function detectWhaleSweep(bars: any[]) {
   const [, sO, sH, sL, sC, sV] = sweepCandle;
   const [, cO, cH, cL, cC, cV] = confirmCandle;
 
-  // 1. LOGIC QUÉT THANH KHOẢN (Local Swing Sweep - 5 nến trước nến quét)
-  const prevBars = bars.slice(bars.length - 7, bars.length - 2);
+  // 1. LOGIC QUÉT THANH KHOẢN (Local Swing Sweep - 20 nến trước nến quét)
+  const prevBars = bars.slice(bars.length - 22, bars.length - 2);
   const localLow = Math.min(...prevBars.map(b => b[3]));
   const localHigh = Math.max(...prevBars.map(b => b[2]));
 

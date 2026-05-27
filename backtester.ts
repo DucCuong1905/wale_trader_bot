@@ -196,7 +196,7 @@ function calculateVWAP(bars: any[]) {
 
 function detectSweep(bars: any[]) {
   const len = bars.length;
-  if (len < 20) return { 
+  if (len < 22) return { 
     sweepHigh: false, 
     sweepLow: false, 
     displacementBullish: false, 
@@ -216,7 +216,7 @@ function detectSweep(bars: any[]) {
 
   let localLow = Infinity;
   let localHigh = -Infinity;
-  for (let j = len - 7; j < len - 2; j++) {
+  for (let j = len - 22; j < len - 2; j++) {
     const lowVal = bars[j][3];
     const highVal = bars[j][2];
     if (lowVal < localLow) localLow = lowVal;
