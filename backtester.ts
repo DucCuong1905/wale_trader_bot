@@ -315,6 +315,33 @@ function calculateVWMA(bars: any[], period: number) {
   return volSum === 0 ? bars[bars.length - 1][4] : pvSum / volSum;
 }
 
+function calculateVWMA5mOptimized(allKlines: any[], i: number): number {
+  const startIdx = Math.max(0, i - 115);
+  const endIdx = i;
+  const length = endIdx - startIdx + 1;
+  const numBlocks = Math.ceil(length / 5);
+  const startBlockIdx = Math.max(0, numBlocks - 20);
+  
+  let pvSum = 0;
+  let volSum = 0;
+  
+  for (let b = startBlockIdx; b < numBlocks; b++) {
+    const bStart = startIdx + b * 5;
+    const bEnd = Math.min(endIdx, bStart + 4);
+    
+    const closePrice = allKlines[bEnd][4];
+    let blockVol = 0;
+    for (let k = bStart; k <= bEnd; k++) {
+      blockVol += allKlines[k][5];
+    }
+    
+    pvSum += closePrice * blockVol;
+    volSum += blockVol;
+  }
+  
+  return volSum === 0 ? allKlines[i][4] : pvSum / volSum;
+}
+
 function aggregateCandles(oneMinBars: any[], windowSize: number = 15) {
   const aggregated: any[] = [];
   for (let i = 0; i < oneMinBars.length; i += windowSize) {
@@ -926,9 +953,7 @@ export async function runBacktest(
     const isInSession = isWithinSessions(allKlines[i][0]);
 
     // --- Khung M5 VWMA ---
-    const calcWindow5mRaw = allKlines.slice(Math.max(0, i - 115), i + 1);
-    const bars5m = aggregateCandles(calcWindow5mRaw, 5);
-    const vwma5m = calculateVWMA(bars5m, 20);
+    const vwma5m = calculateVWMA5mOptimized(allKlines, i);
 
     // --- 2. CALCULATE ROLLING WINRATE & RISK ENGINE ---
     const rollingWinRate = sweepHistoryQueue.length > 0
