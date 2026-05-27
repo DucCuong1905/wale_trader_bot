@@ -30,7 +30,7 @@ const MAX_DAILY_LOSS = 0.06; // Giới hạn lỗ tối đa trong ngày (6%)
 let ENABLE_SESSION_FILTER = true; 
 let ENABLE_WHALE_SWEEP = true; 
 const VWMA_PERIOD = 20; // Cố định VWMA 20
-let ADX_THRESHOLD = 14; // Ngưỡng ADX mặc định
+let ADX_THRESHOLD = 10; // Ngưỡng ADX mặc định
 const SESSION_START_GMT = 8;  // 08:00 GMT (Mở phiên Âu)
 const SESSION_END_GMT = 21;    // 21:00 GMT (Đóng phiên Mỹ)
 
@@ -1055,7 +1055,7 @@ async function startServer() {
     backtestStatus.isRunning = true;
     runBacktest(startDate, endDate, rr, timeframe, enableSessionFilter, 20, p => { 
       backtestStatus.progress = p; 
-    }, adxThreshold !== undefined ? adxThreshold : 14, enableWhaleSweep !== undefined ? enableWhaleSweep : true).then(async (r: any) => { 
+    }, adxThreshold !== undefined ? adxThreshold : 10, enableWhaleSweep !== undefined ? enableWhaleSweep : true).then(async (r: any) => { 
       backtestStatus.isRunning = false; 
       
       // Gửi báo cáo Telegram khi hoàn tất backtest

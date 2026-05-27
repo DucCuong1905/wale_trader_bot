@@ -621,7 +621,7 @@ export async function runBacktest(
   enableSessionFilter: boolean = true,
   vwmaPeriod: number = 20, 
   onProgress?: (p: number) => void,
-  adxThreshold: number = 14,
+  adxThreshold: number = 10,
   enableWhaleSweep: boolean = true
 ) {
   shouldStopBacktest = false;
