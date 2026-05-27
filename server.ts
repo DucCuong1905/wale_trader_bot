@@ -401,25 +401,6 @@ function calculateATR(bars: any[], period: number = 14) {
   return trs.slice(-period).reduce((a, b) => a + b, 0) / period;
 }
 
-function calculateBollingerBands(bars: any[], period: number = 20, multiplier: number = 2) {
-  if (bars.length < period) {
-    return { middle: 0, upper: 0, lower: 0 };
-  }
-  const slice = bars.slice(-period).map(b => b[4]); // close prices
-  const sum = slice.reduce((acc, val) => acc + val, 0);
-  const mean = sum / period;
-  
-  const squareDiffs = slice.map(val => Math.pow(val - mean, 2));
-  const variance = squareDiffs.reduce((acc, val) => acc + val, 0) / period;
-  const stdDev = Math.sqrt(variance);
-  
-  return {
-    middle: mean,
-    upper: mean + (multiplier * stdDev),
-    lower: mean - (multiplier * stdDev)
-  };
-}
-
 function calculateVWAP(bars: any[]) {
   if (bars.length === 0) return 0;
   const lastBarDate = new Date(bars[bars.length - 1][0]).getUTCDate();
@@ -768,7 +749,7 @@ async function traderLoop() {
         
         if (resolved) {
           sweepHistoryQueue.push(won ? 1 : 0);
-          if (sweepHistoryQueue.length > 12) {
+          if (sweepHistoryQueue.length > 10) {
             sweepHistoryQueue.shift();
           }
           pendingSweeps.splice(sIdx, 1);
@@ -796,20 +777,9 @@ async function traderLoop() {
           atrVal = sum / 14;
         }
 
-        const bbCurrent = calculateBollingerBands(calcWindow, 20, 2);
-        const calcWindowPrev = bars.slice(Math.max(0, idx - 101), idx);
-        const bbPrev = calculateBollingerBands(calcWindowPrev, 20, 2);
-
-        const isBBOpeningOutwardsLong = bbPrev.upper > 0 && bbCurrent.upper > bbPrev.upper;
-        const isBBUpperFarEnough = bbCurrent.upper - bars[idx][4] >= atrVal * 1.5;
-        const isBBLongOk = !ENABLE_SESSION_FILTER || (isBBOpeningOutwardsLong || isBBUpperFarEnough);
-
-        const isBBOpeningOutwardsShort = bbPrev.lower > 0 && bbCurrent.lower < bbPrev.lower;
-        const isBBLowerFarEnough = bars[idx][4] - bbCurrent.lower >= atrVal * 1.5;
-        const isBBShortOk = !ENABLE_SESSION_FILTER || (isBBOpeningOutwardsShort || isBBLowerFarEnough);
-
-        const isNewSweepLong = sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isBBLongOk;
-        const isNewSweepShort = sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isBBShortOk;
+        const isInSession = isWithinTradingSessions(bars[idx][0]);
+        const isNewSweepLong = sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isInSession;
+        const isNewSweepShort = sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isInSession;
 
         const currentPriceVal = barC;
         if (isNewSweepLong) {
@@ -851,9 +821,25 @@ async function traderLoop() {
       : 0.50;
 
     const dynamicRiskMult = 1.0; // Tải cứng 1% rủi ro, tắt Dynamic Risk theo yêu cầu
-    const finalRegimeLabel = "NEUTRAL";
 
-    const isMarketTooChoppy = false; // No TQS choppy boundary
+    // Tái update dynamic regime chỉ mang vai trò thống kê theo dõi, CHƯA thay đổi trực tiếp đến risk/choppy block
+    // dynamic lấy 10 tín hiệu sweep gần nhất để xem bao nhiêu win và loss sau đó định hình cho lệnh tiếp theo
+    let finalRegimeLabel: "TREND_EXPANSION" | "NEUTRAL" | "CHOPPY" | "COMPRESSION" = "NEUTRAL";
+    if (sweepHistoryQueue.length >= 4) {
+      if (rollingWinRate <= 0.3) {
+        finalRegimeLabel = "CHOPPY";
+      } else if (rollingWinRate >= 0.7) {
+        finalRegimeLabel = "TREND_EXPANSION";
+      } else if (rollingWinRate >= 0.4 && rollingWinRate < 0.5) {
+        finalRegimeLabel = "COMPRESSION";
+      } else {
+        finalRegimeLabel = "NEUTRAL";
+      }
+    } else {
+      finalRegimeLabel = "NEUTRAL";
+    }
+
+    const isMarketTooChoppy = false; // Luôn cho phép trade, không block
     const regimeLabel = finalRegimeLabel;
 
     const regimeData = {
@@ -896,17 +882,7 @@ async function traderLoop() {
     // --- Mean Reversion Filter (Check if price is too far from VWMA) ---
     const distFromVWMA = Math.abs(currentPrice - vwmaM1);
     
-    // Bollinger Bands Target-Room Filter logic
-    const bbCurrent = calculateBollingerBands(closedBars, 20, 2);
-    const bbPrev = calculateBollingerBands(closedBars.slice(0, -1), 20, 2);
-
-    const isBBOpeningOutwardsLong = bbPrev.upper > 0 && bbCurrent.upper > bbPrev.upper;
-    const isBBUpperFarEnough = bbCurrent.upper - currentPrice >= atrM1 * 1.5;
-    const isBBLongOk = !ENABLE_SESSION_FILTER || (isBBOpeningOutwardsLong || isBBUpperFarEnough);
-
-    const isBBOpeningOutwardsShort = bbPrev.lower > 0 && bbCurrent.lower < bbPrev.lower;
-    const isBBLowerFarEnough = currentPrice - bbCurrent.lower >= atrM1 * 1.5;
-    const isBBShortOk = !ENABLE_SESSION_FILTER || (isBBOpeningOutwardsShort || isBBLowerFarEnough);
+    const isInSession = isWithinTradingSessions(lastClosedCandleTime);
     
     botState.adx = adxM1.adx; // Lưu ADX M1 vào botState để hiển thị
     botState.vwap = vwapM1;
@@ -935,7 +911,7 @@ async function traderLoop() {
     // LONG ENTRY
     if (
       !isMarketTooChoppy && (
-        (ENABLE_WHALE_SWEEP && !isOverExtendedLong && !hasBadEntryPriceLong && currentPrice > vwmaM1 && slopeM1 > 0 && adxM1.adx >= ADX_THRESHOLD && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isBBLongOk)
+        (ENABLE_WHALE_SWEEP && !isOverExtendedLong && !hasBadEntryPriceLong && currentPrice > vwmaM1 && slopeM1 > 0 && adxM1.adx >= ADX_THRESHOLD && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isInSession)
       )
     ) {
       sig = "LONG";
@@ -944,7 +920,7 @@ async function traderLoop() {
     // SHORT ENTRY
     if (
       !isMarketTooChoppy && (
-        (ENABLE_WHALE_SWEEP && !isOverExtendedShort && !hasBadEntryPriceShort && currentPrice < vwmaM1 && slopeM1 < 0 && adxM1.adx >= ADX_THRESHOLD && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isBBShortOk)
+        (ENABLE_WHALE_SWEEP && !isOverExtendedShort && !hasBadEntryPriceShort && currentPrice < vwmaM1 && slopeM1 < 0 && adxM1.adx >= ADX_THRESHOLD && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isInSession)
       )
     ) {
       sig = "SHORT";

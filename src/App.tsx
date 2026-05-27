@@ -275,7 +275,7 @@ export default function App() {
                     : "bg-white/5 border-white/10 text-slate-400 hover:text-slate-200"
                 )}
               >
-                BOLLINGER: {data?.enable_session_filter ? "ON" : "OFF"}
+                SESSION: {data?.enable_session_filter ? "ON" : "OFF"}
               </button>
 
               <button 
@@ -649,8 +649,8 @@ export default function App() {
                       </div>
                       <div className="space-y-2 col-span-2 flex items-center gap-4 bg-white/5 p-4 rounded-xl border border-white/10 mt-2">
                          <div className="flex-1">
-                            <label className="text-[10px] font-black text-slate-300 uppercase tracking-widest block mb-1">Bollinger Target-Room Filter</label>
-                            <p className="text-[9px] text-slate-500 font-bold uppercase">Chỉ vào lệnh khi dải băng mục tiêu (dải trên cho LONG, dải dưới cho SHORT) đang mở rộng hoặc có đủ khoảng cách trống 1.5 ATR</p>
+                            <label className="text-[10px] font-black text-slate-300 uppercase tracking-widest block mb-1">Session Filter (London/NY)</label>
+                            <p className="text-[9px] text-slate-500 font-bold uppercase">Chỉ vào lệnh từ 08:00 - 21:00 UTC</p>
                          </div>
                          <button 
                             onClick={() => setBacktestSessionFilter(!backtestSessionFilter)}
