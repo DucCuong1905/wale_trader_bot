@@ -465,7 +465,9 @@ function detectWhaleSweep(bars: any[]) {
     low: sL,
     high: sH,
     confirmHigh: cH,
-    confirmLow: cL
+    confirmLow: cL,
+    sweepOpen: sO,
+    confirmClose: cC
   };
 }
 
@@ -907,7 +909,7 @@ async function traderLoop() {
     // LONG ENTRY
     if (
       !isMarketTooChoppy && (
-        (ENABLE_WHALE_SWEEP && !isOverExtendedLong && !hasBadEntryPriceLong && currentPrice > vwmaM1 && slopeM1 > 0 && adxM1.adx >= ADX_THRESHOLD && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isInSession && currentPrice > vwma1m)
+        (ENABLE_WHALE_SWEEP && !isOverExtendedLong && !hasBadEntryPriceLong && adxM1.adx >= ADX_THRESHOLD && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isInSession && (sweep.confirmClose > sweep.sweepOpen || sweep.confirmClose > sweep.high))
       )
     ) {
       sig = "LONG";
@@ -916,7 +918,7 @@ async function traderLoop() {
     // SHORT ENTRY
     if (
       !isMarketTooChoppy && (
-        (ENABLE_WHALE_SWEEP && !isOverExtendedShort && !hasBadEntryPriceShort && currentPrice < vwmaM1 && slopeM1 < 0 && adxM1.adx >= ADX_THRESHOLD && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isInSession && currentPrice < vwma1m)
+        (ENABLE_WHALE_SWEEP && !isOverExtendedShort && !hasBadEntryPriceShort && adxM1.adx >= ADX_THRESHOLD && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isInSession && (sweep.confirmClose < sweep.sweepOpen || sweep.confirmClose < sweep.low))
       )
     ) {
       sig = "SHORT";
@@ -965,13 +967,16 @@ async function traderLoop() {
 
         const strategyName = "WHALE SWEEP (Quét thanh khoản)";
 
+        const condCloseOk = sig === 'LONG' 
+          ? (sweep.confirmClose > sweep.sweepOpen || sweep.confirmClose > sweep.high)
+          : (sweep.confirmClose < sweep.sweepOpen || sweep.confirmClose < sweep.low);
+
         const conditions = [
           `📡 Chiến lược: **${strategyName}**`,
           `1. Khoảng cách VWMA: ${sig === 'LONG' ? (!isOverExtendedLong ? '✅ Ok' : '❌ Quá xa') : (!isOverExtendedShort ? '✅ Ok' : '❌ Quá xa')} (${distFromVWMA.toFixed(2)})`,
-          `2. Giá vs VWMA 1m: ${sig === 'LONG' ? (currentPrice > vwma1m ? '✅ Trên' : '❌ Dưới') : (currentPrice < vwma1m ? '✅ Dưới' : '❌ Trên')}`,
-          `3. Slope M1: ${sig === 'LONG' ? (slopeM1 > 0 ? `✅ Positive (${slopeM1.toFixed(4)})` : `❌ Negative (${slopeM1.toFixed(4)})`) : (slopeM1 > -0.02 ? `✅ > -0.02 (${slopeM1.toFixed(4)})` : `❌ <= -0.02 (${slopeM1.toFixed(4)})`)}`,
-          `4. ADX M1 (>=${ADX_THRESHOLD}): ${adxM1.adx >= ADX_THRESHOLD ? '✅' : '❌'} (${adxM1.adx.toFixed(1)})`,
-          `5. Sweep M1: ✅ Confirmed`
+          `2. ADX M1 (>=${ADX_THRESHOLD}): ${adxM1.adx >= ADX_THRESHOLD ? '✅ Ok' : '❌ Thấp'} (${adxM1.adx.toFixed(1)})`,
+          `3. Xác nhận đóng nến (Close vs Open/Wick nến quét): ${condCloseOk ? '✅ Ok' : '❌ Trượt'} (Confirm: ${sweep.confirmClose?.toFixed(2)}, SweepOpen: ${sweep.sweepOpen?.toFixed(2)}, SweepHigh/Low: ${sig === 'LONG' ? sweep.high?.toFixed(2) : sweep.low?.toFixed(2)})`,
+          `4. Sweep M1: ✅ Confirmed`
         ].join('\n');
 
         const rollingWRPercent = (rollingWinRate * 100).toFixed(1);
@@ -1013,12 +1018,15 @@ async function traderLoop() {
             botState.lastTradeTime = Date.now();
             
             const vnTime = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
+            const condCloseOk = sig === 'LONG' 
+              ? (sweep.confirmClose > sweep.sweepOpen || sweep.confirmClose > sweep.high)
+              : (sweep.confirmClose < sweep.sweepOpen || sweep.confirmClose < sweep.low);
+
             const conditions = [
               `1. Khoảng cách VWMA: ${sig === 'LONG' ? (!isOverExtendedLong ? '✅ Ok' : '❌ Quá xa') : (!isOverExtendedShort ? '✅ Ok' : '❌ Quá xa')} (${distFromVWMA.toFixed(2)})`,
-              `2. Giá vs VWMA 1m: ${sig === 'LONG' ? (currentPrice > vwma1m ? '✅ Trên' : '❌ Dưới') : (currentPrice < vwma1m ? '✅ Dưới' : '❌ Trên')}`,
-              `3. Slope M1: ${sig === 'LONG' ? (slopeM1 > 0 ? `✅ Positive (${slopeM1.toFixed(4)})` : `❌ Negative (${slopeM1.toFixed(4)})`) : (slopeM1 > -0.02 ? `✅ > -0.02 (${slopeM1.toFixed(4)})` : `❌ <= -0.02 (${slopeM1.toFixed(4)})`)}`,
-              `4. ADX M1 (>=${ADX_THRESHOLD}): ${adxM1.adx >= ADX_THRESHOLD ? '✅' : '❌'} (${adxM1.adx.toFixed(1)})`,
-              `5. Sweep M1: ✅ Confirmed`
+              `2. ADX M1 (>=${ADX_THRESHOLD}): ${adxM1.adx >= ADX_THRESHOLD ? '✅ Ok' : '❌ Thấp'} (${adxM1.adx.toFixed(1)})`,
+              `3. Xác nhận đóng nến (Close vs Open/Wick nến quét): ${condCloseOk ? '✅ Ok' : '❌ Trượt'}`,
+              `4. Sweep M1: ✅ Confirmed`
             ].join('\n');
 
             const rollingWRPercent = (rollingWinRate * 100).toFixed(1);

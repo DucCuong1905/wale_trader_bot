@@ -265,7 +265,9 @@ function detectSweep(bars: any[]) {
     low: sL,
     high: sH,
     confirmHigh: cH,
-    confirmLow: cL
+    confirmLow: cL,
+    sweepOpen: sO,
+    confirmClose: cC
   };
 }
 
@@ -847,7 +849,8 @@ export async function runBacktest(
     notOverExtendedLong: 0,
     currentPrice_gt_vwma1m: 0,
     adx_ge_threshold: 0,
-    slope_gt_0: 0
+    slope_gt_0: 0,
+    confirm_above_sweep_open_or_high: 0
   };
   const debugWhaleShortConditions = {
     isNewSweepShortAtBar: 0,
@@ -856,7 +859,8 @@ export async function runBacktest(
     notOverExtendedShort: 0,
     currentPrice_lt_vwma1m: 0,
     adx_ge_threshold: 0,
-    slope_gt_neg_0_02: 0
+    slope_gt_neg_0_02: 0,
+    confirm_below_sweep_open_or_low: 0
   };
 
   let sessionSkippedCount = 0;
@@ -1017,6 +1021,9 @@ export async function runBacktest(
       }
       if (adxM1.adx >= adxThreshold) debugWhaleLongConditions.adx_ge_threshold++;
       if (slopeM1 > 0) debugWhaleLongConditions.slope_gt_0++;
+      if (sweep.confirmClose > sweep.sweepOpen || sweep.confirmClose > sweep.high) {
+        debugWhaleLongConditions.confirm_above_sweep_open_or_high++;
+      }
 
       if (isInSession) {
         const slRaw = sweep.low - atrM1 * 0.8;
@@ -1047,6 +1054,9 @@ export async function runBacktest(
       }
       if (adxM1.adx >= adxThreshold) debugWhaleShortConditions.adx_ge_threshold++;
       if (slopeM1 > -0.02) debugWhaleShortConditions.slope_gt_neg_0_02++;
+      if (sweep.confirmClose < sweep.sweepOpen || sweep.confirmClose < sweep.low) {
+        debugWhaleShortConditions.confirm_below_sweep_open_or_low++;
+      }
 
       if (isInSession) {
         const slRaw = sweep.high + atrM1 * 0.8;
@@ -1112,10 +1122,12 @@ export async function runBacktest(
 
     // --- ENTRY DECISION (WHALE SWEEP ONLY) ---
     let isLong = !isMarketTooChoppy && 
-      enableWhaleSweep && !isOverExtendedLong && !hasBadEntryPriceLong && currentPrice > vwmaM1 && slopeM1 > 0 && adxM1.adx >= adxThreshold && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isInSession;
+      enableWhaleSweep && !isOverExtendedLong && !hasBadEntryPriceLong && adxM1.adx >= adxThreshold && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isInSession &&
+      (sweep.confirmClose > sweep.sweepOpen || sweep.confirmClose > sweep.high);
 
     let isShort = !isMarketTooChoppy && 
-      enableWhaleSweep && !isOverExtendedShort && !hasBadEntryPriceShort && currentPrice < vwmaM1 && slopeM1 < 0 && adxM1.adx >= adxThreshold && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isInSession;
+      enableWhaleSweep && !isOverExtendedShort && !hasBadEntryPriceShort && adxM1.adx >= adxThreshold && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isInSession &&
+      (sweep.confirmClose < sweep.sweepOpen || sweep.confirmClose < sweep.low);
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
@@ -1409,17 +1421,19 @@ export async function runBacktest(
   console.log(`  [1] Nằm trong phiên giao dịch:                     ${debugWhaleLongConditions.isInSession} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
   console.log(`  [2] Bật Whale Sweep:                               ${debugWhaleLongConditions.enableWhaleSweep} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
   console.log(`  [3] Biên độ giá không quá xa (Not Overextend):        ${debugWhaleLongConditions.notOverExtendedLong} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
-  console.log(`  [4] GIÁ NẰM TRÊN VWMA 1M (BỘ LỌC BẮT BUỘC LONG):     ${debugWhaleLongConditions.currentPrice_gt_vwma1m} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
+  console.log(`  [4] GIÁ NẰM TRÊN VWMA 1M (Đã Bỏ Qua / Tham khảo):     ${debugWhaleLongConditions.currentPrice_gt_vwma1m} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
   console.log(`  [5] Chỉ số ADX M1 >= Ngưỡng (${adxThreshold}):                  ${debugWhaleLongConditions.adx_ge_threshold} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
-  console.log(`  [6] Đường dốc M1 có xu hướng đi lên (Slope):         ${debugWhaleLongConditions.slope_gt_0} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
+  console.log(`  [6] Đường dốc M1 có xu hướng đi lên (Đã Bỏ Qua):       ${debugWhaleLongConditions.slope_gt_0} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
+  console.log(`  [7] Xác nhận đóng nến > sO hoặc > sH (BẮT BUỘC):      ${debugWhaleLongConditions.confirm_above_sweep_open_or_high} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
   
   console.log(`\n📌 THỐNG KÊ CHI TIẾT ĐIỀU KIỆN LỆNH SHORT (Dựa trên ${debugWhaleShortConditions.isNewSweepShortAtBar} nến tín hiệu thô):`);
   console.log(`  [1] Nằm trong phiên giao dịch:                     ${debugWhaleShortConditions.isInSession} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
   console.log(`  [2] Bật Whale Sweep:                               ${debugWhaleShortConditions.enableWhaleSweep} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
   console.log(`  [3] Biên độ giá không quá xa (Not Overextend):        ${debugWhaleShortConditions.notOverExtendedShort} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
-  console.log(`  [4] GIÁ NẰM DƯỚI VWMA 1M (BỘ LỌC BẮT BUỘC SHORT):    ${debugWhaleShortConditions.currentPrice_lt_vwma1m} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
+  console.log(`  [4] GIÁ NẰM DƯỚI VWMA 1M (Đã Bỏ Qua / Tham khảo):    ${debugWhaleShortConditions.currentPrice_lt_vwma1m} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
   console.log(`  [5] Chỉ số ADX M1 >= Ngưỡng (${adxThreshold}):                  ${debugWhaleShortConditions.adx_ge_threshold} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
-  console.log(`  [6] Đường dốc M1 (Slope > -0.02):                  ${debugWhaleShortConditions.slope_gt_neg_0_02} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
+  console.log(`  [6] Đường dốc M1 có xu hướng đi xuống (Đã Bỏ Qua):     ${debugWhaleShortConditions.slope_gt_neg_0_02} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
+  console.log(`  [7] Xác nhận đóng nến < sO hoặc < sL (BẮT BUỘC):      ${debugWhaleShortConditions.confirm_below_sweep_open_or_low} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
   console.log("===============================================================================\n");
 
     if (enableSessionFilter) {
