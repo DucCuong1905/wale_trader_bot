@@ -138,6 +138,7 @@ let botState = {
   signals: [] as any[],
   lastNotifiedCandle: -1,
   adx: 0,
+  rsi: 50,
   plusDI: 0,
   minusDI: 0,
   vwap: 0,
@@ -509,6 +510,43 @@ function calcBB(ohlcv: any[], period: number = 20, stdDev: number = 2) {
   return { mid, top, bot, width };
 }
 
+function calculateRSI(ohlcv: any[], period: number = 14): number {
+  if (ohlcv.length < period + 1) return 50;
+  const sliceLen = Math.min(ohlcv.length, period * 3 + 5);
+  const data = ohlcv.slice(-sliceLen);
+  if (data.length < period + 1) return 50;
+
+  let gains = 0;
+  let losses = 0;
+
+  for (let i = 1; i <= period; i++) {
+    const diff = data[i][4] - data[i - 1][4];
+    if (diff > 0) {
+      gains += diff;
+    } else {
+      losses -= diff;
+    }
+  }
+
+  let avgGain = gains / period;
+  let avgLoss = losses / period;
+
+  for (let i = period + 1; i < data.length; i++) {
+    const diff = data[i][4] - data[i - 1][4];
+    if (diff > 0) {
+      avgGain = (avgGain * (period - 1) + diff) / period;
+      avgLoss = (avgLoss * (period - 1)) / period;
+    } else {
+      avgGain = (avgGain * (period - 1)) / period;
+      avgLoss = (avgLoss * (period - 1) - diff) / period;
+    }
+  }
+
+  if (avgLoss === 0) return 100;
+  const rs = avgGain / avgLoss;
+  return 100 - (100 / (1 + rs));
+}
+
 function calculateVWMA(bars: any[], period: number) {
   if (bars.length < period) return bars[bars.length - 1][4];
   let pv = 0, v = 0;
@@ -873,6 +911,7 @@ async function traderLoop() {
     const slopeM1 = vwmaM1 - vwmaM1Prev;
     const adxM1 = calcADX(closedBars, 14);
     const prevAdxM1 = calcADX(closedBars.slice(0, -1), 14);
+    const rsiM1 = calculateRSI(closedBars, 14);
     
     // --- Khung M1 Filter ---
     const vwma1m = vwmaM1;
@@ -883,6 +922,7 @@ async function traderLoop() {
     const isInSession = isWithinTradingSessions(lastClosedCandleTime);
     
     botState.adx = adxM1.adx; // Lưu ADX M1 vào botState để hiển thị
+    botState.rsi = rsiM1;     // Lưu RSI M1 vào botState để hiển thị
     botState.vwap = vwapM1;
 
     // THÔNG BÁO KHI SẴN SÀNG
@@ -909,7 +949,7 @@ async function traderLoop() {
     // LONG ENTRY
     if (
       !isMarketTooChoppy && (
-        (ENABLE_WHALE_SWEEP && !isOverExtendedLong && !hasBadEntryPriceLong && adxM1.adx >= ADX_THRESHOLD && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isInSession && (sweep.confirmClose > sweep.sweepOpen || sweep.confirmClose > sweep.high))
+        (ENABLE_WHALE_SWEEP && !isOverExtendedLong && !hasBadEntryPriceLong && adxM1.adx >= ADX_THRESHOLD && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isInSession && (sweep.confirmClose > sweep.sweepOpen || sweep.confirmClose > sweep.high) && rsiM1 > 40)
       )
     ) {
       sig = "LONG";
@@ -918,7 +958,7 @@ async function traderLoop() {
     // SHORT ENTRY
     if (
       !isMarketTooChoppy && (
-        (ENABLE_WHALE_SWEEP && !isOverExtendedShort && !hasBadEntryPriceShort && adxM1.adx >= ADX_THRESHOLD && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isInSession && (sweep.confirmClose < sweep.sweepOpen || sweep.confirmClose < sweep.low))
+        (ENABLE_WHALE_SWEEP && !isOverExtendedShort && !hasBadEntryPriceShort && adxM1.adx >= ADX_THRESHOLD && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isInSession && (sweep.confirmClose < sweep.sweepOpen || sweep.confirmClose < sweep.low) && rsiM1 < 60)
       )
     ) {
       sig = "SHORT";
@@ -976,7 +1016,8 @@ async function traderLoop() {
           `1. Khoảng cách VWMA: ${sig === 'LONG' ? (!isOverExtendedLong ? '✅ Ok' : '❌ Quá xa') : (!isOverExtendedShort ? '✅ Ok' : '❌ Quá xa')} (${distFromVWMA.toFixed(2)})`,
           `2. ADX M1 (>=${ADX_THRESHOLD}): ${adxM1.adx >= ADX_THRESHOLD ? '✅ Ok' : '❌ Thấp'} (${adxM1.adx.toFixed(1)})`,
           `3. Xác nhận đóng nến (Close vs Open/Wick nến quét): ${condCloseOk ? '✅ Ok' : '❌ Trượt'} (Confirm: ${sweep.confirmClose?.toFixed(2)}, SweepOpen: ${sweep.sweepOpen?.toFixed(2)}, SweepHigh/Low: ${sig === 'LONG' ? sweep.high?.toFixed(2) : sweep.low?.toFixed(2)})`,
-          `4. Sweep M1: ✅ Confirmed`
+          `4. RSI M1 (${sig === 'LONG' ? '> 40' : '< 60'}): ${sig === 'LONG' ? (rsiM1 > 40 ? '✅ Ok' : '❌ Thấp') : (rsiM1 < 60 ? '✅ Ok' : '❌ Cao')} (${rsiM1.toFixed(1)})`,
+          `5. Sweep M1: ✅ Confirmed`
         ].join('\n');
 
         const rollingWRPercent = (rollingWinRate * 100).toFixed(1);
@@ -1026,7 +1067,8 @@ async function traderLoop() {
               `1. Khoảng cách VWMA: ${sig === 'LONG' ? (!isOverExtendedLong ? '✅ Ok' : '❌ Quá xa') : (!isOverExtendedShort ? '✅ Ok' : '❌ Quá xa')} (${distFromVWMA.toFixed(2)})`,
               `2. ADX M1 (>=${ADX_THRESHOLD}): ${adxM1.adx >= ADX_THRESHOLD ? '✅ Ok' : '❌ Thấp'} (${adxM1.adx.toFixed(1)})`,
               `3. Xác nhận đóng nến (Close vs Open/Wick nến quét): ${condCloseOk ? '✅ Ok' : '❌ Trượt'}`,
-              `4. Sweep M1: ✅ Confirmed`
+              `4. RSI M1 (${sig === 'LONG' ? '> 40' : '< 60'}): ${sig === 'LONG' ? (rsiM1 > 40 ? '✅ Ok' : '❌ Thấp') : (rsiM1 < 60 ? '✅ Ok' : '❌ Cao')} (${rsiM1.toFixed(1)})`,
+              `5. Sweep M1: ✅ Confirmed`
             ].join('\n');
 
             const rollingWRPercent = (rollingWinRate * 100).toFixed(1);
@@ -1159,7 +1201,8 @@ async function startServer() {
     res.json({
       symbol: PAIR, last_price: botState.lastPrice, in_position: botState.inPosition,
       signals: botState.signals.slice(0, 10), balance: botState.balance, ai_reasoning: botState.aiReasoning,
-      adx: botState.adx.toFixed(1), 
+      adx: botState.adx.toFixed(1),
+      rsi: botState.rsi.toFixed(1), 
       enable_session_filter: ENABLE_SESSION_FILTER,
       enable_whale_sweep: ENABLE_WHALE_SWEEP,
       vwma_period: VWMA_PERIOD,

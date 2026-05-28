@@ -381,9 +381,9 @@ export default function App() {
                     icon={<TrendingUp className="w-4 h-4" />} 
                   />
                   <StatCard 
-                    label="Sức Mạnh Xu Hướng" 
-                    value={`ADX: ${data?.adx || '0.0'}`} 
-                    subValue={`DI+: ${data?.plus_di || '0'} | DI-: ${data?.minus_di || '0'}`}
+                    label="Chỉ Báo Kỹ Thuật" 
+                    value={`ADX: ${data?.adx || '0.0'} / RSI: ${data?.rsi || '50.0'}`} 
+                    subValue={`RSI: Long > 40 | Short < 60`}
                     positive={(parseFloat(data?.adx) || 0) > 25}
                     icon={<BarChart3 className="w-4 h-4" />} 
                   />
