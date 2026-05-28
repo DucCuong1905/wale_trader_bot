@@ -138,7 +138,9 @@ let botState = {
   signals: [] as any[],
   lastNotifiedCandle: -1,
   adx: 0,
-  rsi: 50,
+  ema20_5m: 0,
+  ema50_5m: 0,
+  shadowEma5mCheck: "",
   plusDI: 0,
   minusDI: 0,
   vwap: 0,
@@ -510,41 +512,66 @@ function calcBB(ohlcv: any[], period: number = 20, stdDev: number = 2) {
   return { mid, top, bot, width };
 }
 
-function calculateRSI(ohlcv: any[], period: number = 14): number {
-  if (ohlcv.length < period + 1) return 50;
-  const sliceLen = Math.min(ohlcv.length, period * 3 + 5);
-  const data = ohlcv.slice(-sliceLen);
-  if (data.length < period + 1) return 50;
-
-  let gains = 0;
-  let losses = 0;
-
-  for (let i = 1; i <= period; i++) {
-    const diff = data[i][4] - data[i - 1][4];
-    if (diff > 0) {
-      gains += diff;
-    } else {
-      losses -= diff;
+function calculate5mEMAs(oneMinBars: any[], upToIndex: number) {
+  const startIdx = Math.max(0, upToIndex - 1500);
+  const slice = oneMinBars.slice(startIdx, upToIndex + 1);
+  
+  const intervalMs = 5 * 60 * 1000;
+  const groups = new Map<number, any[]>();
+  
+  for (const bar of slice) {
+    const rawTime = typeof bar[0] === 'string' ? new Date(bar[0]).getTime() : bar[0];
+    const openTime = Math.floor(rawTime / intervalMs) * intervalMs;
+    let list = groups.get(openTime);
+    if (!list) {
+      list = [];
+      groups.set(openTime, list);
     }
+    list.push(bar);
   }
-
-  let avgGain = gains / period;
-  let avgLoss = losses / period;
-
-  for (let i = period + 1; i < data.length; i++) {
-    const diff = data[i][4] - data[i - 1][4];
-    if (diff > 0) {
-      avgGain = (avgGain * (period - 1) + diff) / period;
-      avgLoss = (avgLoss * (period - 1)) / period;
-    } else {
-      avgGain = (avgGain * (period - 1)) / period;
-      avgLoss = (avgLoss * (period - 1) - diff) / period;
+  
+  const m5Candles: any[] = [];
+  const sortedKeys = Array.from(groups.keys()).sort((a, b) => a - b);
+  for (const openTime of sortedKeys) {
+    const s = groups.get(openTime)!;
+    m5Candles.push([
+      openTime,
+      s[0][1], // Open
+      Math.max(...s.map((b: any) => b[2])), // High
+      Math.min(...s.map((b: any) => b[3])), // Low
+      s[s.length - 1][4], // Close
+      s.reduce((acc: number, b: any) => acc + (b[5] || 0), 0) // Volume
+    ]);
+  }
+  
+  if (m5Candles.length === 0) {
+    const lastClose = oneMinBars[upToIndex][4];
+    return { close5m: lastClose, ema20: lastClose, ema50: lastClose };
+  }
+  
+  const lastClose = oneMinBars[upToIndex][4];
+  const close5m = m5Candles[m5Candles.length - 1][4];
+  
+  const calcEMA = (period: number) => {
+    if (m5Candles.length < period) {
+      return m5Candles[m5Candles.length - 1][4];
     }
-  }
+    const k = 2 / (period + 1);
+    let sum = 0;
+    for (let j = 0; j < period; j++) {
+      sum += m5Candles[j][4];
+    }
+    let ema = sum / period;
+    for (let j = period; j < m5Candles.length; j++) {
+      ema = m5Candles[j][4] * k + ema * (1 - k);
+    }
+    return ema;
+  };
 
-  if (avgLoss === 0) return 100;
-  const rs = avgGain / avgLoss;
-  return 100 - (100 / (1 + rs));
+  const ema20 = calcEMA(20);
+  const ema50 = calcEMA(50);
+  
+  return { close5m, ema20, ema50 };
 }
 
 function calculateVWMA(bars: any[], period: number) {
@@ -911,7 +938,10 @@ async function traderLoop() {
     const slopeM1 = vwmaM1 - vwmaM1Prev;
     const adxM1 = calcADX(closedBars, 14);
     const prevAdxM1 = calcADX(closedBars.slice(0, -1), 14);
-    const rsiM1 = calculateRSI(closedBars, 14);
+    
+    const m5State = calculate5mEMAs(closedBars, closedBars.length - 1);
+    const bullishHTF = m5State.close5m > m5State.ema20 && m5State.ema20 > m5State.ema50;
+    const bearishHTF = m5State.close5m < m5State.ema20 && m5State.ema20 < m5State.ema50;
     
     // --- Khung M1 Filter ---
     const vwma1m = vwmaM1;
@@ -922,7 +952,9 @@ async function traderLoop() {
     const isInSession = isWithinTradingSessions(lastClosedCandleTime);
     
     botState.adx = adxM1.adx; // Lưu ADX M1 vào botState để hiển thị
-    botState.rsi = rsiM1;     // Lưu RSI M1 vào botState để hiển thị
+    botState.ema20_5m = m5State.ema20;
+    botState.ema50_5m = m5State.ema50;
+    botState.shadowEma5mCheck = `close: ${m5State.close5m.toFixed(2)} | EMA20: ${m5State.ema20.toFixed(2)} | EMA50: ${m5State.ema50.toFixed(2)}`;
     botState.vwap = vwapM1;
 
     // THÔNG BÁO KHI SẴN SÀNG
@@ -949,7 +981,7 @@ async function traderLoop() {
     // LONG ENTRY
     if (
       !isMarketTooChoppy && (
-        (ENABLE_WHALE_SWEEP && !isOverExtendedLong && !hasBadEntryPriceLong && adxM1.adx >= ADX_THRESHOLD && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isInSession && (sweep.confirmClose > sweep.sweepOpen || sweep.confirmClose > sweep.high) && rsiM1 > 40)
+        (ENABLE_WHALE_SWEEP && !isOverExtendedLong && !hasBadEntryPriceLong && adxM1.adx >= ADX_THRESHOLD && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isInSession && (sweep.confirmClose > sweep.sweepOpen || sweep.confirmClose > sweep.high) && bullishHTF)
       )
     ) {
       sig = "LONG";
@@ -958,7 +990,7 @@ async function traderLoop() {
     // SHORT ENTRY
     if (
       !isMarketTooChoppy && (
-        (ENABLE_WHALE_SWEEP && !isOverExtendedShort && !hasBadEntryPriceShort && adxM1.adx >= ADX_THRESHOLD && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isInSession && (sweep.confirmClose < sweep.sweepOpen || sweep.confirmClose < sweep.low) && rsiM1 < 60)
+        (ENABLE_WHALE_SWEEP && !isOverExtendedShort && !hasBadEntryPriceShort && adxM1.adx >= ADX_THRESHOLD && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isInSession && (sweep.confirmClose < sweep.sweepOpen || sweep.confirmClose < sweep.low) && bearishHTF)
       )
     ) {
       sig = "SHORT";
@@ -1016,7 +1048,7 @@ async function traderLoop() {
           `1. Khoảng cách VWMA: ${sig === 'LONG' ? (!isOverExtendedLong ? '✅ Ok' : '❌ Quá xa') : (!isOverExtendedShort ? '✅ Ok' : '❌ Quá xa')} (${distFromVWMA.toFixed(2)})`,
           `2. ADX M1 (>=${ADX_THRESHOLD}): ${adxM1.adx >= ADX_THRESHOLD ? '✅ Ok' : '❌ Thấp'} (${adxM1.adx.toFixed(1)})`,
           `3. Xác nhận đóng nến (Close vs Open/Wick nến quét): ${condCloseOk ? '✅ Ok' : '❌ Trượt'} (Confirm: ${sweep.confirmClose?.toFixed(2)}, SweepOpen: ${sweep.sweepOpen?.toFixed(2)}, SweepHigh/Low: ${sig === 'LONG' ? sweep.high?.toFixed(2) : sweep.low?.toFixed(2)})`,
-          `4. RSI M1 (${sig === 'LONG' ? '> 40' : '< 60'}): ${sig === 'LONG' ? (rsiM1 > 40 ? '✅ Ok' : '❌ Thấp') : (rsiM1 < 60 ? '✅ Ok' : '❌ Cao')} (${rsiM1.toFixed(1)})`,
+          `4. Bộ lọc Xu hướng HTF M5: ${sig === 'LONG' ? (bullishHTF ? '✅ Bullish HTF (Close > EMA20 > EMA50)' : '❌ Không đồng thuận') : (bearishHTF ? '✅ Bearish HTF (Close < EMA20 < EMA50)' : '❌ Không đồng thuận')}`,
           `5. Sweep M1: ✅ Confirmed`
         ].join('\n');
 
@@ -1067,7 +1099,7 @@ async function traderLoop() {
               `1. Khoảng cách VWMA: ${sig === 'LONG' ? (!isOverExtendedLong ? '✅ Ok' : '❌ Quá xa') : (!isOverExtendedShort ? '✅ Ok' : '❌ Quá xa')} (${distFromVWMA.toFixed(2)})`,
               `2. ADX M1 (>=${ADX_THRESHOLD}): ${adxM1.adx >= ADX_THRESHOLD ? '✅ Ok' : '❌ Thấp'} (${adxM1.adx.toFixed(1)})`,
               `3. Xác nhận đóng nến (Close vs Open/Wick nến quét): ${condCloseOk ? '✅ Ok' : '❌ Trượt'}`,
-              `4. RSI M1 (${sig === 'LONG' ? '> 40' : '< 60'}): ${sig === 'LONG' ? (rsiM1 > 40 ? '✅ Ok' : '❌ Thấp') : (rsiM1 < 60 ? '✅ Ok' : '❌ Cao')} (${rsiM1.toFixed(1)})`,
+              `4. Bộ lọc Xu hướng HTF M5: ${sig === 'LONG' ? (bullishHTF ? '✅ Bullish HTF (Close > EMA20 > EMA50)' : '❌ Không đồng thuận') : (bearishHTF ? '✅ Bearish HTF (Close < EMA20 < EMA50)' : '❌ Không đồng thuận')}`,
               `5. Sweep M1: ✅ Confirmed`
             ].join('\n');
 
@@ -1202,7 +1234,9 @@ async function startServer() {
       symbol: PAIR, last_price: botState.lastPrice, in_position: botState.inPosition,
       signals: botState.signals.slice(0, 10), balance: botState.balance, ai_reasoning: botState.aiReasoning,
       adx: botState.adx.toFixed(1),
-      rsi: botState.rsi.toFixed(1), 
+      ema20_5m: botState.ema20_5m.toFixed(2),
+      ema50_5m: botState.ema50_5m.toFixed(2),
+      shadow_ema_5m: botState.shadowEma5mCheck, 
       enable_session_filter: ENABLE_SESSION_FILTER,
       enable_whale_sweep: ENABLE_WHALE_SWEEP,
       vwma_period: VWMA_PERIOD,

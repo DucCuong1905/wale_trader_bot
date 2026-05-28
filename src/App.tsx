@@ -382,8 +382,8 @@ export default function App() {
                   />
                   <StatCard 
                     label="Chỉ Báo Kỹ Thuật" 
-                    value={`ADX: ${data?.adx || '0.0'} / RSI: ${data?.rsi || '50.0'}`} 
-                    subValue={`RSI: Long > 40 | Short < 60`}
+                    value={`ADX: ${data?.adx || '0.0'} (M1)`} 
+                    subValue={data?.ema20_5m ? `M5 EMA: ${data.ema20_5m}/${data.ema50_5m}` : "Đang tính..."}
                     positive={(parseFloat(data?.adx) || 0) > 25}
                     icon={<BarChart3 className="w-4 h-4" />} 
                   />

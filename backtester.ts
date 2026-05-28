@@ -341,41 +341,66 @@ function calcBB(ohlcv: any[], period: number = 20, stdDev: number = 2) {
   return { mid, top, bot, width };
 }
 
-function calculateRSI(ohlcv: any[], period: number = 14): number {
-  if (ohlcv.length < period + 1) return 50;
-  const sliceLen = Math.min(ohlcv.length, period * 3 + 5);
-  const data = ohlcv.slice(-sliceLen);
-  if (data.length < period + 1) return 50;
-
-  let gains = 0;
-  let losses = 0;
-
-  for (let i = 1; i <= period; i++) {
-    const diff = data[i][4] - data[i - 1][4];
-    if (diff > 0) {
-      gains += diff;
-    } else {
-      losses -= diff;
+function calculate5mEMAs(oneMinBars: any[], upToIndex: number) {
+  const startIdx = Math.max(0, upToIndex - 1500);
+  const slice = oneMinBars.slice(startIdx, upToIndex + 1);
+  
+  const intervalMs = 5 * 60 * 1000;
+  const groups = new Map<number, any[]>();
+  
+  for (const bar of slice) {
+    const rawTime = typeof bar[0] === 'string' ? new Date(bar[0]).getTime() : bar[0];
+    const openTime = Math.floor(rawTime / intervalMs) * intervalMs;
+    let list = groups.get(openTime);
+    if (!list) {
+      list = [];
+      groups.set(openTime, list);
     }
+    list.push(bar);
   }
-
-  let avgGain = gains / period;
-  let avgLoss = losses / period;
-
-  for (let i = period + 1; i < data.length; i++) {
-    const diff = data[i][4] - data[i - 1][4];
-    if (diff > 0) {
-      avgGain = (avgGain * (period - 1) + diff) / period;
-      avgLoss = (avgLoss * (period - 1)) / period;
-    } else {
-      avgGain = (avgGain * (period - 1)) / period;
-      avgLoss = (avgLoss * (period - 1) - diff) / period;
+  
+  const m5Candles: any[] = [];
+  const sortedKeys = Array.from(groups.keys()).sort((a, b) => a - b);
+  for (const openTime of sortedKeys) {
+    const s = groups.get(openTime)!;
+    m5Candles.push([
+      openTime,
+      s[0][1], // Open
+      Math.max(...s.map((b: any) => b[2])), // High
+      Math.min(...s.map((b: any) => b[3])), // Low
+      s[s.length - 1][4], // Close
+      s.reduce((acc: number, b: any) => acc + (b[5] || 0), 0) // Volume
+    ]);
+  }
+  
+  if (m5Candles.length === 0) {
+    const lastClose = oneMinBars[upToIndex][4];
+    return { close5m: lastClose, ema20: lastClose, ema50: lastClose };
+  }
+  
+  const lastClose = oneMinBars[upToIndex][4];
+  const close5m = m5Candles[m5Candles.length - 1][4];
+  
+  const calcEMA = (period: number) => {
+    if (m5Candles.length < period) {
+      return m5Candles[m5Candles.length - 1][4];
     }
-  }
+    const k = 2 / (period + 1);
+    let sum = 0;
+    for (let j = 0; j < period; j++) {
+      sum += m5Candles[j][4];
+    }
+    let ema = sum / period;
+    for (let j = period; j < m5Candles.length; j++) {
+      ema = m5Candles[j][4] * k + ema * (1 - k);
+    }
+    return ema;
+  };
 
-  if (avgLoss === 0) return 100;
-  const rs = avgGain / avgLoss;
-  return 100 - (100 / (1 + rs));
+  const ema20 = calcEMA(20);
+  const ema50 = calcEMA(50);
+  
+  return { close5m, ema20, ema50 };
 }
 
 function calcADX(ohlcv: any[]) {
@@ -888,7 +913,7 @@ export async function runBacktest(
     adx_ge_threshold: 0,
     slope_gt_0: 0,
     confirm_above_sweep_open_or_high: 0,
-    rsi_gt_40: 0
+    bullishHTF: 0
   };
   const debugWhaleShortConditions = {
     isNewSweepShortAtBar: 0,
@@ -899,7 +924,7 @@ export async function runBacktest(
     adx_ge_threshold: 0,
     slope_gt_neg_0_02: 0,
     confirm_below_sweep_open_or_low: 0,
-    rsi_lt_60: 0
+    bearishHTF: 0
   };
 
   let sessionSkippedCount = 0;
@@ -988,7 +1013,9 @@ export async function runBacktest(
     lastVwmaM1 = vwmaM1;
     const slopeM1 = vwmaM1 - vwmaM1Prev;
     const adxM1 = calcADX(calcWindow);
-    const rsiM1 = calculateRSI(calcWindow, 14);
+    const m5State = calculate5mEMAs(allKlines, i);
+    const bullishHTF = m5State.close5m > m5State.ema20 && m5State.ema20 > m5State.ema50;
+    const bearishHTF = m5State.close5m < m5State.ema20 && m5State.ema20 < m5State.ema50;
     const sweep = detectSweep(calcWindow);
     const atrM1 = calculateATR(calcWindow, 14);
 
@@ -1064,8 +1091,8 @@ export async function runBacktest(
       if (sweep.confirmClose > sweep.sweepOpen || sweep.confirmClose > sweep.high) {
         debugWhaleLongConditions.confirm_above_sweep_open_or_high++;
       }
-      if (rsiM1 > 40) {
-        debugWhaleLongConditions.rsi_gt_40++;
+      if (bullishHTF) {
+        debugWhaleLongConditions.bullishHTF++;
       }
 
       if (isInSession) {
@@ -1100,8 +1127,8 @@ export async function runBacktest(
       if (sweep.confirmClose < sweep.sweepOpen || sweep.confirmClose < sweep.low) {
         debugWhaleShortConditions.confirm_below_sweep_open_or_low++;
       }
-      if (rsiM1 < 60) {
-        debugWhaleShortConditions.rsi_lt_60++;
+      if (bearishHTF) {
+        debugWhaleShortConditions.bearishHTF++;
       }
 
       if (isInSession) {
@@ -1169,11 +1196,11 @@ export async function runBacktest(
     // --- ENTRY DECISION (WHALE SWEEP ONLY) ---
     let isLong = !isMarketTooChoppy && 
       enableWhaleSweep && !isOverExtendedLong && !hasBadEntryPriceLong && adxM1.adx >= adxThreshold && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isInSession &&
-      (sweep.confirmClose > sweep.sweepOpen || sweep.confirmClose > sweep.high) && rsiM1 > 40;
+      (sweep.confirmClose > sweep.sweepOpen || sweep.confirmClose > sweep.high) && bullishHTF;
 
     let isShort = !isMarketTooChoppy && 
       enableWhaleSweep && !isOverExtendedShort && !hasBadEntryPriceShort && adxM1.adx >= adxThreshold && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isInSession &&
-      (sweep.confirmClose < sweep.sweepOpen || sweep.confirmClose < sweep.low) && rsiM1 < 60;
+      (sweep.confirmClose < sweep.sweepOpen || sweep.confirmClose < sweep.low) && bearishHTF;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
@@ -1471,7 +1498,7 @@ export async function runBacktest(
   console.log(`  [5] Chỉ số ADX M1 >= Ngưỡng (${adxThreshold}):                  ${debugWhaleLongConditions.adx_ge_threshold} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
   console.log(`  [6] Đường dốc M1 có xu hướng đi lên (Đã Bỏ Qua):       ${debugWhaleLongConditions.slope_gt_0} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
   console.log(`  [7] Xác nhận đóng nến > sO hoặc > sH (BẮT BUỘC):      ${debugWhaleLongConditions.confirm_above_sweep_open_or_high} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
-  console.log(`  [8] Chỉ số RSI M1 > 40 (BẮT BUỘC LONG):               ${debugWhaleLongConditions.rsi_gt_40} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
+  console.log(`  [8] Bộ lọc Xu hướng HTF M5 (close5m > ema20 > ema50):  ${debugWhaleLongConditions.bullishHTF} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
   
   console.log(`\n📌 THỐNG KÊ CHI TIẾT ĐIỀU KIỆN LỆNH SHORT (Dựa trên ${debugWhaleShortConditions.isNewSweepShortAtBar} nến tín hiệu thô):`);
   console.log(`  [1] Nằm trong phiên giao dịch:                     ${debugWhaleShortConditions.isInSession} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
@@ -1481,7 +1508,7 @@ export async function runBacktest(
   console.log(`  [5] Chỉ số ADX M1 >= Ngưỡng (${adxThreshold}):                  ${debugWhaleShortConditions.adx_ge_threshold} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
   console.log(`  [6] Đường dốc M1 có xu hướng đi xuống (Đã Bỏ Qua):     ${debugWhaleShortConditions.slope_gt_neg_0_02} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
   console.log(`  [7] Xác nhận đóng nến < sO hoặc < sL (BẮT BUỘC):      ${debugWhaleShortConditions.confirm_below_sweep_open_or_low} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
-  console.log(`  [8] Chỉ số RSI M1 < 60 (BẮT BUỘC SHORT):             ${debugWhaleShortConditions.rsi_lt_60} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
+  console.log(`  [8] Bộ lọc Xu hướng HTF M5 (close5m < ema20 < ema50):  ${debugWhaleShortConditions.bearishHTF} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
   console.log("===============================================================================\n");
 
     if (enableSessionFilter) {
