@@ -341,66 +341,101 @@ function calcBB(ohlcv: any[], period: number = 20, stdDev: number = 2) {
   return { mid, top, bot, width };
 }
 
-function calculate5mEMAs(oneMinBars: any[], upToIndex: number) {
-  const startIdx = Math.max(0, upToIndex - 1500);
-  const slice = oneMinBars.slice(startIdx, upToIndex + 1);
+function precomputeM5States(allKlines: any[], times: Float64Array) {
+  const N = allKlines.length;
+  const m5States = new Array(N);
   
-  const intervalMs = 5 * 60 * 1000;
-  const groups = new Map<number, any[]>();
-  
-  for (const bar of slice) {
-    const rawTime = typeof bar[0] === 'string' ? new Date(bar[0]).getTime() : bar[0];
-    const openTime = Math.floor(rawTime / intervalMs) * intervalMs;
-    let list = groups.get(openTime);
-    if (!list) {
-      list = [];
-      groups.set(openTime, list);
-    }
-    list.push(bar);
-  }
-  
-  const m5Candles: any[] = [];
-  const sortedKeys = Array.from(groups.keys()).sort((a, b) => a - b);
-  for (const openTime of sortedKeys) {
-    const s = groups.get(openTime)!;
-    m5Candles.push([
-      openTime,
-      s[0][1], // Open
-      Math.max(...s.map((b: any) => b[2])), // High
-      Math.min(...s.map((b: any) => b[3])), // Low
-      s[s.length - 1][4], // Close
-      s.reduce((acc: number, b: any) => acc + (b[5] || 0), 0) // Volume
-    ]);
-  }
-  
-  if (m5Candles.length === 0) {
-    const lastClose = oneMinBars[upToIndex][4];
-    return { close5m: lastClose, ema20: lastClose, ema50: lastClose };
-  }
-  
-  const lastClose = oneMinBars[upToIndex][4];
-  const close5m = m5Candles[m5Candles.length - 1][4];
-  
-  const calcEMA = (period: number) => {
-    if (m5Candles.length < period) {
-      return m5Candles[m5Candles.length - 1][4];
-    }
-    const k = 2 / (period + 1);
-    let sum = 0;
-    for (let j = 0; j < period; j++) {
-      sum += m5Candles[j][4];
-    }
-    let ema = sum / period;
-    for (let j = period; j < m5Candles.length; j++) {
-      ema = m5Candles[j][4] * k + ema * (1 - k);
-    }
-    return ema;
-  };
+  if (N === 0) return m5States;
 
-  const ema20 = calcEMA(20);
-  const ema50 = calcEMA(50);
+  const intervalMs = 5 * 60 * 1000;
   
-  return { close5m, ema20, ema50 };
+  const completed5mCloses: number[] = [];
+  const ema20Values: number[] = [];
+  const ema50Values: number[] = [];
+  
+  let lastOpenTime = -1;
+  let current5mClose = 0;
+  
+  const k20 = 2 / (20 + 1);
+  const k50 = 2 / (50 + 1);
+  
+  for (let i = 0; i < N; i++) {
+    const t = times[i];
+    const c = allKlines[i][4];
+    const openTime = Math.floor(t / intervalMs) * intervalMs;
+    
+    if (openTime !== lastOpenTime) {
+      if (lastOpenTime !== -1) {
+        completed5mCloses.push(current5mClose);
+        
+        const len = completed5mCloses.length;
+        let ema20 = current5mClose;
+        if (len >= 20) {
+          const prevEma20 = ema20Values[len - 2];
+          if (len === 20) {
+            let sum = 0;
+            for (let j = 0; j < 20; j++) sum += completed5mCloses[j];
+            ema20 = sum / 20;
+          } else {
+            ema20 = current5mClose * k20 + prevEma20 * (1 - k20);
+          }
+        }
+        ema20Values.push(ema20);
+        
+        let ema50 = current5mClose;
+        if (len >= 50) {
+          const prevEma50 = ema50Values[len - 2];
+          if (len === 50) {
+            let sum = 0;
+            for (let j = 0; j < 50; j++) sum += completed5mCloses[j];
+            ema50 = sum / 50;
+          } else {
+            ema50 = current5mClose * k50 + prevEma50 * (1 - k50);
+          }
+        }
+        ema50Values.push(ema50);
+      }
+      lastOpenTime = openTime;
+    }
+    
+    current5mClose = c;
+    
+    const lenWithCurrent = completed5mCloses.length + 1;
+    
+    let tempEma20 = current5mClose;
+    if (lenWithCurrent >= 20) {
+      if (completed5mCloses.length >= 20) {
+        const prevClosedEma20 = ema20Values[completed5mCloses.length - 1];
+        tempEma20 = current5mClose * k20 + prevClosedEma20 * (1 - k20);
+      } else if (lenWithCurrent === 20) {
+        let sum = 0;
+        for (let j = 0; j < completed5mCloses.length; j++) sum += completed5mCloses[j];
+        sum += current5mClose;
+        tempEma20 = sum / 20;
+      }
+    }
+    
+    let tempEma50 = current5mClose;
+    if (lenWithCurrent >= 50) {
+      if (completed5mCloses.length >= 50) {
+        const prevClosedEma50 = ema50Values[completed5mCloses.length - 1];
+        tempEma50 = current5mClose * k50 + prevClosedEma50 * (1 - k50);
+      } else if (lenWithCurrent === 50) {
+        let sum = 0;
+        for (let j = 0; j < completed5mCloses.length; j++) sum += completed5mCloses[j];
+        sum += current5mClose;
+        tempEma50 = sum / 50;
+      }
+    }
+    
+    m5States[i] = {
+      close5m: current5mClose,
+      ema20: tempEma20,
+      ema50: tempEma50
+    };
+  }
+  
+  return m5States;
 }
 
 function calcADX(ohlcv: any[]) {
@@ -942,6 +977,14 @@ export async function runBacktest(
     return result;
   };
 
+  console.log(`[BACKTEST] Precomputing fast timestamps and 5-minute indicators for ${allKlines.length} bars...`);
+  const times = new Float64Array(allKlines.length);
+  for (let idx = 0; idx < allKlines.length; idx++) {
+    const rawTime = allKlines[idx][0];
+    times[idx] = typeof rawTime === 'string' ? new Date(rawTime).getTime() : rawTime;
+  }
+  const m5States = precomputeM5States(allKlines, times);
+
   let sweepHistoryQueue: number[] = [];
   let pendingSweeps: { type: "LONG" | "SHORT", entryPrice: number, sl: number, tp: number, triggerIndex: number }[] = [];
   let lastVwmaM1 = 0;
@@ -1013,13 +1056,13 @@ export async function runBacktest(
     lastVwmaM1 = vwmaM1;
     const slopeM1 = vwmaM1 - vwmaM1Prev;
     const adxM1 = calcADX(calcWindow);
-    const m5State = calculate5mEMAs(allKlines, i);
+    const m5State = m5States[i];
     const bullishHTF = m5State.close5m > m5State.ema20 && m5State.ema20 > m5State.ema50;
     const bearishHTF = m5State.close5m < m5State.ema20 && m5State.ema20 < m5State.ema50;
     const sweep = detectSweep(calcWindow);
     const atrM1 = calculateATR(calcWindow, 14);
 
-    const isInSession = isWithinSessions(allKlines[i][0]);
+    const isInSession = isWithinSessions(times[i]);
 
     // --- 2. CALCULATE ROLLING WINRATE & RISK ENGINE ---
     const rollingWinRate = sweepHistoryQueue.length > 0
