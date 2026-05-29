@@ -14,9 +14,9 @@ async function main() {
   let startDate = "2020-01-01T00:00:00Z";
   let endDate = "2026-01-01T00:00:00Z";
   let timeframe = "1m";
-  let rr = 1.2;
+  let rr = 1.0;
   let enableSessionFilter = true;
-  let adxThreshold = 10;
+  let adxThreshold = 15;
   let enableWhaleSweep = true;
 
   // Hỗ trợ truyền nhanh qua lệnh: npx tsx run_backtest.ts [startDate] [endDate] [timeframe] [rr]

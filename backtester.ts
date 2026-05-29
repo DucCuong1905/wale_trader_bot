@@ -54,9 +54,15 @@ function getCleanEnv(key: string) {
 const PAIR = getCleanEnv("MT5_SYMBOL") || "XAUUSD";
 const START_DATE = "2024-01-01T00:00:00Z"; 
 const END_DATE = "2026-01-01T00:00:00Z";
-const RR = 1.2; 
+const RR = 1.0; 
 const INITIAL_BALANCE = 5000;
 const RISK_PER_TRADE = 0.01; // 1%
+
+// CẤU HÌNH DÀNH CHO TỐI ƯU HÓA HOÀN TOÀN TỰ ĐỘNG
+export function getWickRatio() { return (global as any).CONFIG_WICK_RATIO_VAL !== undefined ? (global as any).CONFIG_WICK_RATIO_VAL : 0.25; }
+export function getBodyRatio() { return (global as any).CONFIG_BODY_RATIO_VAL !== undefined ? (global as any).CONFIG_BODY_RATIO_VAL : 0.6; }
+export function getCloseRatio() { return (global as any).CONFIG_CLOSE_RATIO_VAL !== undefined ? (global as any).CONFIG_CLOSE_RATIO_VAL : 0.45; }
+export function getVolRatio() { return (global as any).CONFIG_VOL_RATIO_VAL !== undefined ? (global as any).CONFIG_VOL_RATIO_VAL : 0.60; }
 
 // CẤU HÌNH PHIÊN GIAO DỊCH
 const ENABLE_SESSION_FILTER = true;
@@ -479,8 +485,8 @@ function detectSweepDirect(allKlines: any[], i: number) {
   }
   const avgVol = sumVol / 20;
 
-  const sweepLow = sL <= localLow && sC >= localLow && (lowerWick / sweepSize >= 0.25);
-  const sweepHigh = sH >= localHigh && sC <= localHigh && (upperWick / sweepSize >= 0.25);
+  const sweepLow = sL <= localLow && sC >= localLow && (lowerWick / sweepSize >= getWickRatio());
+  const sweepHigh = sH >= localHigh && sC <= localHigh && (upperWick / sweepSize >= getWickRatio());
 
   const body = Math.abs(cC - cO);
   const totalSize = cH - cL || 1;
@@ -491,10 +497,10 @@ function detectSweepDirect(allKlines: any[], i: number) {
   }
   const avgBody = sumBody / 20;
   
-  const displacementBullish = body > avgBody * 0.8 && (cC - cL) / totalSize > 0.45 && cC > Math.max(sO, sC);
-  const displacementBearish = body > avgBody * 0.8 && (cH - cC) / totalSize > 0.45 && cC < Math.min(sO, sC);
+  const displacementBullish = body > avgBody * getBodyRatio() && (cC - cL) / totalSize > getCloseRatio() && cC > Math.max(sO, sC);
+  const displacementBearish = body > avgBody * getBodyRatio() && (cH - cC) / totalSize > getCloseRatio() && cC < Math.min(sO, sC);
 
-  const volConfirm = isConstantVol ? true : cV > avgVol * 0.70;
+  const volConfirm = isConstantVol ? true : cV > avgVol * getVolRatio();
 
   return {
     sweepLow,
@@ -1128,9 +1134,9 @@ export async function runBacktest(
     const adxM1 = calcADXDirect(allKlines, i);
     const emaM1 = calculateEMADirect(allKlines, i, 20); // EMA 20 M1
     
-    // Condition: close > emaM1 && close > vwmaM1 && emaM1 > vwmaM1
-    const bullishM1 = currentPrice > emaM1 && currentPrice > vwmaM1 && emaM1 > vwmaM1;
-    const bearishM1 = currentPrice < emaM1 && currentPrice < vwmaM1 && emaM1 < vwmaM1;
+    // Condition: close > emaM1 && close > vwmaM1
+    const bullishM1 = currentPrice > emaM1 && currentPrice > vwmaM1;
+    const bearishM1 = currentPrice < emaM1 && currentPrice < vwmaM1;
     const sweep = detectSweepDirect(allKlines, i);
     const atrM1 = calculateATRDirect(allKlines, i, 14);
 
