@@ -479,8 +479,8 @@ function detectSweepDirect(allKlines: any[], i: number) {
   }
   const avgVol = sumVol / 20;
 
-  const sweepLow = sL <= localLow && sC >= localLow && (lowerWick / sweepSize >= 0.35);
-  const sweepHigh = sH >= localHigh && sC <= localHigh && (upperWick / sweepSize >= 0.35);
+  const sweepLow = sL <= localLow && sC >= localLow && (lowerWick / sweepSize >= 0.25);
+  const sweepHigh = sH >= localHigh && sC <= localHigh && (upperWick / sweepSize >= 0.25);
 
   const body = Math.abs(cC - cO);
   const totalSize = cH - cL || 1;
@@ -491,10 +491,10 @@ function detectSweepDirect(allKlines: any[], i: number) {
   }
   const avgBody = sumBody / 20;
   
-  const displacementBullish = body > avgBody * 1.2 && (cC - cL) / totalSize > 0.7 && cC > Math.max(sO, sC);
-  const displacementBearish = body > avgBody * 1.2 && (cH - cC) / totalSize > 0.7 && cC < Math.min(sO, sC);
+  const displacementBullish = body > avgBody * 0.8 && (cC - cL) / totalSize > 0.45 && cC > Math.max(sO, sC);
+  const displacementBearish = body > avgBody * 0.8 && (cH - cC) / totalSize > 0.45 && cC < Math.min(sO, sC);
 
-  const volConfirm = isConstantVol ? true : cV > avgVol;
+  const volConfirm = isConstantVol ? true : cV > avgVol * 0.70;
 
   return {
     sweepLow,
@@ -1169,13 +1169,13 @@ export async function runBacktest(
     const regimeData = results.marketRegime;
 
     const distFromVWMA = Math.abs(currentPrice - vwmaM1);
-    const isOverExtendedLong = distFromVWMA > (atrM1 * 1.1);
-    const isOverExtendedShort = distFromVWMA > (atrM1 * 1.1);
+    const isOverExtendedLong = distFromVWMA > (atrM1 * 3.0);
+    const isOverExtendedShort = distFromVWMA > (atrM1 * 3.0);
 
     const slDistanceLong = Math.abs(currentPrice - sweep.low);
     const slDistanceShort = Math.abs(sweep.high - currentPrice);
-    const hasBadEntryPriceLong = slDistanceLong > (atrM1 * 2.0);
-    const hasBadEntryPriceShort = slDistanceShort > (atrM1 * 2.0);
+    const hasBadEntryPriceLong = slDistanceLong > (atrM1 * 4.0);
+    const hasBadEntryPriceShort = slDistanceShort > (atrM1 * 4.0);
 
     debugTotalCandles++;
     if (sweep.sweepLow || sweep.sweepHigh) {

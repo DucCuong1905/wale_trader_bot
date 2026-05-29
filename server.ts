@@ -443,8 +443,8 @@ function detectWhaleSweep(bars: any[]) {
   const volumes = bars.slice(-21, -1).map(b => b[5]);
   const avgVol = volumes.reduce((a, b) => a + b, 0) / volumes.length;
 
-  const sweepLow = sL <= localLow && sC >= localLow && (lowerWick / sweepSize >= 0.35);
-  const sweepHigh = sH >= localHigh && sC <= localHigh && (upperWick / sweepSize >= 0.35);
+  const sweepLow = sL <= localLow && sC >= localLow && (lowerWick / sweepSize >= 0.25);
+  const sweepHigh = sH >= localHigh && sC <= localHigh && (upperWick / sweepSize >= 0.25);
 
   // 2. DISPLACEMENT & BODY SIZE
   const body = Math.abs(cC - cO);
@@ -452,12 +452,12 @@ function detectWhaleSweep(bars: any[]) {
   const bodySizes = bars.slice(-21, -1).map(b => Math.abs(b[4] - b[1]));
   const avgBody = bodySizes.reduce((a, b) => a + b, 0) / bodySizes.length;
   
-  const displacementBullish = body > avgBody * 1.2 && (cC - cL) / totalSize > 0.7 && cC > Math.max(sO, sC);
-  const displacementBearish = body > avgBody * 1.2 && (cH - cC) / totalSize > 0.7 && cC < Math.min(sO, sC);
+  const displacementBullish = body > avgBody * 0.8 && (cC - cL) / totalSize > 0.45 && cC > Math.max(sO, sC);
+  const displacementBearish = body > avgBody * 0.8 && (cH - cC) / totalSize > 0.45 && cC < Math.min(sO, sC);
 
   // 4. VOLUME CONFIRM (Standard)
   const isConstantVol = volumes.length > 0 && volumes.every(v => v === volumes[0]);
-  const volConfirm = isConstantVol ? true : cV > avgVol;
+  const volConfirm = isConstantVol ? true : cV > avgVol * 0.70;
 
   return {
     sweepLow,
@@ -923,13 +923,13 @@ async function traderLoop() {
     // ========================================================
     // 5. ĐIỀU KIỆN VÀO LỆNH (WHALE SWEEP ONLY)
     // ========================================================
-    const isOverExtendedLong = distFromVWMA > (atrM1 * 1.1);
-    const isOverExtendedShort = distFromVWMA > (atrM1 * 1.1);
+    const isOverExtendedLong = distFromVWMA > (atrM1 * 3.0);
+    const isOverExtendedShort = distFromVWMA > (atrM1 * 3.0);
 
     const slDistanceLong = Math.abs(currentPrice - sweep.low);
     const slDistanceShort = Math.abs(sweep.high - currentPrice);
-    const hasBadEntryPriceLong = slDistanceLong > (atrM1 * 2.0);
-    const hasBadEntryPriceShort = slDistanceShort > (atrM1 * 2.0);
+    const hasBadEntryPriceLong = slDistanceLong > (atrM1 * 4.0);
+    const hasBadEntryPriceShort = slDistanceShort > (atrM1 * 4.0);
 
     // LONG ENTRY
     if (
