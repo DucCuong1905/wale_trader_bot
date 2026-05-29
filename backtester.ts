@@ -284,31 +284,17 @@ function calculateVWMA(bars: any[], period: number) {
   return volSum === 0 ? bars[bars.length - 1][4] : pvSum / volSum;
 }
 
-function calculateVWMA5mOptimized(allKlines: any[], i: number): number {
-  const startIdx = Math.max(0, i - 115);
-  const endIdx = i;
-  const length = endIdx - startIdx + 1;
-  const numBlocks = Math.ceil(length / 5);
-  const startBlockIdx = Math.max(0, numBlocks - 20);
-  
-  let pvSum = 0;
-  let volSum = 0;
-  
-  for (let b = startBlockIdx; b < numBlocks; b++) {
-    const bStart = startIdx + b * 5;
-    const bEnd = Math.min(endIdx, bStart + 4);
-    
-    const closePrice = allKlines[bEnd][4];
-    let blockVol = 0;
-    for (let k = bStart; k <= bEnd; k++) {
-      blockVol += allKlines[k][5];
-    }
-    
-    pvSum += closePrice * blockVol;
-    volSum += blockVol;
+function calculateEMA(bars: any[], period: number = 20): number {
+  if (bars.length === 0) return 0;
+  if (bars.length < period) return bars[bars.length - 1][4];
+  const k = 2 / (period + 1);
+  const sliceLen = Math.min(bars.length, period * 4);
+  const startIdx = bars.length - sliceLen;
+  let ema = bars[startIdx][4];
+  for (let i = startIdx + 1; i < bars.length; i++) {
+    ema = bars[i][4] * k + ema * (1 - k);
   }
-  
-  return volSum === 0 ? allKlines[i][4] : pvSum / volSum;
+  return ema;
 }
 
 function aggregateCandles(oneMinBars: any[], windowSize: number = 15) {
@@ -341,101 +327,188 @@ function calcBB(ohlcv: any[], period: number = 20, stdDev: number = 2) {
   return { mid, top, bot, width };
 }
 
-function precomputeM5States(allKlines: any[], times: Float64Array) {
-  const N = allKlines.length;
-  const m5States = new Array(N);
-  
-  if (N === 0) return m5States;
-
-  const intervalMs = 5 * 60 * 1000;
-  
-  const completed5mCloses: number[] = [];
-  const ema20Values: number[] = [];
-  const ema50Values: number[] = [];
-  
-  let lastOpenTime = -1;
-  let current5mClose = 0;
-  
-  const k20 = 2 / (20 + 1);
-  const k50 = 2 / (50 + 1);
-  
-  for (let i = 0; i < N; i++) {
-    const t = times[i];
-    const c = allKlines[i][4];
-    const openTime = Math.floor(t / intervalMs) * intervalMs;
-    
-    if (openTime !== lastOpenTime) {
-      if (lastOpenTime !== -1) {
-        completed5mCloses.push(current5mClose);
-        
-        const len = completed5mCloses.length;
-        let ema20 = current5mClose;
-        if (len >= 20) {
-          const prevEma20 = ema20Values[len - 2];
-          if (len === 20) {
-            let sum = 0;
-            for (let j = 0; j < 20; j++) sum += completed5mCloses[j];
-            ema20 = sum / 20;
-          } else {
-            ema20 = current5mClose * k20 + prevEma20 * (1 - k20);
-          }
-        }
-        ema20Values.push(ema20);
-        
-        let ema50 = current5mClose;
-        if (len >= 50) {
-          const prevEma50 = ema50Values[len - 2];
-          if (len === 50) {
-            let sum = 0;
-            for (let j = 0; j < 50; j++) sum += completed5mCloses[j];
-            ema50 = sum / 50;
-          } else {
-            ema50 = current5mClose * k50 + prevEma50 * (1 - k50);
-          }
-        }
-        ema50Values.push(ema50);
-      }
-      lastOpenTime = openTime;
-    }
-    
-    current5mClose = c;
-    
-    const lenWithCurrent = completed5mCloses.length + 1;
-    
-    let tempEma20 = current5mClose;
-    if (lenWithCurrent >= 20) {
-      if (completed5mCloses.length >= 20) {
-        const prevClosedEma20 = ema20Values[completed5mCloses.length - 1];
-        tempEma20 = current5mClose * k20 + prevClosedEma20 * (1 - k20);
-      } else if (lenWithCurrent === 20) {
-        let sum = 0;
-        for (let j = 0; j < completed5mCloses.length; j++) sum += completed5mCloses[j];
-        sum += current5mClose;
-        tempEma20 = sum / 20;
-      }
-    }
-    
-    let tempEma50 = current5mClose;
-    if (lenWithCurrent >= 50) {
-      if (completed5mCloses.length >= 50) {
-        const prevClosedEma50 = ema50Values[completed5mCloses.length - 1];
-        tempEma50 = current5mClose * k50 + prevClosedEma50 * (1 - k50);
-      } else if (lenWithCurrent === 50) {
-        let sum = 0;
-        for (let j = 0; j < completed5mCloses.length; j++) sum += completed5mCloses[j];
-        sum += current5mClose;
-        tempEma50 = sum / 50;
-      }
-    }
-    
-    m5States[i] = {
-      close5m: current5mClose,
-      ema20: tempEma20,
-      ema50: tempEma50
-    };
+function calculateVWAPDirect(allKlines: any[], i: number): number {
+  const startIdx = Math.max(0, i - 100);
+  const lastBarDayIndex = Math.floor(allKlines[i][0] / 86400000);
+  let totalPV = 0, totalV = 0;
+  for (let j = i; j >= startIdx; j--) {
+    const dayIndex = Math.floor(allKlines[j][0] / 86400000);
+    if (dayIndex !== lastBarDayIndex) break;
+    const typicalPrice = (allKlines[j][2] + allKlines[j][3] + allKlines[j][4]) / 3;
+    totalPV += typicalPrice * allKlines[j][5];
+    totalV += allKlines[j][5];
   }
+  return totalV === 0 ? allKlines[i][4] : totalPV / totalV;
+}
+
+function calculateVWMADirect(allKlines: any[], i: number, period: number): number {
+  const startIdx = i - period + 1;
+  if (startIdx < 0) return allKlines[i][4];
+  let pvSum = 0;
+  let volSum = 0;
+  for (let j = startIdx; j <= i; j++) {
+    const price = allKlines[j][4];
+    const volume = allKlines[j][5];
+    pvSum += price * volume;
+    volSum += volume;
+  }
+  return volSum === 0 ? allKlines[i][4] : pvSum / volSum;
+}
+
+function calculateEMADirect(allKlines: any[], i: number, period: number = 20): number {
+  if (i < 0) return 0;
+  if (i < period) return allKlines[i][4];
+  const k = 2 / (period + 1);
+  const sliceLen = Math.min(i + 1, period * 4);
+  const startIdx = i - sliceLen + 1;
+  let ema = allKlines[startIdx][4];
+  for (let j = startIdx + 1; j <= i; j++) {
+    ema = allKlines[j][4] * k + ema * (1 - k);
+  }
+  return ema;
+}
+
+function calculateATRDirect(allKlines: any[], i: number, period: number = 14): number {
+  if (i < period) return 0;
+  let trSum = 0;
+  const startIdx = i - period + 1;
+  for (let j = startIdx; j <= i; j++) {
+    const h = allKlines[j][2], l = allKlines[j][3], pc = allKlines[j-1][4];
+    trSum += Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc));
+  }
+  return trSum / period;
+}
+
+function calcADXDirect(allKlines: any[], i: number) {
+  const startIdx = Math.max(0, i - 34); // length <= 35
+  const length = i - startIdx + 1;
+  const period = 14;
+  if (length < period * 2) return { adx: 0, pDI: 0, mDI: 0 };
   
-  return m5States;
+  const tr = new Float64Array(length - 1);
+  const plusDM = new Float64Array(length - 1);
+  const minusDM = new Float64Array(length - 1);
+
+  for (let idx = 1; idx < length; idx++) {
+    const currIdx = startIdx + idx;
+    const prevIdx = currIdx - 1;
+    const h = allKlines[currIdx][2], l = allKlines[currIdx][3];
+    const prevC = allKlines[prevIdx][4], prevH = allKlines[prevIdx][2], prevL = allKlines[prevIdx][3];
+    tr[idx - 1] = Math.max(h - l, Math.abs(h - prevC), Math.abs(l - prevC));
+    const upMove = h - prevH, downMove = prevL - l;
+    plusDM[idx - 1] = upMove > downMove && upMove > 0 ? upMove : 0;
+    minusDM[idx - 1] = downMove > upMove && downMove > 0 ? downMove : 0;
+  }
+
+  const smoothDirect = (arr: Float64Array) => {
+    const resLen = arr.length - period + 1;
+    const result = new Float64Array(resLen);
+    let sum = 0;
+    for (let idx = 0; idx < period; idx++) sum += arr[idx];
+    result[0] = sum / period;
+    for (let idx = period; idx < arr.length; idx++) {
+      result[idx - period + 1] = (result[idx - period] * (period - 1) + arr[idx]) / period;
+    }
+    return result;
+  };
+
+  const str = smoothDirect(tr);
+  const sdmP = smoothDirect(plusDM);
+  const sdmM = smoothDirect(minusDM);
+  
+  const dx = new Float64Array(str.length);
+  const pDIs = new Float64Array(str.length);
+  const mDIs = new Float64Array(str.length);
+  for (let idx = 0; idx < str.length; idx++) {
+    const pDI = 100 * (sdmP[idx] / str[idx]), mDI = 100 * (sdmM[idx] / str[idx]);
+    pDIs[idx] = pDI;
+    mDIs[idx] = mDI;
+    dx[idx] = 100 * Math.abs(pDI - mDI) / (pDI + mDI || 1);
+  }
+  const adxList = smoothDirect(dx);
+  return {
+    adx: adxList[adxList.length - 1],
+    pDI: pDIs[pDIs.length - 1],
+    mDI: mDIs[mDIs.length - 1]
+  };
+}
+
+function detectSweepDirect(allKlines: any[], i: number) {
+  if (i < 22) return { 
+    sweepHigh: false, 
+    sweepLow: false, 
+    displacementBullish: false, 
+    displacementBearish: false, 
+    volConfirm: false, 
+    low: 0, 
+    high: 0, 
+    confirmHigh: 0, 
+    confirmLow: 0,
+    sweepOpen: 0,
+    confirmClose: 0
+  };
+  
+  const sweepCandle = allKlines[i - 1];
+  const confirmCandle = allKlines[i];
+
+  const sO = sweepCandle[1], sH = sweepCandle[2], sL = sweepCandle[3], sC = sweepCandle[4];
+  const cO = confirmCandle[1], cH = confirmCandle[2], cL = confirmCandle[3], cC = confirmCandle[4], cV = confirmCandle[5];
+
+  let localLow = Infinity;
+  let localHigh = -Infinity;
+  for (let j = i - 21; j <= i - 2; j++) {
+    const lowVal = allKlines[j][3];
+    const highVal = allKlines[j][2];
+    if (lowVal < localLow) localLow = lowVal;
+    if (highVal > localHigh) localHigh = highVal;
+  }
+
+  const sweepSize = sH - sL || 1;
+  const lowerWick = Math.min(sO, sC) - sL;
+  const upperWick = sH - Math.max(sO, sC);
+
+  let sumVol = 0;
+  let isConstantVol = true;
+  const firstVol = allKlines[i - 20][5];
+  for (let j = i - 20; j <= i - 1; j++) {
+    const v = allKlines[j][5];
+    sumVol += v;
+    if (v !== firstVol) {
+      isConstantVol = false;
+    }
+  }
+  const avgVol = sumVol / 20;
+
+  const sweepLow = sL <= localLow && sC >= localLow && (lowerWick / sweepSize >= 0.35);
+  const sweepHigh = sH >= localHigh && sC <= localHigh && (upperWick / sweepSize >= 0.35);
+
+  const body = Math.abs(cC - cO);
+  const totalSize = cH - cL || 1;
+  
+  let sumBody = 0;
+  for (let j = i - 20; j <= i - 1; j++) {
+    sumBody += Math.abs(allKlines[j][4] - allKlines[j][1]);
+  }
+  const avgBody = sumBody / 20;
+  
+  const displacementBullish = body > avgBody * 1.2 && (cC - cL) / totalSize > 0.7 && cC > Math.max(sO, sC);
+  const displacementBearish = body > avgBody * 1.2 && (cH - cC) / totalSize > 0.7 && cC < Math.min(sO, sC);
+
+  const volConfirm = isConstantVol ? true : cV > avgVol;
+
+  return {
+    sweepLow,
+    sweepHigh,
+    displacementBullish,
+    displacementBearish,
+    volConfirm,
+    low: sL,
+    high: sH,
+    confirmHigh: cH,
+    confirmLow: cL,
+    sweepOpen: sO,
+    confirmClose: cC
+  };
 }
 
 function calcADX(ohlcv: any[]) {
@@ -948,7 +1021,7 @@ export async function runBacktest(
     adx_ge_threshold: 0,
     slope_gt_0: 0,
     confirm_above_sweep_open_or_high: 0,
-    bullishHTF: 0
+    bullishM1: 0
   };
   const debugWhaleShortConditions = {
     isNewSweepShortAtBar: 0,
@@ -959,14 +1032,13 @@ export async function runBacktest(
     adx_ge_threshold: 0,
     slope_gt_neg_0_02: 0,
     confirm_below_sweep_open_or_low: 0,
-    bearishHTF: 0
+    bearishM1: 0
   };
 
   let sessionSkippedCount = 0;
   const isWithinSessions = (ts: number) => {
     if (!enableSessionFilter) return true;
-    const date = new Date(ts);
-    const hour = date.getUTCHours();
+    const hour = Math.floor(ts / 3600000) % 24;
     let result = false;
     if (SESSION_START_GMT <= SESSION_END_GMT) {
       result = hour >= SESSION_START_GMT && hour < SESSION_END_GMT;
@@ -977,13 +1049,12 @@ export async function runBacktest(
     return result;
   };
 
-  console.log(`[BACKTEST] Precomputing fast timestamps and 5-minute indicators for ${allKlines.length} bars...`);
+  console.log(`[BACKTEST] Precomputing fast timestamps for ${allKlines.length} bars...`);
   const times = new Float64Array(allKlines.length);
   for (let idx = 0; idx < allKlines.length; idx++) {
     const rawTime = allKlines[idx][0];
     times[idx] = typeof rawTime === 'string' ? new Date(rawTime).getTime() : rawTime;
   }
-  const m5States = precomputeM5States(allKlines, times);
 
   let sweepHistoryQueue: number[] = [];
   let pendingSweeps: { type: "LONG" | "SHORT", entryPrice: number, sl: number, tp: number, triggerIndex: number }[] = [];
@@ -1049,18 +1120,19 @@ export async function runBacktest(
 
     // --- KHUNG 1P (ENTRIES) ---
     const currentPrice = allKlines[i][4];
-    const calcWindow = allKlines.slice(Math.max(0, i - 100), i + 1);
-    const vwapM1 = calculateVWAP(calcWindow);
-    const vwmaM1 = calculateVWMA(calcWindow, 20); // VWMA 20 M1
-    const vwmaM1Prev = i === 100 ? calculateVWMA(allKlines.slice(Math.max(0, i - 101), i), 20) : lastVwmaM1;
+    const vwapM1 = calculateVWAPDirect(allKlines, i);
+    const vwmaM1 = calculateVWMADirect(allKlines, i, 20); // VWMA 20 M1
+    const vwmaM1Prev = i === 100 ? calculateVWMADirect(allKlines, i - 1, 20) : lastVwmaM1;
     lastVwmaM1 = vwmaM1;
     const slopeM1 = vwmaM1 - vwmaM1Prev;
-    const adxM1 = calcADX(calcWindow);
-    const m5State = m5States[i];
-    const bullishHTF = m5State.close5m > m5State.ema20 && m5State.ema20 > m5State.ema50;
-    const bearishHTF = m5State.close5m < m5State.ema20 && m5State.ema20 < m5State.ema50;
-    const sweep = detectSweep(calcWindow);
-    const atrM1 = calculateATR(calcWindow, 14);
+    const adxM1 = calcADXDirect(allKlines, i);
+    const emaM1 = calculateEMADirect(allKlines, i, 20); // EMA 20 M1
+    
+    // Condition: close > emaM1 && close > vwmaM1 && emaM1 > vwmaM1
+    const bullishM1 = currentPrice > emaM1 && currentPrice > vwmaM1 && emaM1 > vwmaM1;
+    const bearishM1 = currentPrice < emaM1 && currentPrice < vwmaM1 && emaM1 < vwmaM1;
+    const sweep = detectSweepDirect(allKlines, i);
+    const atrM1 = calculateATRDirect(allKlines, i, 14);
 
     const isInSession = isWithinSessions(times[i]);
 
@@ -1134,8 +1206,8 @@ export async function runBacktest(
       if (sweep.confirmClose > sweep.sweepOpen || sweep.confirmClose > sweep.high) {
         debugWhaleLongConditions.confirm_above_sweep_open_or_high++;
       }
-      if (bullishHTF) {
-        debugWhaleLongConditions.bullishHTF++;
+      if (bullishM1) {
+        debugWhaleLongConditions.bullishM1++;
       }
 
       if (isInSession) {
@@ -1170,8 +1242,8 @@ export async function runBacktest(
       if (sweep.confirmClose < sweep.sweepOpen || sweep.confirmClose < sweep.low) {
         debugWhaleShortConditions.confirm_below_sweep_open_or_low++;
       }
-      if (bearishHTF) {
-        debugWhaleShortConditions.bearishHTF++;
+      if (bearishM1) {
+        debugWhaleShortConditions.bearishM1++;
       }
 
       if (isInSession) {
@@ -1239,23 +1311,22 @@ export async function runBacktest(
     // --- ENTRY DECISION (WHALE SWEEP ONLY) ---
     let isLong = !isMarketTooChoppy && 
       enableWhaleSweep && !isOverExtendedLong && !hasBadEntryPriceLong && adxM1.adx >= adxThreshold && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isInSession &&
-      (sweep.confirmClose > sweep.sweepOpen || sweep.confirmClose > sweep.high) && bullishHTF;
+      (sweep.confirmClose > sweep.sweepOpen || sweep.confirmClose > sweep.high) && bullishM1;
 
     let isShort = !isMarketTooChoppy && 
       enableWhaleSweep && !isOverExtendedShort && !hasBadEntryPriceShort && adxM1.adx >= adxThreshold && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isInSession &&
-      (sweep.confirmClose < sweep.sweepOpen || sweep.confirmClose < sweep.low) && bearishHTF;
+      (sweep.confirmClose < sweep.sweepOpen || sweep.confirmClose < sweep.low) && bearishM1;
 
     if (isLong || isShort) {
       const type = isLong ? "LONG" : "SHORT";
 
       // 1. TÍNH TOÁN REAL-TIME EFFICIENCY (Dựa trên 3 nến thị trường mới nhất)
-      const currentWindow = allKlines.slice(i - 2, i + 1); // C-2, C-1, C0
       let currentTradeEff = 1.0;
 
-      if (currentWindow.length === 3) {
-          const c0 = currentWindow[2]; // Nến tín hiệu
-          const c1 = currentWindow[1];
-          const c2 = currentWindow[0];
+      if (i >= 2) {
+          const c0 = allKlines[i]; // Nến tín hiệu
+          const c1 = allKlines[i - 1];
+          const c2 = allKlines[i - 2];
 
           const [,, h0, l0, c0c, , o0] = c0;
           
@@ -1541,7 +1612,7 @@ export async function runBacktest(
   console.log(`  [5] Chỉ số ADX M1 >= Ngưỡng (${adxThreshold}):                  ${debugWhaleLongConditions.adx_ge_threshold} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
   console.log(`  [6] Đường dốc M1 có xu hướng đi lên (Đã Bỏ Qua):       ${debugWhaleLongConditions.slope_gt_0} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
   console.log(`  [7] Xác nhận đóng nến > sO hoặc > sH (BẮT BUỘC):      ${debugWhaleLongConditions.confirm_above_sweep_open_or_high} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
-  console.log(`  [8] Bộ lọc Xu hướng HTF M5 (close5m > ema20 > ema50):  ${debugWhaleLongConditions.bullishHTF} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
+  console.log(`  [8] Bộ lọc M1 (close > ema20 & close > vwma20 & ema20 > vwma20): ${debugWhaleLongConditions.bullishM1} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
   
   console.log(`\n📌 THỐNG KÊ CHI TIẾT ĐIỀU KIỆN LỆNH SHORT (Dựa trên ${debugWhaleShortConditions.isNewSweepShortAtBar} nến tín hiệu thô):`);
   console.log(`  [1] Nằm trong phiên giao dịch:                     ${debugWhaleShortConditions.isInSession} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
@@ -1551,7 +1622,7 @@ export async function runBacktest(
   console.log(`  [5] Chỉ số ADX M1 >= Ngưỡng (${adxThreshold}):                  ${debugWhaleShortConditions.adx_ge_threshold} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
   console.log(`  [6] Đường dốc M1 có xu hướng đi xuống (Đã Bỏ Qua):     ${debugWhaleShortConditions.slope_gt_neg_0_02} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
   console.log(`  [7] Xác nhận đóng nến < sO hoặc < sL (BẮT BUỘC):      ${debugWhaleShortConditions.confirm_below_sweep_open_or_low} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
-  console.log(`  [8] Bộ lọc Xu hướng HTF M5 (close5m < ema20 < ema50):  ${debugWhaleShortConditions.bearishHTF} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
+  console.log(`  [8] Bộ lọc M1 (close < ema20 & close < vwma20 & ema20 < vwma20): ${debugWhaleShortConditions.bearishM1} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
   console.log("===============================================================================\n");
 
     if (enableSessionFilter) {
