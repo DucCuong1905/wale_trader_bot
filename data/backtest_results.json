@@ -1,1 +1,245 @@
-{"totalTrades":34,"wins":21,"losses":13,"longTrades":19,"longWins":12,"shortTrades":15,"shortWins":9,"cancelledTrades":0,"totalPnL":450.50797586659974,"finalBalance":5450.5079758666,"totalFees":1367.0607399838516,"totalSlippage":546.8242959935405,"isLiquidated":false,"liquidationDate":null,"trades":[{"time":"2026-01-02T08:00:00.000Z","type":"LONG","entryPrice":88854.3,"exitPrice":88782.52571428572,"status":"LOSS","pnlR":-1,"dollarPnL":-50,"estimatedFee":61.89842163926437,"estimatedSlippage":24.75936865570575,"currentBalance":4950,"reason":"TA Entry","regime":"NEUTRAL","efficiency":"NEUTRAL","effValue":null,"riskPercent":1},{"time":"2026-01-04T14:47:00.000Z","type":"LONG","entryPrice":91197.2,"exitPrice":91319.67428571428,"status":"WIN","pnlR":1,"dollarPnL":49.5,"estimatedFee":36.85885060420879,"estimatedSlippage":14.743540241683517,"currentBalance":4999.5,"reason":"TA Entry","regime":"CHOPPY","efficiency":"CHOPPY","effValue":null,"riskPercent":1},{"time":"2026-01-05T14:37:00.000Z","type":"LONG","entryPrice":92639.7,"exitPrice":92998.94571428571,"status":"WIN","pnlR":1,"dollarPnL":49.995000000000005,"estimatedFee":12.892350882205493,"estimatedSlippage":5.156940352882198,"currentBalance":5049.495,"reason":"TA Entry","regime":"NEUTRAL","efficiency":"NEUTRAL","effValue":null,"riskPercent":1},{"time":"2026-01-05T20:00:00.000Z","type":"SHORT","entryPrice":94158.4,"exitPrice":94351.36,"status":"LOSS","pnlR":-1,"dollarPnL":-50.49495,"estimatedFee":24.639944548506644,"estimatedSlippage":9.855977819402657,"currentBalance":4999.00005,"reason":"TA Entry","regime":"TREND_EXPANSION","efficiency":"EXPANSION","effValue":null,"riskPercent":1},{"time":"2026-01-06T13:09:00.000Z","type":"LONG","entryPrice":93808.7,"exitPrice":93668.78857142858,"status":"LOSS","pnlR":-1,"dollarPnL":-49.9900005,"estimatedFee":33.5176118762209,"estimatedSlippage":13.407044750488359,"currentBalance":4949.0100495,"reason":"TA Entry","regime":"NEUTRAL","efficiency":"NEUTRAL","effValue":null,"riskPercent":1},{"time":"2026-01-06T14:50:00.000Z","type":"LONG","entryPrice":94059.2,"exitPrice":93408.63428571429,"status":"LOSS","pnlR":-1,"dollarPnL":-49.490100495,"estimatedFee":7.155309845355558,"estimatedSlippage":2.862123938142223,"currentBalance":4899.519949005,"reason":"TA Entry","regime":"NEUTRAL","efficiency":"NEUTRAL","effValue":null,"riskPercent":1},{"time":"2026-01-08T14:46:00.000Z","type":"LONG","entryPrice":89716.5,"exitPrice":90337.36571428571,"status":"WIN","pnlR":1,"dollarPnL":48.99519949005,"estimatedFee":7.079917144573156,"estimatedSlippage":2.8319668578292627,"currentBalance":4948.51514849505,"reason":"TA Entry","regime":"NEUTRAL","efficiency":"NEUTRAL","effValue":null,"riskPercent":1},{"time":"2026-01-08T18:05:00.000Z","type":"SHORT","entryPrice":91228.8,"exitPrice":90982.12285714287,"status":"WIN","pnlR":1,"dollarPnL":49.48515148495051,"estimatedFee":18.30113214180043,"estimatedSlippage":7.3204528567201725,"currentBalance":4998.000299980001,"reason":"TA Entry","regime":"NEUTRAL","efficiency":"NEUTRAL","effValue":null,"riskPercent":1},{"time":"2026-01-09T13:04:00.000Z","type":"SHORT","entryPrice":90391,"exitPrice":90472.32857142857,"status":"LOSS","pnlR":-1,"dollarPnL":-49.98000299980001,"estimatedFee":55.54926604265499,"estimatedSlippage":22.219706417062,"currentBalance":4948.020296980201,"reason":"TA Entry","regime":"NEUTRAL","efficiency":"NEUTRAL","effValue":null,"riskPercent":1},{"time":"2026-01-09T14:31:00.000Z","type":"SHORT","entryPrice":90355.1,"exitPrice":90061.17142857144,"status":"WIN","pnlR":1,"dollarPnL":49.480202969802015,"estimatedFee":15.210459689670946,"estimatedSlippage":6.084183875868379,"currentBalance":4997.500499950003,"reason":"TA Entry","regime":"NEUTRAL","efficiency":"NEUTRAL","effValue":null,"riskPercent":1},{"time":"2026-01-10T15:46:00.000Z","type":"SHORT","entryPrice":90582.9,"exitPrice":90608.84000000001,"status":"LOSS","pnlR":-1,"dollarPnL":-49.97500499950004,"estimatedFee":174.51352661396555,"estimatedSlippage":69.80541064558622,"currentBalance":4947.525494950503,"reason":"TA Entry","regime":"NEUTRAL","efficiency":"NEUTRAL","effValue":null,"riskPercent":1},{"time":"2026-01-11T10:43:00.000Z","type":"SHORT","entryPrice":90676.8,"exitPrice":90653.91714285716,"status":"WIN","pnlR":1,"dollarPnL":49.475254949505036,"estimatedFee":196.053218791688,"estimatedSlippage":78.4212875166752,"currentBalance":4997.0007499000085,"reason":"TA Entry","regime":"NEUTRAL","efficiency":"NEUTRAL","effValue":null,"riskPercent":1},{"time":"2026-01-12T12:28:00.000Z","type":"SHORT","entryPrice":90750,"exitPrice":90653.61714285714,"status":"WIN","pnlR":1,"dollarPnL":49.97000749900008,"estimatedFee":47.04963429142521,"estimatedSlippage":18.819853716570083,"currentBalance":5046.970757399009,"reason":"TA Entry","regime":"TREND_EXPANSION","efficiency":"EXPANSION","effValue":null,"riskPercent":1},{"time":"2026-01-12T14:09:00.000Z","type":"LONG","entryPrice":90622.8,"exitPrice":90521.54857142856,"status":"LOSS","pnlR":-1,"dollarPnL":-50.46970757399009,"estimatedFee":45.17176972282432,"estimatedSlippage":18.06870788912973,"currentBalance":4996.5010498250185,"reason":"TA Entry","regime":"TREND_EXPANSION","efficiency":"EXPANSION","effValue":null,"riskPercent":1},{"time":"2026-01-12T15:13:00.000Z","type":"LONG","entryPrice":90851.7,"exitPrice":91130.93714285713,"status":"WIN","pnlR":1,"dollarPnL":49.96501049825019,"estimatedFee":16.256455347726984,"estimatedSlippage":6.502582139090793,"currentBalance":5046.466060323269,"reason":"TA Entry","regime":"TREND_EXPANSION","efficiency":"EXPANSION","effValue":null,"riskPercent":1},{"time":"2026-01-12T16:23:00.000Z","type":"LONG","entryPrice":91731.9,"exitPrice":92025.77428571427,"status":"WIN","pnlR":1,"dollarPnL":50.46466060323269,"estimatedFee":15.752379248623571,"estimatedSlippage":6.300951699449429,"currentBalance":5096.930720926502,"reason":"TA Entry","regime":"TREND_EXPANSION","efficiency":"EXPANSION","effValue":null,"riskPercent":1},{"time":"2026-01-13T17:42:00.000Z","type":"LONG","entryPrice":93294.4,"exitPrice":93547.47428571428,"status":"WIN","pnlR":1,"dollarPnL":50.96930720926502,"estimatedFee":18.789546006552428,"estimatedSlippage":7.515818402620972,"currentBalance":5147.900028135767,"reason":"TA Entry","regime":"TREND_EXPANSION","efficiency":"EXPANSION","effValue":null,"riskPercent":1},{"time":"2026-01-14T16:34:00.000Z","type":"SHORT","entryPrice":97092.9,"exitPrice":97532.28571428571,"status":"LOSS","pnlR":-1,"dollarPnL":-51.47900028135767,"estimatedFee":11.375530118322558,"estimatedSlippage":4.5502120473290235,"currentBalance":5096.421027854409,"reason":"TA Entry","regime":"NEUTRAL","efficiency":"NEUTRAL","effValue":null,"riskPercent":1},{"time":"2026-01-15T15:20:00.000Z","type":"SHORT","entryPrice":96129.1,"exitPrice":95716.72857142858,"status":"WIN","pnlR":1,"dollarPnL":50.96421027854409,"estimatedFee":11.880414904735952,"estimatedSlippage":4.752165961894381,"currentBalance":5147.3852381329525,"reason":"TA Entry","regime":"NEUTRAL","efficiency":"NEUTRAL","effValue":null,"riskPercent":1},{"time":"2026-01-16T11:46:00.000Z","type":"LONG","entryPrice":95319.9,"exitPrice":95402.43714285713,"status":"WIN","pnlR":1,"dollarPnL":51.47385238132953,"estimatedFee":59.44575123100196,"estimatedSlippage":23.77830049240078,"currentBalance":5198.859090514282,"reason":"TA Entry","regime":"TREND_EXPANSION","efficiency":"EXPANSION","effValue":null,"riskPercent":1},{"time":"2026-01-16T13:32:00.000Z","type":"SHORT","entryPrice":95452.6,"exitPrice":95348.30571428573,"status":"WIN","pnlR":1,"dollarPnL":51.98859090514282,"estimatedFee":47.58118949898437,"estimatedSlippage":19.03247579959375,"currentBalance":5250.847681419425,"reason":"TA Entry","regime":"NEUTRAL","efficiency":"NEUTRAL","effValue":null,"riskPercent":1},{"time":"2026-01-16T17:14:00.000Z","type":"LONG","entryPrice":94755,"exitPrice":94571.0142857143,"status":"LOSS","pnlR":-1,"dollarPnL":-52.508476814194246,"estimatedFee":27.042538274481068,"estimatedSlippage":10.817015309792428,"currentBalance":5198.33920460523,"reason":"TA Entry","regime":"NEUTRAL","efficiency":"NEUTRAL","effValue":null,"riskPercent":1},{"time":"2026-01-17T08:03:00.000Z","type":"LONG","entryPrice":95081.8,"exitPrice":95209.41428571429,"status":"WIN","pnlR":1,"dollarPnL":51.9833920460523,"estimatedFee":38.73135721584104,"estimatedSlippage":15.492542886336416,"currentBalance":5250.322596651283,"reason":"TA Entry","regime":"NEUTRAL","efficiency":"NEUTRAL","effValue":null,"riskPercent":1},{"time":"2026-01-18T19:06:00.000Z","type":"SHORT","entryPrice":95403,"exitPrice":95292.39142857143,"status":"WIN","pnlR":1,"dollarPnL":52.50322596651283,"estimatedFee":45.28550728202689,"estimatedSlippage":18.114202912810757,"currentBalance":5302.825822617796,"reason":"TA Entry","regime":"NEUTRAL","efficiency":"NEUTRAL","effValue":null,"riskPercent":1},{"time":"2026-01-19T11:01:00.000Z","type":"SHORT","entryPrice":92992.7,"exitPrice":92940.36571428571,"status":"WIN","pnlR":1,"dollarPnL":53.02825822617796,"estimatedFee":94.22581853263858,"estimatedSlippage":37.690327413055435,"currentBalance":5355.854080843974,"reason":"TA Entry","regime":"NEUTRAL","efficiency":"NEUTRAL","effValue":null,"riskPercent":1},{"time":"2026-01-19T12:30:00.000Z","type":"LONG","entryPrice":93088.2,"exitPrice":92929.97714285714,"status":"LOSS","pnlR":-1,"dollarPnL":-53.55854080843974,"estimatedFee":31.510416690192383,"estimatedSlippage":12.604166676076954,"currentBalance":5302.295540035534,"reason":"TA Entry","regime":"NEUTRAL","efficiency":"NEUTRAL","effValue":null,"riskPercent":1},{"time":"2026-01-20T09:38:00.000Z","type":"LONG","entryPrice":90960.1,"exitPrice":91100.36571428573,"status":"WIN","pnlR":1,"dollarPnL":53.02295540035534,"estimatedFee":34.38454899739425,"estimatedSlippage":13.7538195989577,"currentBalance":5355.318495435889,"reason":"TA Entry","regime":"NEUTRAL","efficiency":"NEUTRAL","effValue":null,"riskPercent":1},{"time":"2026-01-20T14:35:00.000Z","type":"LONG","entryPrice":90937.9,"exitPrice":91344.42857142857,"status":"WIN","pnlR":1,"dollarPnL":53.5531849543589,"estimatedFee":11.979512684551073,"estimatedSlippage":4.79180507382043,"currentBalance":5408.871680390248,"reason":"TA Entry","regime":"NEUTRAL","efficiency":"NEUTRAL","effValue":null,"riskPercent":1},{"time":"2026-01-20T20:45:00.000Z","type":"LONG","entryPrice":89698.4,"exitPrice":89527.41142857143,"status":"LOSS","pnlR":-1,"dollarPnL":-54.08871680390248,"estimatedFee":28.374243464512134,"estimatedSlippage":11.349697385804854,"currentBalance":5354.782963586345,"reason":"TA Entry","regime":"NEUTRAL","efficiency":"NEUTRAL","effValue":null,"riskPercent":1},{"time":"2026-01-21T19:51:00.000Z","type":"SHORT","entryPrice":89879.1,"exitPrice":90024.6,"status":"LOSS","pnlR":-0.20798532973383366,"dollarPnL":-11.137163003346211,"estimatedFee":6.879712627450547,"estimatedSlippage":2.751885050980219,"currentBalance":5343.645800582999,"reason":"TA Entry","regime":"NEUTRAL","efficiency":"NEUTRAL","effValue":null,"riskPercent":1},{"time":"2026-01-22T11:43:00.000Z","type":"LONG","entryPrice":89955.8,"exitPrice":90080.55428571429,"status":"WIN","pnlR":1,"dollarPnL":53.43645800582999,"estimatedFee":38.5310957580232,"estimatedSlippage":15.41243830320928,"currentBalance":5397.082258588829,"reason":"TA Entry","regime":"NEUTRAL","efficiency":"NEUTRAL","effValue":null,"riskPercent":1},{"time":"2026-01-23T11:03:00.000Z","type":"LONG","entryPrice":89046,"exitPrice":89149.68857142857,"status":"WIN","pnlR":1,"dollarPnL":53.97082258588829,"estimatedFee":46.349234074398694,"estimatedSlippage":18.53969362975948,"currentBalance":5451.053081174718,"reason":"TA Entry","regime":"TREND_EXPANSION","efficiency":"EXPANSION","effValue":null,"riskPercent":1},{"time":"2026-01-23T13:22:00.000Z","type":"SHORT","entryPrice":89265,"exitPrice":89422.90000000001,"status":"LOSS","pnlR":-1,"dollarPnL":-54.510530811747174,"estimatedFee":30.8162288341377,"estimatedSlippage":12.32649153365508,"currentBalance":5396.54255036297,"reason":"TA Entry","regime":"NEUTRAL","efficiency":"NEUTRAL","effValue":null,"riskPercent":1},{"time":"2026-01-23T15:12:00.000Z","type":"SHORT","entryPrice":88942.8,"exitPrice":88642.39428571428,"status":"WIN","pnlR":1,"dollarPnL":53.9654255036297,"estimatedFee":15.977845357891713,"estimatedSlippage":6.391138143156685,"currentBalance":5450.5079758666,"reason":"TA Entry","regime":"NEUTRAL","efficiency":"NEUTRAL","effValue":null,"riskPercent":1}],"startTime":"2026-01-01","endTime":"2026-03-31","displaceTrades":34,"displaceWins":21,"totalProfitR":8.792014670266166,"monthlySnapshots":[{"month":1,"year":2026,"date":"Tháng 1/2026","balance":5450.5079758666,"monthlyProfit":450.50797586659974,"monthlyProfitR":8.792014670266166,"totalProfitR":8.792014670266166,"winRate":"61.8","trades":34,"wins":21,"losses":13,"longTrades":19,"longWins":12,"shortTrades":15,"shortWins":9,"continuationTrades":0,"continuationWins":0,"continuationPnLR":0,"whaleTrades":34,"whaleWins":21,"whalePnLR":8.792014670266166}],"marketRegime":{"totalScore":30,"regime":"CHOPPY","riskPercent":1},"efficiencyStats":{"CHOPPY":{"trades":1,"wins":1,"pnlR":1},"NEUTRAL":{"trades":25,"wins":14,"pnlR":3.792014670266166},"EXPANSION":{"trades":8,"wins":6,"pnlR":4}},"regimeStats":{"TREND_EXPANSION":{"trades":8,"wins":6,"pnlR":4},"NEUTRAL":{"trades":25,"wins":14,"pnlR":3.792014670266166},"CHOPPY":{"trades":1,"wins":1,"pnlR":1}}}
+{
+  "totalTrades": 9,
+  "wins": 4,
+  "losses": 5,
+  "longTrades": 4,
+  "longWins": 1,
+  "shortTrades": 5,
+  "shortWins": 3,
+  "cancelledTrades": 0,
+  "totalPnL": -12.670896693660595,
+  "finalBalance": 4987.32910330634,
+  "totalFees": 312.68220255124214,
+  "totalSlippage": 125.07288102049685,
+  "isLiquidated": false,
+  "liquidationDate": null,
+  "trades": [
+    {
+      "time": "2020-01-06T15:04:00.000Z",
+      "type": "SHORT",
+      "entryPrice": 7542.77,
+      "exitPrice": 7531.478514285716,
+      "status": "WIN",
+      "pnlR": 1.1999999999999613,
+      "dollarPnL": 59.99999999999807,
+      "estimatedFee": 40.080305767687676,
+      "estimatedSlippage": 16.03212230707507,
+      "currentBalance": 5059.999999999998,
+      "reason": "TA Entry",
+      "regime": "NEUTRAL",
+      "efficiency": "NEUTRAL",
+      "effValue": null,
+      "riskPercent": 1
+    },
+    {
+      "time": "2020-01-09T11:28:00.000Z",
+      "type": "SHORT",
+      "entryPrice": 7874.49,
+      "exitPrice": 7855.905085714286,
+      "status": "WIN",
+      "pnlR": 1.1999999999999882,
+      "dollarPnL": 60.71999999999938,
+      "estimatedFee": 25.727265966867066,
+      "estimatedSlippage": 10.290906386746826,
+      "currentBalance": 5120.7199999999975,
+      "reason": "TA Entry",
+      "regime": "NEUTRAL",
+      "efficiency": "NEUTRAL",
+      "effValue": null,
+      "riskPercent": 1
+    },
+    {
+      "time": "2020-01-10T09:22:00.000Z",
+      "type": "LONG",
+      "entryPrice": 7724.54,
+      "exitPrice": 7745.978514285715,
+      "status": "WIN",
+      "pnlR": 1.2000000000000204,
+      "dollarPnL": 61.44864000000102,
+      "estimatedFee": 22.14064236447007,
+      "estimatedSlippage": 8.856256945788028,
+      "currentBalance": 5182.168639999999,
+      "reason": "TA Entry",
+      "regime": "NEUTRAL",
+      "efficiency": "NEUTRAL",
+      "effValue": null,
+      "riskPercent": 1
+    },
+    {
+      "time": "2020-01-13T18:01:00.000Z",
+      "type": "SHORT",
+      "entryPrice": 8091.56,
+      "exitPrice": 8102.784,
+      "status": "LOSS",
+      "pnlR": -1,
+      "dollarPnL": -51.82168639999999,
+      "estimatedFee": 37.35907740616642,
+      "estimatedSlippage": 14.94363096246657,
+      "currentBalance": 5130.346953599999,
+      "reason": "TA Entry",
+      "regime": "NEUTRAL",
+      "efficiency": "NEUTRAL",
+      "effValue": null,
+      "riskPercent": 1
+    },
+    {
+      "time": "2020-01-17T17:24:00.000Z",
+      "type": "LONG",
+      "entryPrice": 8904.99,
+      "exitPrice": 8884.982714285714,
+      "status": "LOSS",
+      "pnlR": -1,
+      "dollarPnL": -51.303469535999994,
+      "estimatedFee": 22.834525867602963,
+      "estimatedSlippage": 9.133810347041186,
+      "currentBalance": 5079.043484063999,
+      "reason": "TA Entry",
+      "regime": "NEUTRAL",
+      "efficiency": "NEUTRAL",
+      "effValue": null,
+      "riskPercent": 1
+    },
+    {
+      "time": "2020-01-21T12:29:00.000Z",
+      "type": "LONG",
+      "entryPrice": 8660.47,
+      "exitPrice": 8653.305857142857,
+      "status": "LOSS",
+      "pnlR": -1,
+      "dollarPnL": -50.79043484063999,
+      "estimatedFee": 61.39869709407151,
+      "estimatedSlippage": 24.559478837628603,
+      "currentBalance": 5028.253049223359,
+      "reason": "TA Entry",
+      "regime": "NEUTRAL",
+      "efficiency": "NEUTRAL",
+      "effValue": null,
+      "riskPercent": 1
+    },
+    {
+      "time": "2020-01-23T17:36:00.000Z",
+      "type": "SHORT",
+      "entryPrice": 8360.33,
+      "exitPrice": 8346.97622857143,
+      "status": "WIN",
+      "pnlR": 1.2,
+      "dollarPnL": 60.33903659068031,
+      "estimatedFee": 37.776163870896056,
+      "estimatedSlippage": 15.110465548358421,
+      "currentBalance": 5088.59208581404,
+      "reason": "TA Entry",
+      "regime": "NEUTRAL",
+      "efficiency": "NEUTRAL",
+      "effValue": null,
+      "riskPercent": 1
+    },
+    {
+      "time": "2020-01-27T15:42:00.000Z",
+      "type": "LONG",
+      "entryPrice": 8783.91,
+      "exitPrice": 8771.068000000001,
+      "status": "LOSS",
+      "pnlR": -1,
+      "dollarPnL": -50.8859208581404,
+      "estimatedFee": 34.8058985426781,
+      "estimatedSlippage": 13.92235941707124,
+      "currentBalance": 5037.706164955899,
+      "reason": "TA Entry",
+      "regime": "NEUTRAL",
+      "efficiency": "NEUTRAL",
+      "effValue": null,
+      "riskPercent": 1
+    },
+    {
+      "time": "2020-01-28T09:17:00.000Z",
+      "type": "SHORT",
+      "entryPrice": 8991.55,
+      "exitPrice": 9006.372428571429,
+      "status": "LOSS",
+      "pnlR": -1,
+      "dollarPnL": -50.37706164955899,
+      "estimatedFee": 30.5596256708023,
+      "estimatedSlippage": 12.22385026832092,
+      "currentBalance": 4987.32910330634,
+      "reason": "TA Entry",
+      "regime": "NEUTRAL",
+      "efficiency": "NEUTRAL",
+      "effValue": null,
+      "riskPercent": 1
+    }
+  ],
+  "startTime": "2020-01-01T00:00:00Z",
+  "endTime": "2020-02-01T00:00:00Z",
+  "displaceTrades": 9,
+  "displaceWins": 4,
+  "totalProfitR": -0.2000000000000297,
+  "monthlySnapshots": [
+    {
+      "month": 1,
+      "year": 2020,
+      "date": "Tháng 1/2020",
+      "balance": 4987.32910330634,
+      "monthlyProfit": -12.670896693660595,
+      "monthlyProfitR": -0.2000000000000297,
+      "totalProfitR": -0.2000000000000297,
+      "winRate": "44.4",
+      "trades": 9,
+      "wins": 4,
+      "losses": 5,
+      "longTrades": 4,
+      "longWins": 1,
+      "shortTrades": 5,
+      "shortWins": 3,
+      "continuationTrades": 0,
+      "continuationWins": 0,
+      "continuationPnLR": 0,
+      "whaleTrades": 9,
+      "whaleWins": 4,
+      "whalePnLR": -0.2000000000000297
+    }
+  ],
+  "marketRegime": {
+    "totalScore": 25,
+    "regime": "NEUTRAL",
+    "riskPercent": 1
+  },
+  "efficiencyStats": {
+    "CHOPPY": {
+      "trades": 0,
+      "wins": 0,
+      "pnlR": 0
+    },
+    "NEUTRAL": {
+      "trades": 9,
+      "wins": 4,
+      "pnlR": -0.2000000000000297
+    },
+    "EXPANSION": {
+      "trades": 0,
+      "wins": 0,
+      "pnlR": 0
+    }
+  },
+  "regimeStats": {
+    "TREND_EXPANSION": {
+      "trades": 0,
+      "wins": 0,
+      "pnlR": 0
+    },
+    "NEUTRAL": {
+      "trades": 9,
+      "wins": 4,
+      "pnlR": -0.2000000000000297
+    },
+    "COMPRESSION": {
+      "trades": 0,
+      "wins": 0,
+      "pnlR": 0
+    },
+    "CHOPPY": {
+      "trades": 0,
+      "wins": 0,
+      "pnlR": 0
+    }
+  }
+}

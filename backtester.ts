@@ -1,293 +1,104 @@
-
-import fs from "fs";
-import path from "path";
-import dotenv from "dotenv";
+import fs from 'fs';
+import path from 'path';
+import dotenv from 'dotenv';
 
 dotenv.config();
 
-// --- CONFIG ---
-const DATA_DIR = path.join(process.cwd(), "data");
-const RESULTS_FILE = path.join(DATA_DIR, "backtest_results.json");
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
+let isRunning = false;
 
-// --- CACHE ---
-let backtestDataCache: {
-  pair: string,
-  timeframe: string,
-  start: string,
-  end: string,
-  data: any[]
-} | null = null;
+export function stopBacktestExecution() {
+  isRunning = false;
+}
 
-const SPECIAL_CACHE_FILE = path.join(DATA_DIR, "backtest_data_2026_special_v2.json");
-const CACHE_22_24_FILE = path.join(DATA_DIR, "backtest_data_2022_2024.json");
-const CACHE_24_26_FILE = path.join(DATA_DIR, "backtest_data_2024_2026.json");
-const CACHE_20_22_FILE = path.join(DATA_DIR, "backtest_data_2020_2022.json");
-const CACHE_18_20_FILE = path.join(DATA_DIR, "backtest_data_2018_2020.json");
-
-function getPredefinedCacheFile(rangeFile: string, timeframe: string): string {
-  if (timeframe === "1m") {
-    // Để giữ tương thích ngược, nếu file gốc (1m) tồn tại thì dùng luôn
-    if (fs.existsSync(rangeFile)) {
-      return rangeFile;
-    }
+export function tryLoadFromXauCsv(startDate: string, endDate: string, timeframe: string) {
+  let dataDir = path.join(process.cwd(), 'data');
+  const customWindowsDir = 'C:\\xau_data';
+  
+  // Kiểm tra nếu người dùng đang có ổ C:\xau_data
+  if (fs.existsSync(customWindowsDir)) {
+      dataDir = customWindowsDir;
   }
-  // Tạo đường dẫn mới có chứa timeframe, ví dụ: backtest_data_2024_2026_5m.json
-  const ext = path.extname(rangeFile);
-  const base = rangeFile.slice(0, -ext.length);
-  return `${base}_${timeframe}${ext}`;
-}
+  
+  if (!fs.existsSync(dataDir)) return [];
+  
+  const files = fs.readdirSync(dataDir);
+  const csvFiles = files.filter(f => f.endsWith('.csv'));
+  const jsonFile = files.find(f => f.endsWith('.json') && f.includes('1m'));
 
-function getCustomCacheFile(pair: string, timeframe: string, start: string, end: string): string {
-  const cleanPair = pair.replace(/[^a-zA-Z0-9]/g, "_");
-  const startYMD = start.split("T")[0].replace(/[^0-9-]/g, "");
-  const endYMD = end.split("T")[0].replace(/[^0-9-]/g, "");
-  return path.join(DATA_DIR, `backtest_data_custom_${cleanPair}_${timeframe}_${startYMD}_to_${endYMD}.json`);
-}
+  let klines: any[] = [];
+  if (jsonFile && csvFiles.length === 0) {
+     try {
+       const text = fs.readFileSync(path.join(dataDir, jsonFile), 'utf8');
+       klines = JSON.parse(text);
+     } catch (e) {
+       console.error("Error reading JSON data:", e);
+     }
+  } else if (csvFiles.length > 0) {
+     try {
+       // Merge tất cả các file CSV trong thư mục lại
+       for (const csvFile of csvFiles) {
+         const text = fs.readFileSync(path.join(dataDir, csvFile), 'utf8');
+         const lines = text.split('\n');
+         
+         // Bỏ qua dòng tiêu đề
+         for (let i = 1; i < lines.length; i++) {
+           const l = lines[i].trim();
+           if (!l) continue;
+           const parts = l.split(',');
+           
+           if (parts.length >= 6) {
+             let ts = 0;
+             let timeStr = "";
+             let oIdx = 1, hIdx = 2, lIdx = 3, cIdx = 4, vIdx = 5;
 
-function getCleanEnv(key: string) {
-  const val = process.env[key];
-  if (!val) return "";
-  return val.trim().replace(/^["']|["']$/g, "").trim();
-}
-
-const PAIR = getCleanEnv("MT5_SYMBOL") || "XAUUSD";
-const START_DATE = "2024-01-01T00:00:00Z"; 
-const END_DATE = "2026-01-01T00:00:00Z";
-const RR = 1.0; 
-const INITIAL_BALANCE = 5000;
-const RISK_PER_TRADE = 0.01; // 1%
-
-// CẤU HÌNH DÀNH CHO TỐI ƯU HÓA HOÀN TOÀN TỰ ĐỘNG
-export function getWickRatio() { return (global as any).CONFIG_WICK_RATIO_VAL !== undefined ? (global as any).CONFIG_WICK_RATIO_VAL : 0.25; }
-export function getBodyRatio() { return (global as any).CONFIG_BODY_RATIO_VAL !== undefined ? (global as any).CONFIG_BODY_RATIO_VAL : 0.6; }
-export function getCloseRatio() { return (global as any).CONFIG_CLOSE_RATIO_VAL !== undefined ? (global as any).CONFIG_CLOSE_RATIO_VAL : 0.45; }
-export function getVolRatio() { return (global as any).CONFIG_VOL_RATIO_VAL !== undefined ? (global as any).CONFIG_VOL_RATIO_VAL : 0.60; }
-
-// CẤU HÌNH PHIÊN GIAO DỊCH
-const ENABLE_SESSION_FILTER = true;
-const SESSION_START_GMT = 8;
-const SESSION_END_GMT = 21;
-
-interface BacktestResult {
-  totalTrades: number;
-  wins: number;
-  losses: number;
-  longTrades: number;
-  longWins: number;
-  shortTrades: number;
-  shortWins: number;
-  cancelledTrades: number;
-  totalPnL: number;
-  finalBalance: number;
-  totalFees: number;
-  totalSlippage: number;
-  isLiquidated: boolean;
-  liquidationDate: string | null;
-  trades: any[];
-  startTime: string;
-  endTime: string;
-  displaceTrades: number;
-  displaceWins: number;
-  totalProfitR: number;
-  monthlySnapshots: any[];
-  marketRegime?: any;
-  efficiencyStats: {
-    [key: string]: {
-      trades: number;
-      wins: number;
-      pnlR: number;
-    }
-  };
-  regimeStats: {
-    [key: string]: {
-      trades: number;
-      wins: number;
-      pnlR: number;
-    }
-  };
-}
-
-// Results structure is defined locally within runBacktest. Removed global results variable to save memory.
-
-// --- LOGIC FUNCTIONS (COPIED & ADAPTED FROM SERVER.TS) ---
-
-
-
-function getAvgRange(bars: any[], period: number = 20) {
-  const slice = bars.slice(-period);
-  if (slice.length === 0) return 0;
-  return slice.reduce((sum, b) => sum + (b[2] - b[3]), 0) / slice.length;
-}
-
-function getSwingPoints(bars: any[], type: 'high' | 'low', lookback: number = 2) {
-  const swings: { price: number; index: number }[] = [];
-  for (let i = lookback; i < bars.length - lookback; i++) {
-    const current = type === 'high' ? bars[i][2] : bars[i][3];
-    let isSwing = true;
-    for (let j = 1; j <= lookback; j++) {
-      if (type === 'high') {
-        if (current <= bars[i - j][2] || current <= bars[i + j][2]) {
-          isSwing = false;
-          break;
-        }
-      } else {
-        if (current >= bars[i - j][3] || current >= bars[i + j][3]) {
-          isSwing = false;
-          break;
-        }
-      }
-    }
-    if (isSwing) {
-      swings.push({ price: current, index: i });
-    }
+             // Phát hiện xem có cột Time riêng biệt không (VD: Date, Time, Open...)
+             if (parts[1].includes(':')) {
+                 timeStr = `${parts[0].replace(/\./g, '-')}T${parts[1]}`;
+                 if (timeStr.length === 16) timeStr += ':00'; // Đảm bảo có giây
+                 timeStr += 'Z'; // Assume UTC for consistency
+                 
+                 oIdx = 2; hIdx = 3; lIdx = 4; cIdx = 5; vIdx = 6;
+             } else {
+                 timeStr = parts[0].replace(/\./g, '-');
+             }
+             
+             if (!isNaN(Number(parts[0]))) ts = Number(parts[0]);
+             else ts = new Date(timeStr).getTime();
+             
+             if (!isNaN(ts)) {
+                 klines.push([
+                   ts, 
+                   parseFloat(parts[oIdx]), parseFloat(parts[hIdx]), 
+                   parseFloat(parts[lIdx]), parseFloat(parts[cIdx]), 
+                   parseFloat(parts[vIdx])
+                 ]);
+             }
+           }
+         }
+       }
+       klines.sort((a,b) => a[0] - b[0]);
+     } catch(e) {
+       console.error("Error reading CSV data:", e);
+     }
   }
-  return swings;
-}
-
-function getLiquidityZones(bars: any[], type: 'high' | 'low') {
-  const swings = getSwingPoints(bars, type);
-  const zones: { price: number; touches: number; lastTouch: number; }[] = [];
-  const avgRange = getAvgRange(bars, 20);
-  const threshold = avgRange * 0.15;
-
-  for (const swing of swings) {
-    let found = false;
-    for (const zone of zones) {
-      if (Math.abs(zone.price - swing.price) <= threshold) {
-        zone.price = (zone.price * zone.touches + swing.price) / (zone.touches + 1);
-        zone.touches++;
-        zone.lastTouch = swing.index;
-        found = true;
-        break;
-      }
-    }
-    if (!found) {
-      zones.push({ price: swing.price, touches: 1, lastTouch: swing.index });
-    }
-  }
-
-  return zones.filter(z => z.touches >= 2).sort((a, b) => {
-    const scoreA = a.touches * 10 + a.lastTouch;
-    const scoreB = b.touches * 10 + b.lastTouch;
-    return scoreB - scoreA;
-  });
+  return klines;
 }
 
 function calculateATR(bars: any[], period: number = 14) {
   if (bars.length < period + 1) return 0;
-  let trSum = 0;
-  const startIdx = bars.length - period;
-  for (let i = startIdx; i < bars.length; i++) {
+  let trs: number[] = [];
+  for (let i = 1; i < bars.length; i++) {
     const h = bars[i][2], l = bars[i][3], pc = bars[i-1][4];
-    trSum += Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc));
+    trs.push(Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)));
   }
-  return trSum / period;
-}
-
-function calculateVWAP(bars: any[]) {
-  const len = bars.length;
-  if (len === 0) return 0;
-  const lastBarDayIndex = Math.floor(bars[len - 1][0] / 86400000);
-  let totalPV = 0, totalV = 0;
-  for (let i = len - 1; i >= 0; i--) {
-    const dayIndex = Math.floor(bars[i][0] / 86400000);
-    if (dayIndex !== lastBarDayIndex) break;
-    const typicalPrice = (bars[i][2] + bars[i][3] + bars[i][4]) / 3;
-    totalPV += typicalPrice * bars[i][5];
-    totalV += bars[i][5];
-  }
-  return totalV === 0 ? bars[len - 1][4] : totalPV / totalV;
-}
-
-function detectSweep(bars: any[]) {
-  const len = bars.length;
-  if (len < 22) return { 
-    sweepHigh: false, 
-    sweepLow: false, 
-    displacementBullish: false, 
-    displacementBearish: false, 
-    volConfirm: false, 
-    low: 0, 
-    high: 0, 
-    confirmHigh: 0, 
-    confirmLow: 0 
-  };
-  
-  const sweepCandle = bars[len - 2];
-  const confirmCandle = bars[len - 1];
-
-  const sO = sweepCandle[1], sH = sweepCandle[2], sL = sweepCandle[3], sC = sweepCandle[4];
-  const cO = confirmCandle[1], cH = confirmCandle[2], cL = confirmCandle[3], cC = confirmCandle[4], cV = confirmCandle[5];
-
-  let localLow = Infinity;
-  let localHigh = -Infinity;
-  for (let j = len - 22; j < len - 2; j++) {
-    const lowVal = bars[j][3];
-    const highVal = bars[j][2];
-    if (lowVal < localLow) localLow = lowVal;
-    if (highVal > localHigh) localHigh = highVal;
-  }
-
-  const sweepSize = sH - sL || 1;
-  const lowerWick = Math.min(sO, sC) - sL;
-  const upperWick = sH - Math.max(sO, sC);
-
-  let sumVol = 0;
-  let isConstantVol = true;
-  const firstVol = bars[len - 21][5];
-  for (let j = len - 21; j < len - 1; j++) {
-    const v = bars[j][5];
-    sumVol += v;
-    if (v !== firstVol) {
-      isConstantVol = false;
-    }
-  }
-  const avgVol = sumVol / 20;
-
-  const sweepLow = sL <= localLow && sC >= localLow && (lowerWick / sweepSize >= 0.35);
-  const sweepHigh = sH >= localHigh && sC <= localHigh && (upperWick / sweepSize >= 0.35);
-
-  const body = Math.abs(cC - cO);
-  const totalSize = cH - cL || 1;
-  
-  let sumBody = 0;
-  for (let j = len - 21; j < len - 1; j++) {
-    sumBody += Math.abs(bars[j][4] - bars[j][1]);
-  }
-  const avgBody = sumBody / 20;
-  
-  const displacementBullish = body > avgBody * 1.2 && (cC - cL) / totalSize > 0.7 && cC > Math.max(sO, sC);
-  const displacementBearish = body > avgBody * 1.2 && (cH - cC) / totalSize > 0.7 && cC < Math.min(sO, sC);
-
-  const volConfirm = isConstantVol ? true : cV > avgVol;
-
-  return {
-    sweepLow,
-    sweepHigh,
-    displacementBullish,
-    displacementBearish,
-    volConfirm,
-    low: sL,
-    high: sH,
-    confirmHigh: cH,
-    confirmLow: cL,
-    sweepOpen: sO,
-    confirmClose: cC
-  };
+  return trs.slice(-period).reduce((a, b) => a + b, 0) / period;
 }
 
 function calculateVWMA(bars: any[], period: number) {
   if (bars.length < period) return bars[bars.length - 1][4];
-  let pvSum = 0;
-  let volSum = 0;
-  for (let i = bars.length - period; i < bars.length; i++) {
-    const price = bars[i][4];
-    const volume = bars[i][5];
-    pvSum += price * volume;
-    volSum += volume;
-  }
-  return volSum === 0 ? bars[bars.length - 1][4] : pvSum / volSum;
+  let pv = 0, v = 0;
+  for (let i = bars.length - period; i < bars.length; i++) { pv += bars[i][4] * bars[i][5]; v += bars[i][5]; }
+  return v === 0 ? bars[bars.length - 1][4] : pv / v;
 }
 
 function calculateEMA(bars: any[], period: number = 20): number {
@@ -303,1347 +114,280 @@ function calculateEMA(bars: any[], period: number = 20): number {
   return ema;
 }
 
-function aggregateCandles(oneMinBars: any[], windowSize: number = 15) {
-  const aggregated: any[] = [];
-  for (let i = 0; i < oneMinBars.length; i += windowSize) {
-      const slice = oneMinBars.slice(i, i + windowSize);
-      if (slice.length === 0) continue;
-      
-      aggregated.push([
-          slice[0][0], // Open time
-          slice[0][1], // Open
-          Math.max(...slice.map(b => b[2])), // High
-          Math.min(...slice.map(b => b[3])), // Low
-          slice[slice.length - 1][4], // Close
-          slice.reduce((acc, b) => acc + b[5], 0) // Volume
-      ]);
+function calcADX(ohlcv: any[], period: number = 14) {
+  if (ohlcv.length < period * 2) return { adx: 0, pDI: 0, mDI: 0 };
+  let tr: number[] = [], pDM: number[] = [], mDM: number[] = [];
+  for (let i = 1; i < ohlcv.length; i++) {
+    const pc = ohlcv[i - 1][4], [ts, o, h, l, c] = ohlcv[i], ph = ohlcv[i - 1][2], pl = ohlcv[i - 1][3];
+    tr.push(Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)));
+    const up = h - ph, down = pl - l;
+    pDM.push(up > down && up > 0 ? up : 0);
+    mDM.push(down > up && down > 0 ? down : 0);
   }
-  return aggregated;
-}
-
-function calcBB(ohlcv: any[], period: number = 20, stdDev: number = 2) {
-  if (ohlcv.length < period) return { mid: 0, top: 0, bot: 0, width: 0 };
-  const closes = ohlcv.slice(-period).map(b => b[4]);
-  const mid = closes.reduce((a, b) => a + b, 0) / period;
-  const variance = closes.reduce((a, b) => a + Math.pow(b - mid, 2), 0) / period;
-  const sd = Math.sqrt(variance);
-  const top = mid + sd * stdDev;
-  const bot = mid - sd * stdDev;
-  const width = (top - bot) / mid;
-  return { mid, top, bot, width };
-}
-
-function calculateVWAPDirect(allKlines: any[], i: number): number {
-  const startIdx = Math.max(0, i - 100);
-  const lastBarDayIndex = Math.floor(allKlines[i][0] / 86400000);
-  let totalPV = 0, totalV = 0;
-  for (let j = i; j >= startIdx; j--) {
-    const dayIndex = Math.floor(allKlines[j][0] / 86400000);
-    if (dayIndex !== lastBarDayIndex) break;
-    const typicalPrice = (allKlines[j][2] + allKlines[j][3] + allKlines[j][4]) / 3;
-    totalPV += typicalPrice * allKlines[j][5];
-    totalV += allKlines[j][5];
-  }
-  return totalV === 0 ? allKlines[i][4] : totalPV / totalV;
-}
-
-function calculateVWMADirect(allKlines: any[], i: number, period: number): number {
-  const startIdx = i - period + 1;
-  if (startIdx < 0) return allKlines[i][4];
-  let pvSum = 0;
-  let volSum = 0;
-  for (let j = startIdx; j <= i; j++) {
-    const price = allKlines[j][4];
-    const volume = allKlines[j][5];
-    pvSum += price * volume;
-    volSum += volume;
-  }
-  return volSum === 0 ? allKlines[i][4] : pvSum / volSum;
-}
-
-function calculateEMADirect(allKlines: any[], i: number, period: number = 20): number {
-  if (i < 0) return 0;
-  if (i < period) return allKlines[i][4];
-  const k = 2 / (period + 1);
-  const sliceLen = Math.min(i + 1, period * 4);
-  const startIdx = i - sliceLen + 1;
-  let ema = allKlines[startIdx][4];
-  for (let j = startIdx + 1; j <= i; j++) {
-    ema = allKlines[j][4] * k + ema * (1 - k);
-  }
-  return ema;
-}
-
-function calculateATRDirect(allKlines: any[], i: number, period: number = 14): number {
-  if (i < period) return 0;
-  let trSum = 0;
-  const startIdx = i - period + 1;
-  for (let j = startIdx; j <= i; j++) {
-    const h = allKlines[j][2], l = allKlines[j][3], pc = allKlines[j-1][4];
-    trSum += Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc));
-  }
-  return trSum / period;
-}
-
-function calcADXDirect(allKlines: any[], i: number) {
-  const startIdx = Math.max(0, i - 34); // length <= 35
-  const length = i - startIdx + 1;
-  const period = 14;
-  if (length < period * 2) return { adx: 0, pDI: 0, mDI: 0 };
-  
-  const tr = new Float64Array(length - 1);
-  const plusDM = new Float64Array(length - 1);
-  const minusDM = new Float64Array(length - 1);
-
-  for (let idx = 1; idx < length; idx++) {
-    const currIdx = startIdx + idx;
-    const prevIdx = currIdx - 1;
-    const h = allKlines[currIdx][2], l = allKlines[currIdx][3];
-    const prevC = allKlines[prevIdx][4], prevH = allKlines[prevIdx][2], prevL = allKlines[prevIdx][3];
-    tr[idx - 1] = Math.max(h - l, Math.abs(h - prevC), Math.abs(l - prevC));
-    const upMove = h - prevH, downMove = prevL - l;
-    plusDM[idx - 1] = upMove > downMove && upMove > 0 ? upMove : 0;
-    minusDM[idx - 1] = downMove > upMove && downMove > 0 ? downMove : 0;
-  }
-
-  const smoothDirect = (arr: Float64Array) => {
-    const resLen = arr.length - period + 1;
-    const result = new Float64Array(resLen);
-    let sum = 0;
-    for (let idx = 0; idx < period; idx++) sum += arr[idx];
-    result[0] = sum / period;
-    for (let idx = period; idx < arr.length; idx++) {
-      result[idx - period + 1] = (result[idx - period] * (period - 1) + arr[idx]) / period;
-    }
-    return result;
+  const smooth = (arr: number[]) => {
+    let res = [arr.slice(0, period).reduce((a, b) => a + b, 0) / period];
+    for (let i = period; i < arr.length; i++) res.push((res[res.length - 1] * (period - 1) + arr[i]) / period);
+    return res;
   };
-
-  const str = smoothDirect(tr);
-  const sdmP = smoothDirect(plusDM);
-  const sdmM = smoothDirect(minusDM);
-  
-  const dx = new Float64Array(str.length);
-  const pDIs = new Float64Array(str.length);
-  const mDIs = new Float64Array(str.length);
-  for (let idx = 0; idx < str.length; idx++) {
-    const pDI = 100 * (sdmP[idx] / str[idx]), mDI = 100 * (sdmM[idx] / str[idx]);
-    pDIs[idx] = pDI;
-    mDIs[idx] = mDI;
-    dx[idx] = 100 * Math.abs(pDI - mDI) / (pDI + mDI || 1);
+  const str = smooth(tr), spDM = smooth(pDM), smDM = smooth(mDM);
+  const dx: number[] = [], pDIs: number[] = [], mDIs: number[] = [];
+  for (let i = 0; i < str.length; i++) {
+    const pDI = 100 * (spDM[i] / str[i]), mDI = 100 * (smDM[i] / str[i]);
+    pDIs.push(pDI); mDIs.push(mDI);
+    dx.push(100 * Math.abs(pDI - mDI) / (pDI + mDI || 1));
   }
-  const adxList = smoothDirect(dx);
-  return {
-    adx: adxList[adxList.length - 1],
-    pDI: pDIs[pDIs.length - 1],
-    mDI: mDIs[mDIs.length - 1]
-  };
+  const adxl = smooth(dx);
+  return { adx: adxl[adxl.length - 1], pDI: pDIs[pDIs.length - 1], mDI: mDIs[mDIs.length - 1] };
 }
 
-function detectSweepDirect(allKlines: any[], i: number) {
-  if (i < 22) return { 
-    sweepHigh: false, 
-    sweepLow: false, 
-    displacementBullish: false, 
-    displacementBearish: false, 
-    volConfirm: false, 
-    low: 0, 
-    high: 0, 
-    confirmHigh: 0, 
-    confirmLow: 0,
-    sweepOpen: 0,
-    confirmClose: 0
-  };
+function detectWhaleSweep(bars: any[]) {
+  if (bars.length < 16) return { sweepLow: false, sweepHigh: false };
   
-  const sweepCandle = allKlines[i - 1];
-  const confirmCandle = allKlines[i];
+  const sweepCandle = bars[bars.length - 2]; 
+  const confirmCandle = bars[bars.length - 1]; 
 
-  const sO = sweepCandle[1], sH = sweepCandle[2], sL = sweepCandle[3], sC = sweepCandle[4];
-  const cO = confirmCandle[1], cH = confirmCandle[2], cL = confirmCandle[3], cC = confirmCandle[4], cV = confirmCandle[5];
+  const [, sO, sH, sL, sC, sV] = sweepCandle;
+  const [, cO, cH, cL, cC, cV] = confirmCandle;
 
-  let localLow = Infinity;
-  let localHigh = -Infinity;
-  for (let j = i - 21; j <= i - 2; j++) {
-    const lowVal = allKlines[j][3];
-    const highVal = allKlines[j][2];
-    if (lowVal < localLow) localLow = lowVal;
-    if (highVal > localHigh) localHigh = highVal;
-  }
+  const prevBars = bars.slice(bars.length - 16, bars.length - 2);
+  const localLow = Math.min(...prevBars.map(b => b[3]));
+  const localHigh = Math.max(...prevBars.map(b => b[2]));
 
   const sweepSize = sH - sL || 1;
   const lowerWick = Math.min(sO, sC) - sL;
   const upperWick = sH - Math.max(sO, sC);
 
-  let sumVol = 0;
-  let isConstantVol = true;
-  const firstVol = allKlines[i - 20][5];
-  for (let j = i - 20; j <= i - 1; j++) {
-    const v = allKlines[j][5];
-    sumVol += v;
-    if (v !== firstVol) {
-      isConstantVol = false;
-    }
-  }
-  const avgVol = sumVol / 20;
+  const volumes = bars.slice(-15, -1).map(b => b[5]);
+  const avgVol = volumes.reduce((a, b) => a + b, 0) / volumes.length;
 
-  const sweepLow = sL <= localLow && sC >= localLow && (lowerWick / sweepSize >= getWickRatio());
-  const sweepHigh = sH >= localHigh && sC <= localHigh && (upperWick / sweepSize >= getWickRatio());
+  const WICK_RATIO = (global as any).CONFIG_WICK_RATIO_VAL ?? 0.25;
+  const sweepLow = sL <= localLow && sC >= localLow && (lowerWick / sweepSize >= WICK_RATIO);
+  const sweepHigh = sH >= localHigh && sC <= localHigh && (upperWick / sweepSize >= WICK_RATIO);
 
   const body = Math.abs(cC - cO);
   const totalSize = cH - cL || 1;
+  const bodySizes = bars.slice(-15, -1).map(b => Math.abs(b[4] - b[1]));
+  const avgBody = bodySizes.reduce((a, b) => a + b, 0) / bodySizes.length;
   
-  let sumBody = 0;
-  for (let j = i - 20; j <= i - 1; j++) {
-    sumBody += Math.abs(allKlines[j][4] - allKlines[j][1]);
-  }
-  const avgBody = sumBody / 20;
+  const BODY_RATIO = (global as any).CONFIG_BODY_RATIO_VAL ?? 0.60;
+  const CLOSE_RATIO = (global as any).CONFIG_CLOSE_RATIO_VAL ?? 0.45;
   
-  const displacementBullish = body > avgBody * getBodyRatio() && (cC - cL) / totalSize > getCloseRatio() && cC > Math.max(sO, sC);
-  const displacementBearish = body > avgBody * getBodyRatio() && (cH - cC) / totalSize > getCloseRatio() && cC < Math.min(sO, sC);
+  const displacementBullish = body > avgBody * BODY_RATIO && (cC - cL) / totalSize > CLOSE_RATIO && cC > Math.max(sO, sC);
+  const displacementBearish = body > avgBody * BODY_RATIO && (cH - cC) / totalSize > CLOSE_RATIO && cC < Math.min(sO, sC);
 
-  const volConfirm = isConstantVol ? true : cV > avgVol * getVolRatio();
+  const isConstantVol = volumes.length > 0 && volumes.every(v => v === volumes[0]);
+  const VOL_RATIO = (global as any).CONFIG_VOL_RATIO_VAL ?? 0.9;
+  const volConfirm = isConstantVol ? true : cV > avgVol * VOL_RATIO;
 
-  return {
-    sweepLow,
-    sweepHigh,
-    displacementBullish,
-    displacementBearish,
-    volConfirm,
-    low: sL,
-    high: sH,
-    confirmHigh: cH,
-    confirmLow: cL,
-    sweepOpen: sO,
-    confirmClose: cC
-  };
-}
-
-function calcADX(ohlcv: any[]) {
-  const data = ohlcv.length > 35 ? ohlcv.slice(-35) : ohlcv;
-  const period = 14;
-  if (data.length < period * 2) return { adx: 0, pDI: 0, mDI: 0 };
-  let tr: number[] = [], plusDM: number[] = [], minusDM: number[] = [];
-
-  for (let i = 1; i < data.length; i++) {
-    const h = data[i][2], l = data[i][3], prevC = data[i-1][4], prevH = data[i-1][2], prevL = data[i-1][3];
-    tr.push(Math.max(h - l, Math.abs(h - prevC), Math.abs(l - prevC)));
-    const upMove = h - prevH, downMove = prevL - l;
-    plusDM.push(upMove > downMove && upMove > 0 ? upMove : 0);
-    minusDM.push(downMove > upMove && downMove > 0 ? downMove : 0);
-  }
-
-  const smooth = (arr: number[]) => {
-    let result = [arr.slice(0, period).reduce((a, b) => a + b, 0) / period];
-    for (let i = period; i < arr.length; i++) result.push((result[result.length - 1] * (period - 1) + arr[i]) / period);
-    return result;
-  };
-
-  const str = smooth(tr), sdmP = smooth(plusDM), sdmM = smooth(minusDM);
-  const dx: number[] = [];
-  const pDIs: number[] = [];
-  const mDIs: number[] = [];
-  for (let i = 0; i < str.length; i++) {
-    const pDI = 100 * (sdmP[i] / str[i]), mDI = 100 * (sdmM[i] / str[i]);
-    pDIs.push(pDI);
-    mDIs.push(mDI);
-    dx.push(100 * Math.abs(pDI - mDI) / (pDI + mDI || 1));
-  }
-  const adxList = smooth(dx);
-  return {
-    adx: adxList[adxList.length - 1],
-    pDI: pDIs[pDIs.length - 1],
-    mDI: mDIs[mDIs.length - 1]
-  };
-}
-
-function isWithinTradingSessions(timestamp: number): boolean {
-  if (!ENABLE_SESSION_FILTER) return true;
-  const date = new Date(timestamp);
-  const hoursGMT = date.getUTCHours();
-  if (SESSION_START_GMT <= SESSION_END_GMT) {
-    return hoursGMT >= SESSION_START_GMT && hoursGMT < SESSION_END_GMT;
-  } else {
-    return hoursGMT >= SESSION_START_GMT || hoursGMT < SESSION_END_GMT;
-  }
-}
-
-async function getAIBacktestDecision(signal: string, lastPrice: number, bars: any[]) {
-  // AI is disabled for backtest performance and stability
-  return { decision: "CONFIRM", reason: "AI Check Disabled for Backtest" };
-}
-
-async function sendTelegramBacktest(message: string) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
-  if (!token || !chatId) return;
-
-  const url = `https://api.telegram.org/bot${token}/sendMessage`;
-  try {
-    await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: message,
-        parse_mode: "Markdown",
-      }),
-    });
-  } catch (err) {
-    console.error("❌ Telegram Notify Error:", err);
-  }
-}
-
-// --- MAIN RUNNER ---
-
-function aggregateCandlesByTime(oneMinBars: any[], timeframeStr: string): any[] {
-  const isMinute = timeframeStr.endsWith("m");
-  const isHour = timeframeStr.endsWith("h");
-  const isDay = timeframeStr.endsWith("d") || timeframeStr.endsWith("D");
-  
-  let windowMinutes = 1;
-  if (isMinute) {
-    windowMinutes = parseInt(timeframeStr) || 1;
-  } else if (isHour) {
-    windowMinutes = (parseInt(timeframeStr) || 1) * 60;
-  } else if (isDay) {
-    windowMinutes = (parseInt(timeframeStr) || 1) * 1440;
-  }
-  
-  if (windowMinutes <= 1) {
-    return oneMinBars;
-  }
-
-  const intervalMs = windowMinutes * 60 * 1000;
-  const groups = new Map<number, any[]>();
-  
-  for (const bar of oneMinBars) {
-    const openTime = Math.floor(bar[0] / intervalMs) * intervalMs;
-    let list = groups.get(openTime);
-    if (!list) {
-      list = [];
-      groups.set(openTime, list);
-    }
-    list.push(bar);
-  }
-  
-  const aggregated: any[] = [];
-  const sortedKeys = Array.from(groups.keys()).sort((a, b) => a - b);
-  
-  for (const openTime of sortedKeys) {
-    const slice = groups.get(openTime)!;
-    aggregated.push([
-      openTime,
-      slice[0][1], // Open
-      Math.max(...slice.map((b: any) => b[2])), // High
-      Math.min(...slice.map((b: any) => b[3])), // Low
-      slice[slice.length - 1][4], // Close
-      slice.reduce((acc: number, b: any) => acc + b[5], 0) // Volume
-    ]);
-  }
-  
-  groups.clear(); // Giải phóng Map khổng lồ
-  sortedKeys.length = 0; // Giải phóng mảng keys
-  
-  return aggregated;
-}
-
-function tryLoadFromXauCsv(startDate: string, endDate: string, timeframe: string): any[] | null {
-  try {
-    const startYear = new Date(startDate).getUTCFullYear();
-    const endYear = new Date(endDate).getUTCFullYear();
-    const startTs = new Date(startDate).getTime();
-    const endTs = new Date(endDate).getTime();
-    
-    let candles: any[] | null = [];
-    let loadedAny = false;
-    
-    for (let year = startYear; year <= endYear; year++) {
-      const pathsToTry = [
-        `C:/xau_data/${year}.csv`,
-        `C:\\xau_data\\${year}.csv`,
-        path.join(process.cwd(), "data", `xau_data_${year}.csv`)
-      ];
-      
-      let filePath = "";
-      for (const p of pathsToTry) {
-        if (fs.existsSync(p)) {
-          filePath = p;
-          break;
-        }
-      }
-      
-      if (!filePath) {
-        continue;
-      }
-      
-      console.log(`[CSV LOAD] 📂 Phát hiện file CSV dữ liệu vàng: ${filePath}`);
-      let content: string | null = fs.readFileSync(filePath, "utf-8");
-      
-      let headerLine = "";
-      let firstNewline = content.indexOf("\n");
-      if (firstNewline !== -1) {
-        headerLine = content.slice(0, firstNewline).trim();
-      } else {
-        headerLine = content.trim();
-      }
-      
-      const header = headerLine.toLowerCase().split(",");
-      const timeIdx = header.indexOf("time");
-      const openIdx = header.indexOf("open");
-      const highIdx = header.indexOf("high");
-      const lowIdx = header.indexOf("low");
-      const closeIdx = header.indexOf("close");
-      
-      let volIdx = header.indexOf("tick_volume");
-      if (volIdx === -1) volIdx = header.indexOf("volume");
-      if (volIdx === -1) volIdx = header.indexOf("real_volume");
-      
-      if (timeIdx === -1 || openIdx === -1 || highIdx === -1 || lowIdx === -1 || closeIdx === -1) {
-        console.error(`[CSV LOAD] ❌ Header không hợp lệ trong file ${filePath}`);
-        content = null;
-        continue;
-      }
-      
-      let yearCandlesCount = 0;
-      let pos = firstNewline !== -1 ? firstNewline + 1 : content.length;
-      const len = content.length;
-      
-      while (pos < len) {
-        let nextNewline = content.indexOf("\n", pos);
-        if (nextNewline === -1) {
-          nextNewline = len;
-        }
-        
-        const line = content.slice(pos, nextNewline).trim();
-        pos = nextNewline + 1;
-        
-        if (!line) continue;
-        
-        const cols = line.split(",");
-        if (cols.length < 5) continue;
-        
-        const timeStr = cols[timeIdx];
-        if (!timeStr) continue;
-        let safeTimeStr = timeStr.trim();
-        safeTimeStr = safeTimeStr.replace(/[\.\/]/g, "-");
-        if (!safeTimeStr.includes("Z") && !safeTimeStr.includes("+") && !safeTimeStr.match(/-\d{2}:\d{2}$/)) {
-          safeTimeStr = safeTimeStr.replace(" ", "T") + "Z";
-        }
-        const timestamp = new Date(safeTimeStr).getTime();
-        if (isNaN(timestamp)) continue;
-        
-        // Lọc trong vòng lặp parse để không cấp phát bộ nhớ cho nến ngoài phạm vi
-        if (timestamp < startTs || timestamp > endTs) continue;
-        
-        const open = parseFloat(cols[openIdx]);
-        const high = parseFloat(cols[highIdx]);
-        const low = parseFloat(cols[lowIdx]);
-        const close = parseFloat(cols[closeIdx]);
-        const vol = volIdx !== -1 ? parseFloat(cols[volIdx]) || 1 : 1;
-        
-        if (isNaN(open) || isNaN(high) || isNaN(low) || isNaN(close)) continue;
-        
-        candles.push([
-          timestamp,
-          open,
-          high,
-          low,
-          close,
-          vol
-        ]);
-        yearCandlesCount++;
-      }
-      
-      content = null; // Free up gold thô string memory immediately
-      console.log(`[CSV LOAD] ✅ Đã tải thành công ${yearCandlesCount} nến M1 trong phạm vi từ ${filePath}`);
-      loadedAny = true;
-    }
-    
-    if (!loadedAny || !candles || candles.length === 0) {
-      candles = null;
-      return null;
-    }
-    
-    candles.sort((a, b) => a[0] - b[0]);
-    
-    let filtered: any[] | null = candles;
-    candles = null;
-    
-    console.log(`[CSV LOAD] 📊 Tổng nến M1 nạp từ CSV: ${filtered.length} nến (Từ ${startDate} đến ${endDate})`);
-    
-    if (timeframe !== "1m") {
-      console.log(`[CSV LOAD] 🔄 Đang gộp nến từ M1 sang ${timeframe}...`);
-      const tempFiltered = aggregateCandlesByTime(filtered, timeframe);
-      filtered = null; // Free original 1m arrays immediately
-      filtered = tempFiltered;
-      console.log(`[CSV LOAD] 🔄 Sau khi gộp: còn lại ${filtered.length} nến ${timeframe}`);
-    }
-    
-    return filtered;
-  } catch (err: any) {
-    console.error("[CSV LOAD] ❌ Lỗi đọc dữ liệu CSV vàng:", err.message);
-    return null;
-  }
-}
-
-let shouldStopBacktest = false;
-
-export function stopBacktestExecution() {
-  shouldStopBacktest = true;
+  return { sweepLow, sweepHigh, displacementBullish, displacementBearish, volConfirm, low: sL, high: sH, confirmOpen: cO, confirmClose: cC, sweepOpen: sO };
 }
 
 export async function runBacktest(
-  startDate: string = START_DATE,
-  endDate: string = END_DATE,
-  rr: number = RR,
-  timeframe: string = "1m",
-  enableSessionFilter: boolean = true,
-  vwmaPeriod: number = 20, 
-  onProgress?: (p: number) => void,
-  adxThreshold: number = 10,
-  enableWhaleSweep: boolean = true
+  startDate: string,
+  endDate: string,
+  rr: number,
+  timeframe: string,
+  enableSessionFilter: boolean,
+  vwmaPeriod: number,
+  onProgress: (progress: number) => void,
+  adxThreshold: number,
+  verbose: boolean = false
 ) {
-  shouldStopBacktest = false;
-  backtestDataCache = null; // Clear static memory cache of previous runs to free RAM immediately
-  console.log(`[BACKTEST] Start ${PAIR} from ${startDate} to ${endDate} (RR: ${rr}, TF: ${timeframe}, SessionFilter: ${enableSessionFilter}, VWMA: ${vwmaPeriod}, ADX: ${adxThreshold}, WhaleSweep: ${enableWhaleSweep})`);
+  isRunning = true;
   
-  let results: BacktestResult = {
-    totalTrades: 0,
-    wins: 0,
-    losses: 0,
-    longTrades: 0,
-    longWins: 0,
-    shortTrades: 0,
-    shortWins: 0,
-    cancelledTrades: 0,
-    totalPnL: 0,
-    finalBalance: INITIAL_BALANCE,
-    totalFees: 0,
-    totalSlippage: 0,
-    isLiquidated: false,
-    liquidationDate: null,
-    trades: [],
-    startTime: startDate,
-    endTime: endDate,
-    displaceTrades: 0,
-    displaceWins: 0,
-    totalProfitR: 0,
-    monthlySnapshots: [],
-    marketRegime: null,
-    efficiencyStats: {
-      "CHOPPY": { trades: 0, wins: 0, pnlR: 0 },
-      "NEUTRAL": { trades: 0, wins: 0, pnlR: 0 },
-      "EXPANSION": { trades: 0, wins: 0, pnlR: 0 }
-    },
-    regimeStats: {
-      "TREND_EXPANSION": { trades: 0, wins: 0, pnlR: 0 },
-      "NEUTRAL": { trades: 0, wins: 0, pnlR: 0 },
-      "CHOPPY": { trades: 0, wins: 0, pnlR: 0 }
-    }
-  };
+  const data = (global as any).OPTIMIZE_DATA || tryLoadFromXauCsv(startDate, endDate, timeframe);
+  if (!data || data.length === 0) {
+    throw new Error('No data found for backtesting. Please upload data/xauusd.csv');
+  }
 
-  let allKlines: any[] = [];
   const startTs = new Date(startDate).getTime();
   const endTs = new Date(endDate).getTime();
 
-  try {
+  let balance = 5000;
+  let totalProfitR = 0;
+  let totalTrades = 0;
+  let wins = 0;
+  
+  let paperPosition: any = null;
+  const monthlyStats = new Map<string, { trades: number, wins: number, profitR: number }>();
 
-  // 1. CHỈNH SỬA THEO YÊU CẦU: ƯU TIÊN LOAD FILE CSV XAU_DATA TỪ VPS (C:/xau_data/{year}.csv)
-  const csvCandles = tryLoadFromXauCsv(startDate, endDate, timeframe);
-  if (csvCandles && csvCandles.length > 0) {
-    allKlines = csvCandles;
-    console.log(`[BACKTEST] 📈 SỬ DỤNG DỮ LIỆU VÀNG THỰC TẾ TỪ CSV KHÁCH HÀNG: ${allKlines.length} nến (${timeframe})`);
-  }
-
-  // KIỂM TRA PHẠM VI ĐẶC BIỆT ĐỂ CACHE VĨNH VIỄN (Có nhận biết timeframe)
-  const isSpecialRange = (startDate.startsWith("2026-01-01") && endDate.startsWith("2026-05-01"));
-  const is2224Range = (startDate.startsWith("2022-01-01") && endDate.startsWith("2024-01-01"));
-  const is2426Range = (startDate.startsWith("2024-01-01") && endDate.startsWith("2026-01-01"));
-  const is2022Range = (startDate.startsWith("2020-01-01") && endDate.startsWith("2022-01-01"));
-  const is1820Range = (startDate.startsWith("2018-01-01") && endDate.startsWith("2020-01-01"));
-
-  const specialCachePath = getPredefinedCacheFile(SPECIAL_CACHE_FILE, timeframe);
-  const cache2022Path = getPredefinedCacheFile(CACHE_20_22_FILE, timeframe);
-  const cache2224Path = getPredefinedCacheFile(CACHE_22_24_FILE, timeframe);
-  const cache2426Path = getPredefinedCacheFile(CACHE_24_26_FILE, timeframe);
-  const cache1820Path = getPredefinedCacheFile(CACHE_18_20_FILE, timeframe);
-  const customCachePath = getCustomCacheFile(PAIR, timeframe, startDate, endDate);
-
-  if (allKlines.length === 0) {
-    if (isSpecialRange && fs.existsSync(specialCachePath)) {
-      try {
-        console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ VÀNG (2026-01-01 -> 2026-05-01) - Timeframe: ${timeframe}`);
-        console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE từ ổ đĩa: ${specialCachePath}`);
-        let rawData: string | null = fs.readFileSync(specialCachePath, "utf-8");
-        allKlines = JSON.parse(rawData);
-        rawData = null;
-        console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
-      } catch (e) {
-        console.error("[BACKTEST] ❌ Lỗi khi đọc cache vĩnh viễn, sẽ fetch lại:", e);
-      }
-    } else if (is2022Range && fs.existsSync(cache2022Path)) {
-      try {
-        console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ 2020-2022 - Timeframe: ${timeframe}`);
-        console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE từ ổ đĩa: ${cache2022Path}`);
-        let rawData: string | null = fs.readFileSync(cache2022Path, "utf-8");
-        allKlines = JSON.parse(rawData);
-        rawData = null;
-        console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
-      } catch (e) {
-        console.error("[BACKTEST] ❌ Lỗi khi đọc cache 2020-2022:", e);
-      }
-    } else if (is2224Range && fs.existsSync(cache2224Path)) {
-      try {
-        console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ 2022-2024 - Timeframe: ${timeframe}`);
-        console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE từ ổ đĩa: ${cache2224Path}`);
-        let rawData: string | null = fs.readFileSync(cache2224Path, "utf-8");
-        allKlines = JSON.parse(rawData);
-        rawData = null;
-        console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
-      } catch (e) {
-        console.error("[BACKTEST] ❌ Lỗi khi đọc cache 22-24:", e);
-      }
-    } else if (is2426Range && fs.existsSync(cache2426Path)) {
-      try {
-        console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ 2024-2026 - Timeframe: ${timeframe}`);
-        console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE từ ổ đĩa: ${cache2426Path}`);
-        let rawData: string | null = fs.readFileSync(cache2426Path, "utf-8");
-        allKlines = JSON.parse(rawData);
-        rawData = null;
-        console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
-      } catch (e) {
-        console.error("[BACKTEST] ❌ Lỗi khi đọc cache 24-26:", e);
-      }
-    } else if (is1820Range && fs.existsSync(cache1820Path)) {
-      try {
-        console.log(`[BACKTEST] 💠 PHÁT HIỆN KHUNG GIỜ 2018-2020 - Timeframe: ${timeframe}`);
-        console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE từ ổ đĩa: ${cache1820Path}`);
-        let rawData: string | null = fs.readFileSync(cache1820Path, "utf-8");
-        allKlines = JSON.parse(rawData);
-        rawData = null;
-        console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
-      } catch (e) {
-        console.error("[BACKTEST] ❌ Lỗi khi đọc cache 18-20:", e);
-      }
-    } else if (fs.existsSync(customCachePath)) {
-      try {
-        console.log(`[BACKTEST] 💠 PHÁT HIỆN CÓ CACHE DỮ LIỆU PHÙ HỢP - Timeframe: ${timeframe}`);
-        console.log(`[BACKTEST] 💾 Đang đọc dữ liệu CACHE từ ổ đĩa: ${customCachePath}`);
-        let rawData: string | null = fs.readFileSync(customCachePath, "utf-8");
-        allKlines = JSON.parse(rawData);
-        rawData = null;
-        console.log(`[BACKTEST] ✅ Đã tải ${allKlines.length} nến từ file cache.`);
-      } catch (e) {
-        console.error("[BACKTEST] ❌ Lỗi khi đọc cache custom:", e);
-      }
-    }
-  }
-
-  if (allKlines.length === 0) {
-    // KIỂM TRA CACHE TRONG BỘ NHỚ (Cho các khung giờ khác)
-    if (
-      backtestDataCache &&
-      backtestDataCache.pair === PAIR &&
-      backtestDataCache.timeframe === timeframe &&
-      backtestDataCache.start === startDate &&
-      backtestDataCache.end === endDate
-    ) {
-      console.log(`[BACKTEST] ⚡ Sử dụng dữ liệu từ Cache bộ nhớ (${backtestDataCache.data.length} nến)`);
-      allKlines = backtestDataCache.data;
-    } else {
-      throw new Error(`Không tìm thấy dữ liệu XAUUSD cho khoảng thời gian từ ${startDate} đến ${endDate}. Vui lòng kiểm tra lại file CSV tại C:/xau_data/{year}.csv hoặc các file cache local trong thư mục "data/".`);
-    }
-  }
-
-  allKlines = allKlines.filter(k => k[0] >= startTs && k[0] <= endTs);
-  console.log(`[DATA] Loaded ${allKlines.length} klines.`);
-
-  results = { 
-    ...results, 
-    totalTrades: 0, 
-    wins: 0, 
-    losses: 0, 
-    longTrades: 0,
-    longWins: 0,
-    shortTrades: 0,
-    shortWins: 0,
-    cancelledTrades: 0,
-    totalPnL: 0, 
-    finalBalance: INITIAL_BALANCE, 
-    totalFees: 0,
-    totalSlippage: 0,
-    isLiquidated: false, 
-    liquidationDate: null, 
-    trades: [],
-    startTime: startDate,
-    endTime: endDate,
-    displaceTrades: 0,
-    displaceWins: 0,
-    totalProfitR: 0,
-    monthlySnapshots: [],
-    efficiencyStats: {
-      "CHOPPY": { trades: 0, wins: 0, pnlR: 0 },
-      "NEUTRAL": { trades: 0, wins: 0, pnlR: 0 },
-      "EXPANSION": { trades: 0, wins: 0, pnlR: 0 }
-    },
-    regimeStats: {
-      "TREND_EXPANSION": { trades: 0, wins: 0, pnlR: 0 },
-      "NEUTRAL": { trades: 0, wins: 0, pnlR: 0 },
-      "CHOPPY": { trades: 0, wins: 0, pnlR: 0 }
-    }
-  };
-
-  let lastMonth = -1;
-  let lastYear = -1;
-  let monthlyWins = 0;
-  let monthlyLosses = 0;
-  let monthlyLongTrades = 0;
-  let monthlyLongWins = 0;
-  let monthlyShortTrades = 0;
-  let monthlyShortWins = 0;
-  let monthlyPnL = 0;
-  let monthlyProfitR = 0;
-  let monthlyWhaleTrades = 0;
-  let monthlyWhaleWins = 0;
-  let monthlyWhalePnLR = 0;
-  let monthlySnapshots: any[] = [];
-
-  // Diagnostics/Debug Tracking
-  let debugTotalCandles = 0;
-  let debugTotalSweepsDetected = 0;
-  let debugTotalNewSweepsLong = 0;
-  let debugTotalNewSweepsShort = 0;
-  let debugPendingSweepsAdded = 0;
-  let debugSweepLowCount = 0;
-  let debugSweepHighCount = 0;
-  let debugDisplacementBullishCount = 0;
-  let debugDisplacementBearishCount = 0;
-  let debugVolConfirmCount = 0;
-  const debugWhaleLongConditions = {
-    isNewSweepLongAtBar: 0,
-    isInSession: 0,
-    enableWhaleSweep: 0,
-    notOverExtendedLong: 0,
-    currentPrice_gt_vwma1m: 0,
-    adx_ge_threshold: 0,
-    slope_gt_0: 0,
-    confirm_above_sweep_open_or_high: 0,
-    bullishM1: 0
-  };
-  const debugWhaleShortConditions = {
-    isNewSweepShortAtBar: 0,
-    isInSession: 0,
-    enableWhaleSweep: 0,
-    notOverExtendedShort: 0,
-    currentPrice_lt_vwma1m: 0,
-    adx_ge_threshold: 0,
-    slope_gt_neg_0_02: 0,
-    confirm_below_sweep_open_or_low: 0,
-    bearishM1: 0
-  };
-
-  let sessionSkippedCount = 0;
-  const isWithinSessions = (ts: number) => {
-    if (!enableSessionFilter) return true;
-    const hour = Math.floor(ts / 3600000) % 24;
-    let result = false;
-    if (SESSION_START_GMT <= SESSION_END_GMT) {
-      result = hour >= SESSION_START_GMT && hour < SESSION_END_GMT;
-    } else {
-      result = hour >= SESSION_START_GMT || hour < SESSION_END_GMT;
-    }
-    if (!result) sessionSkippedCount++;
-    return result;
-  };
-
-  console.log(`[BACKTEST] Precomputing fast timestamps for ${allKlines.length} bars...`);
-  const times = new Float64Array(allKlines.length);
-  for (let idx = 0; idx < allKlines.length; idx++) {
-    const rawTime = allKlines[idx][0];
-    times[idx] = typeof rawTime === 'string' ? new Date(rawTime).getTime() : rawTime;
-  }
-
-  let sweepHistoryQueue: number[] = [];
-  let pendingSweeps: { type: "LONG" | "SHORT", entryPrice: number, sl: number, tp: number, triggerIndex: number }[] = [];
-  let lastVwmaM1 = 0;
-
-  for (let i = 100; i < allKlines.length; i++) {
-    if (shouldStopBacktest) break;
-    if (onProgress) onProgress(50 + ((i / allKlines.length) * 50));
-
-    // Kiểm tra cháy tài khoản (dưới 10$)
-    if (results.finalBalance <= 10) {
-      results.isLiquidated = true;
-      results.liquidationDate = new Date(allKlines[i][0]).toISOString();
-      console.log(`[MARGIN] LIQUIDATION AT ${results.liquidationDate}. Stopping.`);
-      break;
-    }
-
-    // --- 1. RESOLVE PENDING SWEEPS ON CURRENT BAR ---
-    const [, , barH, barL, barC] = allKlines[i];
-    for (let sIdx = pendingSweeps.length - 1; sIdx >= 0; sIdx--) {
-      const ps = pendingSweeps[sIdx];
-      let resolved = false;
-      let won = false;
-      
-      if (ps.type === "LONG") {
-        if (barL <= ps.sl && barH >= ps.tp) {
-          resolved = true;
-          won = false; // conservative loss
-        } else if (barL <= ps.sl) {
-          resolved = true;
-          won = false;
-        } else if (barH >= ps.tp) {
-          resolved = true;
-          won = true;
-        }
-      } else { // SHORT
-        if (barH >= ps.sl && barL <= ps.tp) {
-          resolved = true;
-          won = false; // conservative loss
-        } else if (barH >= ps.sl) {
-          resolved = true;
-          won = false;
-        } else if (barL <= ps.tp) {
-          resolved = true;
-          won = true;
-        }
-      }
-      
-      // Expired after 150 candles
-      if (!resolved && (i - ps.triggerIndex >= 150)) {
-        resolved = true;
-        won = ps.type === "LONG" ? (barC >= ps.entryPrice) : (barC <= ps.entryPrice);
-      }
-      
-      if (resolved) {
-        sweepHistoryQueue.push(won ? 1 : 0);
-        if (sweepHistoryQueue.length > 10) {
-          sweepHistoryQueue.shift();
-        }
-        pendingSweeps.splice(sIdx, 1);
-      }
-    }
-
-    // --- KHUNG 1P (ENTRIES) ---
-    const currentPrice = allKlines[i][4];
-    const vwapM1 = calculateVWAPDirect(allKlines, i);
-    const vwmaM1 = calculateVWMADirect(allKlines, i, 20); // VWMA 20 M1
-    const vwmaM1Prev = i === 100 ? calculateVWMADirect(allKlines, i - 1, 20) : lastVwmaM1;
-    lastVwmaM1 = vwmaM1;
-    const slopeM1 = vwmaM1 - vwmaM1Prev;
-    const adxM1 = calcADXDirect(allKlines, i);
-    const emaM1 = calculateEMADirect(allKlines, i, 20); // EMA 20 M1
+  for (let i = 50; i < data.length; i++) {
+    if (!isRunning) break;
     
-    // Condition: close > emaM1 && close > vwmaM1
-    const bullishM1 = currentPrice > emaM1 && currentPrice > vwmaM1;
-    const bearishM1 = currentPrice < emaM1 && currentPrice < vwmaM1;
-    const sweep = detectSweepDirect(allKlines, i);
-    const atrM1 = calculateATRDirect(allKlines, i, 14);
-
-    const isInSession = isWithinSessions(times[i]);
-
-    // --- 2. CALCULATE ROLLING WINRATE & RISK ENGINE ---
-    const rollingWinRate = sweepHistoryQueue.length > 0
-      ? (sweepHistoryQueue.reduce((a, b) => a + b, 0) / sweepHistoryQueue.length)
-      : 0.50; // default to 50% if queue is empty
-
-    const dynamicRiskPctMultiplier = 1.0; // Tải cứng 1% rủi ro, tắt Dynamic Risk theo yêu cầu
-    const isContinuationEnabled = false; // Bỏ hoàn toàn chiến lược Continuation
+    // progress report
+    if (i % 10000 === 0) {
+      const p = Math.floor((i / data.length) * 100);
+      onProgress(p);
+    }
     
-    // Tái update dynamic regime chỉ mang vai trò thống kê theo dõi, CHƯA thay đổi trực tiếp đến risk/choppy block
-    // dynamic lấy 10 tín hiệu sweep gần nhất để xem bao nhiêu win và loss sau đó định hình cho lệnh tiếp theo
-    let finalRegimeLabel: "TREND_EXPANSION" | "NEUTRAL" | "CHOPPY" = "NEUTRAL";
-    if (sweepHistoryQueue.length >= 4) {
-      if (rollingWinRate <= 0.3) {
-        finalRegimeLabel = "CHOPPY";
-      } else if (rollingWinRate >= 0.7) {
-        finalRegimeLabel = "TREND_EXPANSION";
-      } else {
-        finalRegimeLabel = "NEUTRAL";
-      }
-    } else {
-      finalRegimeLabel = "NEUTRAL";
+    // Nến vừa đóng hoàn toàn (đóng vai trò là nến -1 ở hiện tại)
+    const slice = data.slice(i-50, i);
+    const lastClosed = slice[slice.length - 1]; // chính là data[i-1]
+    const cTs = lastClosed[0];
+    
+    // Nến đang chạy
+    const currCandle = data[i];
+    const [, cO, cH, cL, cC, cV] = currCandle;
+    
+    if (cTs < startTs || cTs > endTs) continue;
+
+    // Quản lý Position (Exit check)
+    if (paperPosition) {
+       let closed = false;
+       let status = "WIN";
+       if (paperPosition.type === "LONG") {
+         if (cL <= paperPosition.sl) { closed = true; status = "LOSS"; }
+         else if (cH >= paperPosition.tp) { closed = true; status = "WIN"; }
+       } else {
+         if (cH >= paperPosition.sl) { closed = true; status = "LOSS"; }
+         else if (cL <= paperPosition.tp) { closed = true; status = "WIN"; }
+       }
+
+       if (closed) {
+          totalTrades++;
+          
+          const d = new Date(cTs);
+          const monthKey = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+          if (!monthlyStats.has(monthKey)) {
+             monthlyStats.set(monthKey, { trades: 0, wins: 0, profitR: 0 });
+          }
+          const stat = monthlyStats.get(monthKey)!;
+          stat.trades++;
+          
+          let pnlDollar = 0;
+          if (status === "WIN") {
+            wins++;
+            totalProfitR += rr;
+            stat.wins++;
+            stat.profitR += rr;
+            pnlDollar = paperPosition.riskUsd * rr;
+          } else {
+            totalProfitR -= 1;
+            stat.profitR -= 1;
+            pnlDollar = -paperPosition.riskUsd;
+          }
+          balance += pnlDollar;
+          
+          if (verbose) {
+            const timeStr = new Date(cTs).toISOString().replace("T", " ").substring(0, 19);
+            console.log(`[TRADE] ${timeStr} | ${paperPosition.type} | ${status} | PnL: ${status === "WIN" ? `+${rr}R` : `-1R`} | PnL $: ${pnlDollar > 0 ? '+' : ''}${pnlDollar.toFixed(2)}$ | B: ${balance.toFixed(2)}$`);
+          }
+
+          paperPosition = null;
+       }
+       continue; // Cooldown / 1 bar 1 lệnh
     }
 
-    const isMarketTooChoppy = false; // Luôn cho phép trade, không thay đổi trực tiếp đến risk/block
+    // Lọc theo Session
+    const date = new Date(cTs);
+    const hoursGMT = date.getUTCHours();
+    const SESSION_START_GMT = 8;
+    const SESSION_END_GMT = 21;
+    let isInSession = true;
+    if (enableSessionFilter) {
+       if (SESSION_START_GMT <= SESSION_END_GMT) {
+         isInSession = hoursGMT >= SESSION_START_GMT && hoursGMT < SESSION_END_GMT;
+       } else {
+         isInSession = hoursGMT >= SESSION_START_GMT || hoursGMT < SESSION_END_GMT;
+       }
+    }
 
-    results.marketRegime = {
-      totalScore: Number((rollingWinRate * 100).toFixed(1)),
-      regime: finalRegimeLabel,
-      riskPercent: dynamicRiskPctMultiplier
-    };
-    const regimeData = results.marketRegime;
+    // Tính Indicator (Dựa trên slice của các nến đã đóng)
+    const atrM1 = calculateATR(slice, 14);
+    const vwmaM1 = calculateVWMA(slice, vwmaPeriod);
+    const emaM1 = calculateEMA(slice, 20);
+    const adxM1 = calcADX(slice, 14);
+    const sweep = detectWhaleSweep(slice);
 
-    const distFromVWMA = Math.abs(currentPrice - vwmaM1);
-    const isOverExtendedLong = distFromVWMA > (atrM1 * 3.0);
-    const isOverExtendedShort = distFromVWMA > (atrM1 * 3.0);
+    const closePriceM1 = lastClosed[4];
+    const distFromVWMA = Math.abs(closePriceM1 - vwmaM1);
+    const bullishM1 = closePriceM1 > emaM1 && closePriceM1 > vwmaM1 && emaM1 > vwmaM1;
+    const bearishM1 = closePriceM1 < emaM1 && closePriceM1 < vwmaM1 && emaM1 < vwmaM1;
 
-    const slDistanceLong = Math.abs(currentPrice - sweep.low);
-    const slDistanceShort = Math.abs(sweep.high - currentPrice);
+    let sig: "LONG" | "SHORT" | null = null;
+    const isOverExtendedLong = distFromVWMA > (atrM1 * 1.2);
+    const isOverExtendedShort = distFromVWMA > (atrM1 * 1.2);
+
+    const slDistanceLong = Math.abs(closePriceM1 - sweep.low);
+    const slDistanceShort = Math.abs(sweep.high - closePriceM1);
     const hasBadEntryPriceLong = slDistanceLong > (atrM1 * 4.0);
     const hasBadEntryPriceShort = slDistanceShort > (atrM1 * 4.0);
 
-    debugTotalCandles++;
-    if (sweep.sweepLow || sweep.sweepHigh) {
-      debugTotalSweepsDetected++;
-    }
-    if (sweep.sweepLow) debugSweepLowCount++;
-    if (sweep.sweepHigh) debugSweepHighCount++;
-    if (sweep.displacementBullish) debugDisplacementBullishCount++;
-    if (sweep.displacementBearish) debugDisplacementBearishCount++;
-    if (sweep.volConfirm) debugVolConfirmCount++;
-
-    // Tracking/storing new sweep candidates
-    const isNewSweepLongAtBar = sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm;
-    const isNewSweepShortAtBar = sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm;
-
-    if (isNewSweepLongAtBar) {
-      debugTotalNewSweepsLong++;
-      debugWhaleLongConditions.isNewSweepLongAtBar++;
-      if (isInSession) debugWhaleLongConditions.isInSession++;
-      if (enableWhaleSweep) debugWhaleLongConditions.enableWhaleSweep++;
-      if (!isOverExtendedLong) debugWhaleLongConditions.notOverExtendedLong++;
-      
-      if (currentPrice > vwmaM1) {
-        debugWhaleLongConditions.currentPrice_gt_vwma1m++;
-      }
-      if (adxM1.adx >= adxThreshold) debugWhaleLongConditions.adx_ge_threshold++;
-      if (slopeM1 > 0) debugWhaleLongConditions.slope_gt_0++;
-      if (sweep.confirmClose > sweep.sweepOpen || sweep.confirmClose > sweep.high) {
-        debugWhaleLongConditions.confirm_above_sweep_open_or_high++;
-      }
-      if (bullishM1) {
-        debugWhaleLongConditions.bullishM1++;
-      }
-
-      if (isInSession) {
-        const slRaw = sweep.low - atrM1 * 0.8;
-        const minRisk = atrM1 * 1.5;
-        const slPrice = Math.min(slRaw, currentPrice - minRisk);
-        const riskAmt = Math.max(0.0001, Math.abs(currentPrice - slPrice));
-        const tpPrice = currentPrice + riskAmt * rr;
-        if (!pendingSweeps.some(ps => ps.triggerIndex === i && ps.type === "LONG")) {
-          pendingSweeps.push({
-            type: "LONG",
-            entryPrice: currentPrice,
-            sl: slPrice,
-            tp: tpPrice,
-            triggerIndex: i
-          });
-          debugPendingSweepsAdded++;
-        }
-      }
-    } else if (isNewSweepShortAtBar) {
-      debugTotalNewSweepsShort++;
-      debugWhaleShortConditions.isNewSweepShortAtBar++;
-      if (isInSession) debugWhaleShortConditions.isInSession++;
-      if (enableWhaleSweep) debugWhaleShortConditions.enableWhaleSweep++;
-      if (!isOverExtendedShort) debugWhaleShortConditions.notOverExtendedShort++;
-
-      if (currentPrice < vwmaM1) {
-        debugWhaleShortConditions.currentPrice_lt_vwma1m++;
-      }
-      if (adxM1.adx >= adxThreshold) debugWhaleShortConditions.adx_ge_threshold++;
-      if (slopeM1 > -0.02) debugWhaleShortConditions.slope_gt_neg_0_02++;
-      if (sweep.confirmClose < sweep.sweepOpen || sweep.confirmClose < sweep.low) {
-        debugWhaleShortConditions.confirm_below_sweep_open_or_low++;
-      }
-      if (bearishM1) {
-        debugWhaleShortConditions.bearishM1++;
-      }
-
-      if (isInSession) {
-        const slRaw = sweep.high + atrM1 * 0.8;
-        const minRisk = atrM1 * 1.5;
-        const slPrice = Math.max(slRaw, currentPrice + minRisk);
-        const riskAmt = Math.max(0.0001, Math.abs(currentPrice - slPrice));
-        const tpPrice = currentPrice - riskAmt * rr;
-        if (!pendingSweeps.some(ps => ps.triggerIndex === i && ps.type === "SHORT")) {
-          pendingSweeps.push({
-            type: "SHORT",
-            entryPrice: currentPrice,
-            sl: slPrice,
-            tp: tpPrice,
-            triggerIndex: i
-          });
-          debugPendingSweepsAdded++;
-        }
-      }
+    // Xác nhận vào lệnh Long
+    if ( !isOverExtendedLong && !hasBadEntryPriceLong && adxM1.adx >= adxThreshold && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isInSession && (sweep.confirmClose > sweep.sweepOpen || sweep.confirmClose > sweep.high) && bullishM1 ) {
+      sig = "LONG";
     }
 
-
-
-    // --- MONTHLY SNAPSHOT LOGIC ---
-    const d = new Date(allKlines[i][0]);
-    const currentMonth = d.getUTCMonth();
-    const currentYear = d.getUTCFullYear();
-    
-    if (lastMonth !== -1 && currentMonth !== lastMonth) {
-      const totalMonthTrades = monthlyWins + monthlyLosses;
-      const monthWinRate = totalMonthTrades > 0 ? (monthlyWins / totalMonthTrades * 100) : 0;
-      
-      monthlySnapshots.push({
-        month: lastMonth + 1,
-        year: lastYear,
-        date: `Tháng ${lastMonth + 1}/${lastYear}`,
-        balance: results.finalBalance,
-        monthlyProfit: monthlyPnL,
-        monthlyProfitR: monthlyProfitR,
-        totalProfitR: results.totalProfitR,
-        winRate: monthWinRate.toFixed(1),
-        trades: totalMonthTrades,
-        wins: monthlyWins,
-        losses: monthlyLosses,
-        longTrades: monthlyLongTrades,
-        longWins: monthlyLongWins,
-        shortTrades: monthlyShortTrades,
-        shortWins: monthlyShortWins,
-        // Continuation stats (completely disabled)
-        continuationTrades: 0,
-        continuationWins: 0,
-        continuationPnLR: 0,
-        whaleTrades: totalMonthTrades,
-        whaleWins: monthlyWins,
-        whalePnLR: monthlyProfitR
-      });
-
-      monthlyWins = 0; monthlyLosses = 0; monthlyLongTrades = 0; monthlyLongWins = 0;
-      monthlyShortTrades = 0; monthlyShortWins = 0; monthlyPnL = 0; monthlyProfitR = 0;
-      monthlyWhaleTrades = 0; monthlyWhaleWins = 0; monthlyWhalePnLR = 0;
+    // Xác nhận vào lệnh Short
+    if ( !isOverExtendedShort && !hasBadEntryPriceShort && adxM1.adx >= adxThreshold && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isInSession && (sweep.confirmClose < sweep.sweepOpen || sweep.confirmClose < sweep.low) && bearishM1 ) {
+      sig = "SHORT";
     }
-    lastMonth = currentMonth;
-    lastYear = currentYear;
 
-    // --- ENTRY DECISION (WHALE SWEEP ONLY) ---
-    let isLong = !isMarketTooChoppy && 
-      enableWhaleSweep && !isOverExtendedLong && !hasBadEntryPriceLong && adxM1.adx >= adxThreshold && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isInSession &&
-      (sweep.confirmClose > sweep.sweepOpen || sweep.confirmClose > sweep.high) && bullishM1;
-
-    let isShort = !isMarketTooChoppy && 
-      enableWhaleSweep && !isOverExtendedShort && !hasBadEntryPriceShort && adxM1.adx >= adxThreshold && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isInSession &&
-      (sweep.confirmClose < sweep.sweepOpen || sweep.confirmClose < sweep.low) && bearishM1;
-
-    if (isLong || isShort) {
-      const type = isLong ? "LONG" : "SHORT";
-
-      // 1. TÍNH TOÁN REAL-TIME EFFICIENCY (Dựa trên 3 nến thị trường mới nhất)
-      let currentTradeEff = 1.0;
-
-      if (i >= 2) {
-          const c0 = allKlines[i]; // Nến tín hiệu
-          const c1 = allKlines[i - 1];
-          const c2 = allKlines[i - 2];
-
-          const [,, h0, l0, c0c, , o0] = c0;
-          
-          // Component 1: Net Move của nến tín hiệu
-          const netMoveScore = Math.abs(c0c - o0) / (h0 - l0 + 0.0001);
-          
-          // Component 2: Close Acceptance (Vị trí đóng cửa trong Range 3 nến)
-          const maxH3 = Math.max(c0[2], c1[2], c2[2]);
-          const minL3 = Math.min(c0[3], c1[3], c2[3]);
-          const range3 = maxH3 - minL3 + 0.0001;
-          
-          let closeAccScore = 0.5;
-          if (type === "LONG") {
-              closeAccScore = (c0c - minL3) / range3;
-          } else {
-              closeAccScore = (maxH3 - c0c) / range3;
-          }
-
-          // Component 3: Smoothness (Độ mượt của 3 nến)
-          const absMove3 = Math.abs(c0c - c2[1]);
-          const sumRange3 = (c0[2]-c0[3]) + (c1[2]-c1[3]) + (c2[2]-c2[3]);
-          const smoothness = absMove3 / (sumRange3 + 0.0001);
-
-          currentTradeEff = (netMoveScore + closeAccScore + smoothness) / 3;
-      }
-
-      let dynamicRiskMult = regimeData.riskPercent;
-      let efficiencyLabel = "NEUTRAL";
-      if (regimeData.regime === "CHOPPY") {
-        efficiencyLabel = "CHOPPY";
-      } else if (regimeData.regime === "TREND_EXPANSION") {
-        efficiencyLabel = "EXPANSION";
-      } else {
-        efficiencyLabel = "NEUTRAL";
-      }
-
-      const currentRR = rr;
-      const entryPrice = currentPrice; 
-      
-      const time = new Date(allKlines[i][0]).toISOString();
-      const slRaw = type === "LONG" ? (sweep.low - atrM1 * 0.8) : (sweep.high + atrM1 * 0.8);
+    if (sig) {
+      const e = closePriceM1; // Vào lệnh dựa vào giá mở cửa nến hiện tại (bằng với close nến trước)
+      const slRaw = sig === "LONG" ? (sweep.low - atrM1 * 0.2) : (sweep.high + atrM1 * 0.2);
       const minRisk = atrM1 * 1.5;
       let sl = 0;
-      if (type === "LONG") {
-        sl = Math.min(slRaw, currentPrice - minRisk);
+      if (sig === "LONG") {
+        sl = Math.min(slRaw, closePriceM1 - minRisk);
       } else {
-        sl = Math.max(slRaw, currentPrice + minRisk);
-      }
-      const risk = Math.abs(entryPrice - sl);
-      const tp = type === "LONG" ? entryPrice + risk * rr : entryPrice - risk * rr;
-
-      const baseRiskPercent = 0.01;
-      const currentRiskPercent = baseRiskPercent * dynamicRiskMult;
-
-      const strategyLabel = "WHALE SWEEP";
-      console.log(`[SIGNAL] ${type} | ${strategyLabel} | Entry: $${entryPrice.toFixed(2)} | SL: $${sl.toFixed(2)} | TP: $${tp.toFixed(2)}`);
-      
-      // Tìm kết quả trong các nến tiếp theo
-      let exitPrice = 0;
-      let pnlR = 0;
-      let status = "LOSS";
-      const initialRiskDist = Math.abs(entryPrice - sl);
-
-      let tradeResolvedIdx = i;
-      for (let j = i + 1; j < Math.min(i + 150, allKlines.length); j++) {
-        const [, , h, l, c] = allKlines[j];
-        
-        if (type === "LONG") {
-          if (l <= sl) { exitPrice = sl; status = "LOSS"; tradeResolvedIdx = j; break; }
-          if (h >= tp) { exitPrice = tp; status = "WIN"; tradeResolvedIdx = j; break; }
-        } else {
-          if (h >= sl) { exitPrice = sl; status = "LOSS"; tradeResolvedIdx = j; break; }
-          if (l <= tp) { exitPrice = tp; status = "WIN"; tradeResolvedIdx = j; break; }
-        }
-      }
-
-      if (exitPrice === 0) {
-        tradeResolvedIdx = Math.min(i + 149, allKlines.length - 1);
-        exitPrice = allKlines[tradeResolvedIdx][4];
+        sl = Math.max(slRaw, closePriceM1 + minRisk);
       }
       
-      // Tính PnL R thực tế dựa trên rủi ro ban đầu
-      pnlR = (type === "LONG" ? (exitPrice - entryPrice) : (entryPrice - exitPrice)) / initialRiskDist;
-      
-      const dollarPnL = results.finalBalance * currentRiskPercent * pnlR;
-      
-      // Tính phí và trượt giá dự kiến (Để thống kê, ko trừ túi)
-      const feeRate = 0.0005; // 0.05% taker
-      const slippageRate = 0.0002; // 0.02% slippage
-      
-      const riskAmount = results.finalBalance * currentRiskPercent;
-      const stopLossDistPct = Math.abs(entryPrice - sl) / entryPrice;
-      const positionNotional = stopLossDistPct > 0 ? riskAmount / stopLossDistPct : 0;
-      
-      const estimatedFee = positionNotional * feeRate * 2; 
-      const estimatedSlippage = positionNotional * slippageRate * 2;
-      
-      results.totalFees += estimatedFee;
-      results.totalSlippage += estimatedSlippage;
-      results.finalBalance += dollarPnL; 
-      monthlyPnL += dollarPnL;
+      const risk = Math.abs(e - sl);
+      const tp = sig === "LONG" ? e + risk * rr : e - risk * rr;
 
-      // Chuẩn hóa Profit R: 
-      const multiplier = 1.0; 
-      const effectiveR = pnlR * multiplier;
-      
-      monthlyProfitR += effectiveR;
-
-      results.totalTrades++;
-      if (type === "LONG") {
-        results.longTrades++;
-        monthlyLongTrades++;
+      const riskUsdStr = process.env.MT5_RISK_USD;
+      let tradeRiskUsd = balance * 0.01; // Mặc định 1% tài khoản 5000 = 50$
+      if (riskUsdStr) {
+         const parsedRisk = parseFloat(riskUsdStr);
+         if (!isNaN(parsedRisk) && parsedRisk > 0) {
+             tradeRiskUsd = parsedRisk;
+         } else {
+             // Nếu cấu hình lot size cố định, ta tính ra dollar risk = Lot * Contract * SL_Distance
+             const fixedLot = parseFloat(process.env.MT5_LOT_SIZE || "0.01");
+             const contractSize = parseFloat(process.env.MT5_CONTRACT_SIZE || "100");
+             tradeRiskUsd = fixedLot * contractSize * risk;
+         }
       } else {
-        results.shortTrades++;
-        monthlyShortTrades++;
+         const fixedLot = parseFloat(process.env.MT5_LOT_SIZE || "0.01");
+         const contractSize = parseFloat(process.env.MT5_CONTRACT_SIZE || "100");
+         tradeRiskUsd = fixedLot * contractSize * risk;
       }
 
-      if (status === "WIN") {
-        results.wins++;
-        if (type === "LONG") {
-          results.longWins++;
-          monthlyLongWins++;
-        } else {
-          results.shortWins++;
-          monthlyShortWins++;
-        }
-        results.displaceWins++;
-        monthlyWins++;
-      } else {
-        results.losses++;
-        monthlyLosses++;
-      }
-      
-      results.displaceTrades++;
-      
-    results.totalPnL += dollarPnL;
-    results.totalProfitR += effectiveR;
-    
-    // Whale Sweep stats
-    monthlyWhaleTrades++;
-    monthlyWhalePnLR += effectiveR;
-    if (status === "WIN") {
-      monthlyWhaleWins++;
-    }
-
-    // Track regime stats
-    if (results.regimeStats[regimeData.regime]) {
-      results.regimeStats[regimeData.regime].trades++;
-      results.regimeStats[regimeData.regime].pnlR += effectiveR;
-      if (status === "WIN") {
-        results.regimeStats[regimeData.regime].wins++;
-      }
-    }
-
-    // Track efficiency stats
-    if (results.efficiencyStats[efficiencyLabel]) {
-       results.efficiencyStats[efficiencyLabel].trades++;
-       results.efficiencyStats[efficiencyLabel].pnlR += effectiveR;
-       if (status === "WIN") results.efficiencyStats[efficiencyLabel].wins++;
-     }
-
-    results.trades.push({ 
-      time, 
-      type, 
-      entryPrice, 
-      exitPrice, 
-      status, 
-      pnlR, 
-      dollarPnL, 
-      estimatedFee,
-      estimatedSlippage,
-      currentBalance: results.finalBalance,
-      reason: `TA Entry`,
-      regime: regimeData.regime,
-      efficiency: efficiencyLabel,
-      effValue: currentTradeEff,
-      riskPercent: Number((currentRiskPercent * 100).toFixed(2))
-    });
-    
-    const strategyLabelResult = "WHALE SWEEP";
-    console.log(`[TRADE] ${status} | ${strategyLabelResult} | Risk: ${(currentRiskPercent * 100).toFixed(1)}% (${efficiencyLabel}) | PnL: ${pnlR.toFixed(1)}R | Balance: $${results.finalBalance.toFixed(2)}`);
-    
-    // Log format requested by user
-    const formattedTradeTime = new Date(allKlines[i][0]).toLocaleString("vi-VN");
-    const formattedPnL = pnlR > 0 ? `+${pnlR.toFixed(2)}` : `${pnlR.toFixed(2)}`;
-    const formattedRiskPercent = (currentRiskPercent * 100).toFixed(2);
-    console.log(`[${formattedTradeTime}] ${status === "WIN" ? "Win" : "Loss"} ${formattedPnL}R Balance: $${results.finalBalance.toFixed(2)} risk: ${formattedRiskPercent}%`);
-      
-      // Nhảy vòng lặp đến điểm nến hiện tại
-      i = tradeResolvedIdx;
+      paperPosition = {
+        type: sig,
+        entry: e,
+        sl: sl,
+        tp: tp,
+        riskUsd: tradeRiskUsd
+      };
     }
   }
 
-  // Đẩy tháng cuối cùng chưa lưu nếu kết thúc loop xuyên tháng
-  if (lastMonth !== -1 && (monthlyWins + monthlyLosses > 0 || monthlyWhaleTrades > 0)) {
-    const totalMonthTrades = monthlyWins + monthlyLosses;
-    const monthWinRate = totalMonthTrades > 0 ? (monthlyWins / totalMonthTrades * 100) : 0;
-    
-    monthlySnapshots.push({
-      month: lastMonth + 1,
-      year: lastYear,
-      date: `Tháng ${lastMonth + 1}/${lastYear}`,
-      balance: results.finalBalance,
-      monthlyProfit: monthlyPnL,
-      monthlyProfitR: monthlyProfitR,
-      totalProfitR: results.totalProfitR,
-      winRate: monthWinRate.toFixed(1),
-      trades: totalMonthTrades,
-      wins: monthlyWins,
-      losses: monthlyLosses,
-      longTrades: monthlyLongTrades,
-      longWins: monthlyLongWins,
-      shortTrades: monthlyShortTrades,
-      shortWins: monthlyShortWins,
-      // Continuation stats (completely disabled)
-      continuationTrades: 0,
-      continuationWins: 0,
-      continuationPnLR: 0,
-      whaleTrades: totalMonthTrades,
-      whaleWins: monthlyWins,
-      whalePnLR: monthlyProfitR
-    });
-  }
-
-  results.monthlySnapshots = monthlySnapshots;
-  fs.writeFileSync(RESULTS_FILE, JSON.stringify(results));
-  console.log(`[DONE] Backtest complete. Results: ${RESULTS_FILE}`);
-
-  console.log("\n📅 --- THỐNG KÊ CHI TIẾT THEO TỪNG THÁNG ---");
-  if (results.monthlySnapshots && results.monthlySnapshots.length > 0) {
-    results.monthlySnapshots.forEach((m: any) => {
-      const wr = m.whaleTrades > 0 ? (m.whaleWins / m.whaleTrades * 100).toFixed(1) : "0.0";
-      const totalPnLR = m.whalePnLR;
-      console.log(`• ${m.date}: PnL: ${totalPnLR.toFixed(1)}R | Whale PnL: ${m.whalePnLR.toFixed(1)}R (WR: ${wr}%, ${m.whaleTrades} lđ) | Số dư: $${m.balance.toFixed(2)}`);
-    });
-  }
-
-  console.log("\n📊 --- THỐNG KÊ THEO EFFICIENCY (DYNAMIC RISK) ---");
-  Object.entries(results.efficiencyStats).forEach(([eff, stats]: [string, any]) => {
-     const wr = stats.trades > 0 ? ((stats.wins / stats.trades) * 100).toFixed(1) : "0";
-     console.log(`• ${eff}: ${stats.trades} trades | WR: ${wr}% | Total: ${stats.pnlR.toFixed(1)}R`);
-  });
-
-  console.log("--------------------------------------\n");
-
-  // GỬI TELEGRAM SUMMARY
-  let teleMsg = `📊 **KẾT QUẢ BACKTEST WHALE SWEEP ONLY**\n`;
-  teleMsg += `📅 Từ: ${new Date(startDate).toLocaleDateString()} đến ${new Date(endDate).toLocaleDateString()}\n`;
-  teleMsg += `💰 Số dư cuối: $${results.finalBalance.toFixed(2)}\n`;
-  teleMsg += `📈 Tổng PnL: ${results.totalProfitR.toFixed(1)}R\n`;
-  teleMsg += `⚡ Tổng lệnh: ${results.totalTrades} | Winrate: ${((results.wins / (results.totalTrades || 1)) * 100).toFixed(1)}%\n\n`;
+  const monthlySnapshots = Array.from(monthlyStats.entries()).map(([month, stat]) => ({
+    date: month,
+    whaleTrades: stat.trades,
+    whaleWins: stat.wins,
+    whalePnLR: stat.profitR
+  }));
   
-  teleMsg += `**Thống kê Whale Sweep theo tháng:**\n`;
-  if (results.monthlySnapshots && results.monthlySnapshots.length > 0) {
-    results.monthlySnapshots.forEach((m: any) => {
-      const wr = m.whaleTrades > 0 ? (m.whaleWins / m.whaleTrades * 100).toFixed(1) : "0";
-      teleMsg += `• ${m.date}: ${m.whalePnLR.toFixed(1)}R | WR: ${wr}% (${m.whaleTrades} lệnh)\n`;
-    });
-  }
+  // Sắp xếp lại theo thời gian từ cũ đến mới
+  monthlySnapshots.sort((a, b) => a.date.localeCompare(b.date));
 
-  teleMsg += `\n**Chi tiết theo Efficiency (Dynamic Risk):**\n`;
-  Object.entries(results.efficiencyStats).forEach(([eff, stats]: [string, any]) => {
-     const wr = stats.trades > 0 ? ((stats.wins / stats.trades) * 100).toFixed(1) : "0";
-     teleMsg += `• ${eff}: ${stats.trades} lệnh | WR: ${wr}% | ${stats.pnlR.toFixed(1)}R\n`;
-  });
+  const results = {
+    startTime: startDate,
+    endTime: endDate,
+    finalBalance: balance,
+    totalProfitR: totalProfitR,
+    totalTrades: totalTrades,
+    wins: wins,
+    monthlySnapshots
+  };
 
-  await sendTelegramBacktest(teleMsg);
-
-  console.log("\n🔍 ==================== CHẨN ĐOÁN LỖI BACKTEST (DIAGNOSTICS) ====================");
-  console.log(`• Tổng số nến đã chạy: ${debugTotalCandles}`);
-  console.log(`• Nến ngoài phiên giao dịch (Bị Bỏ qua): ${sessionSkippedCount} (${(sessionSkippedCount / (debugTotalCandles || 1) * 100).toFixed(1)}%)`);
-  console.log(`• Nến trong phiên giao dịch (Được Quét): ${debugTotalCandles - sessionSkippedCount} (${((debugTotalCandles - sessionSkippedCount) / (debugTotalCandles || 1) * 100).toFixed(1)}%)`);
-  console.log(`• Tổng Sweep thô phát hiện (Low/High): ${debugTotalSweepsDetected} (sweepLow: ${debugSweepLowCount}, sweepHigh: ${debugSweepHighCount})`);
-  console.log(`• Thống kê điều kiện mượt & Vol lớn: displacementBullish: ${debugDisplacementBullishCount}, displacementBearish: ${debugDisplacementBearishCount}, volConfirm: ${debugVolConfirmCount}`);
-  console.log(`• Tổng Sweep có lực bật mượt & Vol lớn (Long): ${debugTotalNewSweepsLong}`);
-  console.log(`• Tổng Sweep có lực bật mượt & Vol lớn (Short): ${debugTotalNewSweepsShort}`);
-  console.log(`• Tổng Sweep được thêm thành công vào Queue tính Winrate (Pending): ${debugPendingSweepsAdded}`);
-  console.log(`\n📌 THỐNG KÊ CHI TIẾT ĐIỀU KIỆN LỆNH LONG (Dựa trên ${debugWhaleLongConditions.isNewSweepLongAtBar} nến tín hiệu thô):`);
-  console.log(`  [1] Nằm trong phiên giao dịch:                     ${debugWhaleLongConditions.isInSession} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
-  console.log(`  [2] Bật Whale Sweep:                               ${debugWhaleLongConditions.enableWhaleSweep} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
-  console.log(`  [3] Biên độ giá không quá xa (Not Overextend):        ${debugWhaleLongConditions.notOverExtendedLong} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
-  console.log(`  [4] GIÁ NẰM TRÊN VWMA 1M (Đã Bỏ Qua / Tham khảo):     ${debugWhaleLongConditions.currentPrice_gt_vwma1m} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
-  console.log(`  [5] Chỉ số ADX M1 >= Ngưỡng (${adxThreshold}):                  ${debugWhaleLongConditions.adx_ge_threshold} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
-  console.log(`  [6] Đường dốc M1 có xu hướng đi lên (Đã Bỏ Qua):       ${debugWhaleLongConditions.slope_gt_0} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
-  console.log(`  [7] Xác nhận đóng nến > sO hoặc > sH (BẮT BUỘC):      ${debugWhaleLongConditions.confirm_above_sweep_open_or_high} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
-  console.log(`  [8] Bộ lọc M1 (close > ema20 & close > vwma20 & ema20 > vwma20): ${debugWhaleLongConditions.bullishM1} / ${debugWhaleLongConditions.isNewSweepLongAtBar}`);
+  try {
+    fs.writeFileSync(path.join(process.cwd(), 'data', 'backtest_results.json'), JSON.stringify(results));
+  } catch (e) {}
   
-  console.log(`\n📌 THỐNG KÊ CHI TIẾT ĐIỀU KIỆN LỆNH SHORT (Dựa trên ${debugWhaleShortConditions.isNewSweepShortAtBar} nến tín hiệu thô):`);
-  console.log(`  [1] Nằm trong phiên giao dịch:                     ${debugWhaleShortConditions.isInSession} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
-  console.log(`  [2] Bật Whale Sweep:                               ${debugWhaleShortConditions.enableWhaleSweep} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
-  console.log(`  [3] Biên độ giá không quá xa (Not Overextend):        ${debugWhaleShortConditions.notOverExtendedShort} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
-  console.log(`  [4] GIÁ NẰM DƯỚI VWMA 1M (Đã Bỏ Qua / Tham khảo):    ${debugWhaleShortConditions.currentPrice_lt_vwma1m} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
-  console.log(`  [5] Chỉ số ADX M1 >= Ngưỡng (${adxThreshold}):                  ${debugWhaleShortConditions.adx_ge_threshold} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
-  console.log(`  [6] Đường dốc M1 có xu hướng đi xuống (Đã Bỏ Qua):     ${debugWhaleShortConditions.slope_gt_neg_0_02} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
-  console.log(`  [7] Xác nhận đóng nến < sO hoặc < sL (BẮT BUỘC):      ${debugWhaleShortConditions.confirm_below_sweep_open_or_low} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
-  console.log(`  [8] Bộ lọc M1 (close < ema20 & close < vwma20 & ema20 < vwma20): ${debugWhaleShortConditions.bearishM1} / ${debugWhaleShortConditions.isNewSweepShortAtBar}`);
-  console.log("===============================================================================\n");
-
-    if (enableSessionFilter) {
-      console.log(`[SESSION] Filtered out ${sessionSkippedCount} candles outside of 08:00 - 21:00 UTC.`);
-    }
-    
-    // Trả về trực tiếp đối tượng kết quả cục bộ để không phải sao chép qua JSON.stringify/parse tốn RAM
-    return results;
-  } finally {
-    allKlines = []; // Giải phóng mảng kline lớn khỏi RAM ngay lập tức
-    backtestDataCache = null; // Clear static memory cache of previous runs to free RAM immediately
-    if (global && typeof (global as any).gc === 'function') {
-      try {
-        (global as any).gc();
-      } catch (e) {}
-    }
-  }
+  return results;
 }

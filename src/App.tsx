@@ -48,7 +48,7 @@ export default function App() {
   const [startDate, setStartDate] = useState('2026-01-01');
   const [endDate, setEndDate] = useState('2026-03-31');
   const [backtestRR, setBacktestRR] = useState(1.2);
-  const [backtestADX, setBacktestADX] = useState(10);
+  const [backtestADX, setBacktestADX] = useState(14);
   const [backtestTimeframe, setBacktestTimeframe] = useState('1m');
   const [backtestSessionFilter, setBacktestSessionFilter] = useState(true);
   const [backtestWhaleSweep, setBacktestWhaleSweep] = useState(true);
@@ -312,7 +312,7 @@ export default function App() {
               </div>
 
               <div className="flex flex-col items-end">
-              <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Giá BTC/USDT</span>
+              <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Giá {data?.symbol || 'XAUUSD'}</span>
               <span className="font-mono text-3xl font-black text-white tracking-tighter glow-blue">${(lastPrice || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
             </div>
             <div className="h-12 w-px bg-white/10 hidden sm:block" />
@@ -381,9 +381,9 @@ export default function App() {
                     icon={<TrendingUp className="w-4 h-4" />} 
                   />
                   <StatCard 
-                    label="Chỉ Báo Kỹ Thuật" 
-                    value={`ADX: ${data?.adx || '0.0'} (M1)`} 
-                    subValue={data?.ema20_5m ? `M1 EMA/VWMA: ${data.ema20_5m}/${data.ema50_5m}` : "Đang tính..."}
+                    label="Sức Mạnh Xu Hướng" 
+                    value={`ADX: ${data?.adx || '0.0'}`} 
+                    subValue={`DI+: ${data?.plus_di || '0'} | DI-: ${data?.minus_di || '0'}`}
                     positive={(parseFloat(data?.adx) || 0) > 25}
                     icon={<BarChart3 className="w-4 h-4" />} 
                   />

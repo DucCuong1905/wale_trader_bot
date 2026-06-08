@@ -4,8 +4,6 @@ import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
-import * as ccxt from "ccxt";
-import WebSocket from "ws";
 import cors from "cors";
 import { runBacktest, stopBacktestExecution } from "./backtester.ts";
 
@@ -16,21 +14,20 @@ const resolvedDirname = typeof __dirname !== "undefined" ? __dirname : ".";
 
 // --- QUẢN LÝ VỊ THẾ GIẢ LẬP (PAPER TRADING) ---
 const MT5_ENABLED = process.env.MT5_ENABLED === "true";
-const PAIR = MT5_ENABLED ? (process.env.MT5_SYMBOL || "XAUUSD") : "BTC/USDT:USDT"; 
-const SYMBOL_ID = MT5_ENABLED ? (process.env.MT5_SYMBOL?.toLowerCase() || "xauusd") : "btcusdt"; 
+const PAIR = process.env.MT5_SYMBOL || 'XAUUSD'; 
+ 
 const TIMEFRAME = "1m"; 
 const IS_LIVE_TRADING_ENABLED = process.env.IS_LIVE_TRADING_ENABLED === "true";
 const MT5_BRIDGE_URL = process.env.MT5_WEBHOOK_URL?.replace('/webhook', '') || "http://localhost:5000";
 const RISK_PER_TRADE = 0.01; // Rủi ro trên mỗi lệnh (1% tài khoản)
-const RR = 1.2; // Tỷ lệ Risk/Reward 1.2 theo yêu cầu
+const RR = 1.2; // Tỷ lệ Risk/Reward
 const COOLDOWN_MS = 30000; // Thời gian chờ giữa các lệnh (30 giây)
 const MAX_DAILY_LOSS = 0.06; // Giới hạn lỗ tối đa trong ngày (6%)
 
 // CẤU HÌNH PHIÊN GIAO DỊCH (LONDON & NEW YORK)
-let ENABLE_SESSION_FILTER = true; 
-let ENABLE_WHALE_SWEEP = true; 
+let ENABLE_SESSION_FILTER = false; 
 const VWMA_PERIOD = 20; // Cố định VWMA 20
-let ADX_THRESHOLD = 10; // Ngưỡng ADX mặc định
+let ADX_THRESHOLD = 20; // Ngưỡng ADX mặc định
 const SESSION_START_GMT = 8;  // 08:00 GMT (Mở phiên Âu)
 const SESSION_END_GMT = 21;    // 21:00 GMT (Đóng phiên Mỹ)
 
@@ -68,19 +65,6 @@ let backtestStatus = {
   isRunning: false,
   progress: 0
 };
-
-// Load last backtest result on startup (disabled as requested)
-/*
-if (fs.existsSync(BACKTEST_RESULTS_FILE)) {
-  try {
-    const data = fs.readFileSync(BACKTEST_RESULTS_FILE, "utf-8");
-    backtestStatus.lastResult = JSON.parse(data);
-    console.log("📊 Đã tải kết quả backtest gần nhất từ file.");
-  } catch (e) {
-    console.error("Lỗi khi tải kết quả backtest:", e);
-  }
-}
-*/
 
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR);
@@ -149,22 +133,14 @@ let botState = {
   isInitNotified: false, 
   apiError: "",
   lastReportKey: "",
-  latestSweepStatus: "None" as "None" | "Low" | "High",
-  latestSweepCandle: -1,
-  efficiencyHistory: [1.5, 1.5, 1.5] as number[],
-  efficiencyPending: [] as { entryPrice: number, type: "LONG" | "SHORT", candleCount: number }[],
-  marketRegime: {
-    totalScore: 0,
-    regime: "NEUTRAL",
-    riskPercent: 0.5
-  }
+  activeMT5Positions: [] as any[]
 };
 
 /**
  * Gửi thông báo qua Telegram.
  */
 async function sendTelegram(msg: string) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const token = process.env.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
   if (!token || !chatId) {
     console.warn("[TELEGRAM] Thiếu TOKEN hoặc CHAT_ID, bỏ qua gửi thông báo.");
@@ -189,17 +165,18 @@ async function sendTelegram(msg: string) {
 /**
  * Thực hiện lệnh qua MT5 Bridge
  */
-async function placeMT5Order(type: 'buy' | 'sell', sl: number, tp: number, signalInfo: string) {
+async function placeMT5Order(type: 'buy' | 'sell', sl: number, tp: number, signalInfo: string, lotSize?: number) {
     if (!MT5_ENABLED) return null;
     try {
-        console.log(`[MT5 BRIDGE] Sending ${type} order for ${PAIR}...`);
+        const orderLot = lotSize !== undefined && !isNaN(lotSize) ? lotSize : parseFloat(process.env.MT5_LOT_SIZE || "0.01");
+        console.log(`[MT5 BRIDGE] Sending ${type} order for ${PAIR} with ${orderLot} lot(s)...`);
         const res = await fetch(`${MT5_BRIDGE_URL}/order`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 symbol: PAIR,
                 type: type,
-                lot: parseFloat(process.env.MT5_LOT_SIZE || "0.01"),
+                lot: orderLot,
                 sl: sl,
                 tp: tp,
                 comment: signalInfo
@@ -304,96 +281,6 @@ async function fetchMT5Positions(symbol: string): Promise<any[]> {
   }
 }
 
-let exchange: ccxt.binance | null = null;
-/**
- * Khởi tạo hoặc lấy đối tượng kết nối với sàn Binance.
- */
-function getExchange() {
-  const apiKey = process.env.BINANCE_API_KEY;
-  const secret = process.env.BINANCE_API_SECRET;
-
-  if (!apiKey || !secret) {
-    if (!MT5_ENABLED && !botState.apiError) {
-      console.warn("[WARN] BINANCE_API_KEY hoặc BINANCE_API_SECRET chưa được cấu hình.");
-      botState.apiError = "Thiếu API Key/Secret. Vui lòng cấu hình trong Settings.";
-    }
-    return null;
-  }
-
-  if (!exchange) {
-    exchange = new ccxt.binance({ 
-      apiKey, 
-      secret, 
-      enableRateLimit: true, 
-      timeout: 30000, // Increase timeout to 30s
-      options: { defaultType: 'future', adjustForTimeDifference: true } 
-    });
-    
-    // Lazy init leverage and margin mode
-  }
-  return exchange;
-}
-
-// Separate function to initialize exchange settings
-async function initExchangeSettings(ex: ccxt.binance) {
-  if (botState.apiError) return;
-  try {
-    if (!ex.apiKey || !ex.secret) return;
-    await ex.setLeverage(10, PAIR);
-    await ex.setMarginMode('CROSSED', PAIR);
-    botState.apiError = null;
-  } catch (e: any) {
-    console.error("[EXCHANGE INIT ERROR]", e.message);
-    if (e.name === 'AuthenticationError' || e.message.includes("-2015")) {
-      botState.apiError = "Lỗi xác thực: API Key sai hoặc thiếu quyền Futures.";
-    }
-  }
-}
-
-function getAvgRange(bars: any[], period: number = 20) {
-  const slice = bars.slice(-period);
-  if (slice.length === 0) return 0;
-  return slice.reduce((sum, b) => sum + (b[2] - b[3]), 0) / slice.length;
-}
-
-function getSwingPoints(bars: any[], type: 'high' | 'low', lookback: number = 2) {
-  const swings: { price: number; index: number }[] = [];
-  for (let i = lookback; i < bars.length - lookback; i++) {
-    const current = type === 'high' ? bars[i][2] : bars[i][3];
-    let isSwing = true;
-    for (let j = 1; j <= lookback; j++) {
-      if (type === 'high') {
-        if (current <= bars[i - j][2] || current <= bars[i + j][2]) { isSwing = false; break; }
-      } else {
-        if (current >= bars[i - j][3] || current >= bars[i + j][3]) { isSwing = false; break; }
-      }
-    }
-    if (isSwing) swings.push({ price: current, index: i });
-  }
-  return swings;
-}
-
-function getLiquidityZones(bars: any[], type: 'high' | 'low') {
-  const swings = getSwingPoints(bars, type);
-  const zones: { price: number; touches: number; lastTouch: number; }[] = [];
-  const avgRange = getAvgRange(bars, 20);
-  const threshold = avgRange * 0.15;
-  for (const swing of swings) {
-    let found = false;
-    for (const zone of zones) {
-      if (Math.abs(zone.price - swing.price) <= threshold) {
-        zone.price = (zone.price * zone.touches + swing.price) / (zone.touches + 1);
-        zone.touches++;
-        zone.lastTouch = swing.index;
-        found = true;
-        break;
-      }
-    }
-    if (!found) zones.push({ price: swing.price, touches: 1, lastTouch: swing.index });
-  }
-  return zones.filter(z => z.touches >= 2).sort((a, b) => (b.touches * 10 + b.lastTouch) - (a.touches * 10 + a.lastTouch));
-}
-
 function calculateATR(bars: any[], period: number = 14) {
   if (bars.length < period + 1) return 0;
   let trs: number[] = [];
@@ -423,7 +310,7 @@ function calculateVWAP(bars: any[]) {
  * Sử dụng logic 2 nến: Nến quét (n-2) và nến xác nhận (n-1).
  */
 function detectWhaleSweep(bars: any[]) {
-  if (bars.length < 22) return { sweepLow: false, sweepHigh: false };
+  if (bars.length < 16) return { sweepLow: false, sweepHigh: false };
   
   const sweepCandle = bars[bars.length - 2]; // Nến quét thanh khoản
   const confirmCandle = bars[bars.length - 1]; // Nến xác nhận (Displacement)
@@ -431,8 +318,8 @@ function detectWhaleSweep(bars: any[]) {
   const [, sO, sH, sL, sC, sV] = sweepCandle;
   const [, cO, cH, cL, cC, cV] = confirmCandle;
 
-  // 1. LOGIC QUÉT THANH KHOẢN (Local Swing Sweep - 20 nến trước nến quét)
-  const prevBars = bars.slice(bars.length - 22, bars.length - 2);
+  // 1. LOGIC QUÉT THANH KHOẢN (Local Swing Sweep - 14 nến trước nến quét)
+  const prevBars = bars.slice(bars.length - 16, bars.length - 2);
   const localLow = Math.min(...prevBars.map(b => b[3]));
   const localHigh = Math.max(...prevBars.map(b => b[2]));
 
@@ -440,7 +327,7 @@ function detectWhaleSweep(bars: any[]) {
   const lowerWick = Math.min(sO, sC) - sL;
   const upperWick = sH - Math.max(sO, sC);
 
-  const volumes = bars.slice(-21, -1).map(b => b[5]);
+  const volumes = bars.slice(-15, -1).map(b => b[5]);
   const avgVol = volumes.reduce((a, b) => a + b, 0) / volumes.length;
 
   const sweepLow = sL <= localLow && sC >= localLow && (lowerWick / sweepSize >= 0.25);
@@ -449,15 +336,15 @@ function detectWhaleSweep(bars: any[]) {
   // 2. DISPLACEMENT & BODY SIZE
   const body = Math.abs(cC - cO);
   const totalSize = cH - cL || 1;
-  const bodySizes = bars.slice(-21, -1).map(b => Math.abs(b[4] - b[1]));
+  const bodySizes = bars.slice(-15, -1).map(b => Math.abs(b[4] - b[1]));
   const avgBody = bodySizes.reduce((a, b) => a + b, 0) / bodySizes.length;
   
-  const displacementBullish = body > avgBody * 0.8 && (cC - cL) / totalSize > 0.45 && cC > Math.max(sO, sC);
-  const displacementBearish = body > avgBody * 0.8 && (cH - cC) / totalSize > 0.45 && cC < Math.min(sO, sC);
+  const displacementBullish = body > avgBody * 0.6 && (cC - cL) / totalSize > 0.45 && cC > Math.max(sO, sC);
+  const displacementBearish = body > avgBody * 0.6 && (cH - cC) / totalSize > 0.45 && cC < Math.min(sO, sC);
 
   // 4. VOLUME CONFIRM (Standard)
   const isConstantVol = volumes.length > 0 && volumes.every(v => v === volumes[0]);
-  const volConfirm = isConstantVol ? true : cV > avgVol * 0.70;
+  const volConfirm = isConstantVol ? true : cV > avgVol * 0.9;
 
   return {
     sweepLow,
@@ -500,18 +387,6 @@ function calcADX(ohlcv: any[], period: number = 14) {
   return { adx: adxl[adxl.length - 1], pDI: pDIs[pDIs.length - 1], mDI: mDIs[mDIs.length - 1] };
 }
 
-function calcBB(ohlcv: any[], period: number = 20, stdDev: number = 2) {
-  if (ohlcv.length < period) return { mid: 0, top: 0, bot: 0, width: 0 };
-  const closes = ohlcv.slice(-period).map(b => b[4]);
-  const mid = closes.reduce((a, b) => a + b, 0) / period;
-  const variance = closes.reduce((a, b) => a + Math.pow(b - mid, 2), 0) / period;
-  const sd = Math.sqrt(variance);
-  const top = mid + sd * stdDev;
-  const bot = mid - sd * stdDev;
-  const width = (top - bot) / mid;
-  return { mid, top, bot, width };
-}
-
 function calculateEMA(bars: any[], period: number = 20): number {
   if (bars.length === 0) return 0;
   if (bars.length < period) return bars[bars.length - 1][4];
@@ -547,70 +422,22 @@ function isWithinTradingSessions(timestamp?: number): boolean {
   }
 }
 
-// --- WS ---
-function startWS() {
-  const streams = `${SYMBOL_ID}@aggtrade/${SYMBOL_ID}@trade/${SYMBOL_ID}@miniticker`;
-  const ws = new WebSocket(`wss://fstream.binance.com/stream?streams=${streams}`);
-  ws.on('open', () => { botState.isWsConnected = true; });
-  ws.on('message', (data) => {
-    try {
-      const p = JSON.parse(data.toString());
-      const d = p.data; if (!d) return;
-      if (d.p) botState.lastPrice = parseFloat(d.p);
-      else if (d.c) botState.lastPrice = parseFloat(d.c);
-    } catch (e) {}
-  });
-  ws.on('error', () => { botState.isWsConnected = false; });
-  ws.on('close', () => { botState.isWsConnected = false; setTimeout(startWS, 5000); });
-}
-
-async function fetchOHLCVWithRetry(ex: ccxt.Exchange, symbol: string, timeframe: string, since: number | undefined, limit: number, retries: number = 3) {
-  for (let i = 0; i < retries; i++) {
-    try {
-      return await ex.fetchOHLCV(symbol, timeframe, since, limit);
-    } catch (e: any) {
-      if (i === retries - 1) throw e;
-      const delay = Math.pow(2, i) * 1000;
-      console.warn(`[CCXT] Fetch failed (attempt ${i + 1}/${retries}). Retrying in ${delay}ms... Error: ${e.message}`);
-      await new Promise(resolve => setTimeout(resolve, delay));
-    }
-  }
-  return [];
-}
-
 let waitingMsgLogged = false;
 /**
  * Vòng lặp chính của Bot: Kiểm tra nến, tín hiệu và thực hiện giao dịch.
  */
 async function traderLoop() {
-  const ex = MT5_ENABLED ? null : getExchange(); 
-  if (!MT5_ENABLED && !ex) { 
-    if (!waitingMsgLogged) {
-      console.log("[INFO] Đang chờ cấu hình API Key để bắt đầu giao dịch...");
-      waitingMsgLogged = true;
-    }
-    setTimeout(traderLoop, 15000); 
-    return; 
-  }
-  waitingMsgLogged = false;
-
   try {
     // 0. LẤY DỮ LIỆU NẾN TRƯỚC HẾT
     let bars: any[] = [];
     let bars5m: any[] = [];
     let bars1d: any[] = [];
     try {
-      if (MT5_ENABLED) {
-        bars = await fetchMT5OHLCV(PAIR, "1m", 1000);
-        bars5m = await fetchMT5OHLCV(PAIR, "5m", 100);
-        bars1d = await fetchMT5OHLCV(PAIR, "1d", 100);
-      } else if (ex) {
-        bars = await fetchOHLCVWithRetry(ex, PAIR, TIMEFRAME, undefined, 1000);
-        bars5m = await fetchOHLCVWithRetry(ex, PAIR, "5m", undefined, 100);
-        bars1d = await fetchOHLCVWithRetry(ex, PAIR, "1d", undefined, 100);
-      }
+      bars = await fetchMT5OHLCV(PAIR, "1m", 1000);
+      bars5m = await fetchMT5OHLCV(PAIR, "5m", 100);
+      bars1d = await fetchMT5OHLCV(PAIR, "1d", 100);
     } catch (ohlcvErr: any) {
-      console.error("❌ Lỗi fetchOHLCV (sau khi retry):", ohlcvErr.message);
+      console.error("❌ Lỗi fetchMT5OHLCV (sau khi retry):", ohlcvErr.message);
       setTimeout(traderLoop, 10000);
       return;
     }
@@ -626,23 +453,7 @@ async function traderLoop() {
     // 1. KIỂM TRA SỐ DƯ VÀ QUẢN LÝ RỦI RO NGÀY
     let curr = 0;
     if (IS_LIVE_TRADING_ENABLED) {
-      if (MT5_ENABLED) {
-        curr = await fetchMT5Balance();
-      } else if (ex) {
-        let bal;
-        try {
-          bal = await ex.fetchBalance();
-        } catch (authErr: any) {
-          if (authErr.message.includes("-2015") || authErr.name === "AuthenticationError") {
-            console.error("❌ LỖI BINANCE: API Key không hợp lệ hoặc chưa bật quyền 'Enable Futures'!");
-            await sendTelegram("⚠️ Lỗi API Binance: Vui lòng kiểm tra lại Key và quyền 'Enable Futures' trên sàn.");
-            setTimeout(traderLoop, 60000); 
-            return;
-          }
-          throw authErr;
-        }
-        curr = bal.USDT ? (bal.USDT as any).total : 0;
-      }
+      curr = await fetchMT5Balance();
     } else {
       curr = paperBalance;
     }
@@ -652,7 +463,7 @@ async function traderLoop() {
     if (botState.lastResetDate !== new Date().toISOString().split('T')[0]) {
       botState.dailyStartingBalance = curr; botState.lastResetDate = new Date().toISOString().split('T')[0];
     }
-    // Dừng nếu lỗ quá 3% trong ngày
+    // Dừng nếu lỗ quá 6% trong ngày
     if (botState.dailyStartingBalance > 0 && (curr - botState.dailyStartingBalance) / botState.dailyStartingBalance <= -MAX_DAILY_LOSS) {
       console.log("[WARNING] Đã chạm giới hạn lỗ tối đa trong ngày. Tạm dừng.");
       setTimeout(traderLoop, 15 * 60000); return;
@@ -661,20 +472,45 @@ async function traderLoop() {
     // 2. KIỂM TRA TRẠNG THÁI VỊ THẾ, LỆNH CHỜ VÀ COOLDOWN
     if (IS_LIVE_TRADING_ENABLED) {
       try {
-        if (MT5_ENABLED) {
-          const pos = await fetchMT5Positions(PAIR);
-          botState.inPosition = pos.length > 0;
-        } else if (ex) {
-          const pos = await ex.fetchPositions([PAIR]);
-          botState.inPosition = pos.some(p => Math.abs(parseFloat(p.info.size || (p as any).contracts || 0)) > 0);
+        const pos = await fetchMT5Positions(PAIR);
+        botState.inPosition = pos.length > 0;
+        
+        // Notify if a position was closed
+        for (const oldPos of botState.activeMT5Positions) {
+           const stillOpen = pos.find((p: any) => p.ticket === oldPos.ticket);
+           if (!stillOpen) {
+              const typeStr = oldPos.type === 0 ? "LONG (BUY)" : oldPos.type === 1 ? "SHORT (SELL)" : (oldPos.type || "UNKNOWN");
+              const openP = oldPos.price_open || 0;
+              const openStr = openP ? openP.toFixed(2) : "N/A";
+              
+              const exitPrice = currentPrice;
+              let isWin = false;
+              if (oldPos.type === 0 && exitPrice >= openP) isWin = true;
+              if (oldPos.type === 1 && exitPrice <= openP) isWin = true;
+              
+              const pnlVal = oldPos.type === 0 ? (exitPrice - openP) : (openP - exitPrice);
+              const pnlDollar = pnlVal * (oldPos.volume || 0.01) * 100; // rough estimation for XAUUSD
+
+              const tradeRecord = {
+                 time: new Date().toISOString(),
+                 type: typeStr.split(' ')[0], 
+                 entry: openP,
+                 exit: exitPrice,
+                 pnl: pnlDollar,
+                 status: isWin ? "WIN" : "LOSS",
+                 strategy: "WHALE SWEEP (LIVE)"
+              };
+              botState.trades.unshift(tradeRecord);
+              saveTrade(tradeRecord);
+
+              sendTelegram(`🔔 **THÔNG BÁO MT5**\nLệnh ${typeStr} (Ticket: ${oldPos.ticket || 'N/A'}) đã đóng!\n• Cặp: ${PAIR}\n• Giá vào: ${openStr}\n• Giá thoát (ước tính): ${exitPrice.toFixed(2)}\n• PnL (ước tính): ${pnlDollar.toFixed(2)}$\n• Bạn hãy kiểm tra lại ứng dụng MT5 để xem kết quả thật.`).catch(console.error);
+           }
         }
-      } catch (authErr: any) {
-        if (authErr.message.includes("-2015") || authErr.name === "AuthenticationError") {
-          console.error("❌ LỖI LIVE POSITIONS: API Key không hợp lệ hoặc thiếu quyền!");
-          botState.inPosition = false; // Mặc định false nếu không check được
-        } else {
-          throw authErr;
-        }
+        botState.activeMT5Positions = pos;
+
+      } catch (err: any) {
+        console.error("❌ LỖI LIVE POSITIONS MT5: ", err);
+        botState.inPosition = false; 
       }
     } else {
       // PAPER POSITION TRACKING
@@ -704,6 +540,18 @@ async function traderLoop() {
           
           console.log(`[TRADE] ${status} | ${paperPosition.strategy} | PnL: ${pnlActualR.toFixed(1)}R | Balance: $${paperBalance.toFixed(2)}`);
           
+          const tradeRecord = {
+            time: new Date().toISOString(),
+            type: paperPosition.type,
+            entry: paperPosition.entry,
+            exit: exitPrice,
+            pnl: pnlDollar,
+            status: status,
+            strategy: paperPosition.strategy
+          };
+          botState.trades.unshift(tradeRecord);
+          saveTrade(tradeRecord);
+
           await sendTelegram(`✅ [PAPER CLOSED] ${status === "WIN" ? "CHỐT LỜI" : "CẮT LỖ"}\n` +
             `💰 PnL: ${pnlDollar.toFixed(2)}$ (${pnlActualR.toFixed(2)}R)\n` +
             `🎯 Entry: ${paperPosition.entry.toFixed(2)} | Exit: ${exitPrice.toFixed(2)}\n` +
@@ -722,152 +570,6 @@ async function traderLoop() {
       return; 
     }
 
-    // 3.1 COMPUTE ROLLING SWEEP WINRATE OVER HISTORY
-    let sweepHistoryQueue: number[] = [];
-    let pendingSweeps: { type: "LONG" | "SHORT", entryPrice: number, sl: number, tp: number, triggerIndex: number }[] = [];
-
-    for (let idx = 100; idx < bars.length; idx++) {
-      const [, , barH, barL, barC] = bars[idx];
-      
-      // Resolve pending sweeps
-      for (let sIdx = pendingSweeps.length - 1; sIdx >= 0; sIdx--) {
-        const ps = pendingSweeps[sIdx];
-        let resolved = false;
-        let won = false;
-        
-        if (ps.type === "LONG") {
-          if (barL <= ps.sl && barH >= ps.tp) {
-            resolved = true;
-            won = false; // conservative loss
-          } else if (barL <= ps.sl) {
-            resolved = true;
-            won = false;
-          } else if (barH >= ps.tp) {
-            resolved = true;
-            won = true;
-          }
-        } else { // SHORT
-          if (barH >= ps.sl && barL <= ps.tp) {
-            resolved = true;
-            won = false; // conservative loss
-          } else if (barH >= ps.sl) {
-            resolved = true;
-            won = false;
-          } else if (barL <= ps.tp) {
-            resolved = true;
-            won = true;
-          }
-        }
-        
-        // Expired after 150 candles
-        if (!resolved && (idx - ps.triggerIndex >= 150)) {
-          resolved = true;
-          won = ps.type === "LONG" ? (barC >= ps.entryPrice) : (barC <= ps.entryPrice);
-        }
-        
-        if (resolved) {
-          sweepHistoryQueue.push(won ? 1 : 0);
-          if (sweepHistoryQueue.length > 10) {
-            sweepHistoryQueue.shift();
-          }
-          pendingSweeps.splice(sIdx, 1);
-        }
-      }
-
-      // If it's not the ticking candle (idx < bars.length - 1), we can detect new sweeps triggering
-      if (idx < bars.length - 1) {
-        const calcWindow = bars.slice(Math.max(0, idx - 100), idx + 1);
-        const sweep = detectWhaleSweep(calcWindow);
-        
-        let atrVal = 0;
-        if (calcWindow.length >= 15) {
-          let sum = 0;
-          for (let j = calcWindow.length - 14; j < calcWindow.length; j++) {
-            const c_curr = calcWindow[j];
-            const c_prev = calcWindow[j - 1];
-            const tr = Math.max(
-              c_curr[2] - c_curr[3],
-              Math.abs(c_curr[2] - c_prev[4]),
-              Math.abs(c_curr[3] - c_prev[4])
-            );
-            sum += tr;
-          }
-          atrVal = sum / 14;
-        }
-
-        const isInSession = isWithinTradingSessions(bars[idx][0]);
-        const isNewSweepLong = sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isInSession;
-        const isNewSweepShort = sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isInSession;
-
-        const currentPriceVal = barC;
-        if (isNewSweepLong) {
-          const slRaw = sweep.low - atrVal * 0.8;
-          const minRisk = atrVal * 1.5;
-          const slPrice = Math.min(slRaw, currentPriceVal - minRisk);
-          const riskAmt = Math.max(0.0001, Math.abs(currentPriceVal - slPrice));
-          const tpPrice = currentPriceVal + riskAmt * RR;
-          if (!pendingSweeps.some(ps => ps.triggerIndex === idx && ps.type === "LONG")) {
-            pendingSweeps.push({
-              type: "LONG",
-              entryPrice: currentPriceVal,
-              sl: slPrice,
-              tp: tpPrice,
-              triggerIndex: idx
-            });
-          }
-        } else if (isNewSweepShort) {
-          const slRaw = sweep.high + atrVal * 0.8;
-          const minRisk = atrVal * 1.5;
-          const slPrice = Math.max(slRaw, currentPriceVal + minRisk);
-          const riskAmt = Math.max(0.0001, Math.abs(currentPriceVal - slPrice));
-          const tpPrice = currentPriceVal - riskAmt * RR;
-          if (!pendingSweeps.some(ps => ps.triggerIndex === idx && ps.type === "SHORT")) {
-            pendingSweeps.push({
-              type: "SHORT",
-              entryPrice: currentPriceVal,
-              sl: slPrice,
-              tp: tpPrice,
-              triggerIndex: idx
-            });
-          }
-        }
-      }
-    }
-
-    const rollingWinRate = sweepHistoryQueue.length > 0
-      ? (sweepHistoryQueue.reduce((a, b) => a + b, 0) / sweepHistoryQueue.length)
-      : 0.50;
-
-    const dynamicRiskMult = 1.0; // Tải cứng 1% rủi ro, tắt Dynamic Risk theo yêu cầu
-
-    // Tái update dynamic regime chỉ mang vai trò thống kê theo dõi, CHƯA thay đổi trực tiếp đến risk/choppy block
-    // dynamic lấy 10 tín hiệu sweep gần nhất để xem bao nhiêu win và loss sau đó định hình cho lệnh tiếp theo
-    let finalRegimeLabel: "TREND_EXPANSION" | "NEUTRAL" | "CHOPPY" = "NEUTRAL";
-    if (sweepHistoryQueue.length >= 4) {
-      if (rollingWinRate <= 0.3) {
-        finalRegimeLabel = "CHOPPY";
-      } else if (rollingWinRate >= 0.7) {
-        finalRegimeLabel = "TREND_EXPANSION";
-      } else {
-        finalRegimeLabel = "NEUTRAL";
-      }
-    } else {
-      finalRegimeLabel = "NEUTRAL";
-    }
-
-    const isMarketTooChoppy = false; // Luôn cho phép trade, không block
-    const regimeLabel = finalRegimeLabel;
-
-    const regimeData = {
-      totalScore: Number((rollingWinRate * 100).toFixed(1)),
-      regime: finalRegimeLabel,
-      riskPercent: dynamicRiskMult
-    };
-    botState.marketRegime = regimeData;
-
-    let efficiencyLabel = "NEUTRAL";
-    if (regimeData.regime === "CHOPPY") efficiencyLabel = "CHOPPY";
-    else if (regimeData.regime === "TREND_EXPANSION") efficiencyLabel = "EXPANSION";
 
     // 4. TÍNH TOÁN CÁC CHỈ BÁO KỸ THUẬT dựa trên nến đã đóng hoàn toàn (Khớp 100% với Mô hình Backtest)
     const closedBars = bars.slice(0, -1);
@@ -913,7 +615,7 @@ async function traderLoop() {
     // THÔNG BÁO KHI SẴN SÀNG
     if (!botState.isInitNotified) {
       botState.isInitNotified = true;
-      console.log(`🤖 WHALE BOT SẴN SÀNG! Regime: ${regimeData.regime} (Tỷ lệ thắng lăn Sweep: ${regimeData.totalScore}%)`);
+      console.log(`🤖 WHALE BOT SẴN SÀNG!`);
     }
 
     const sweep = detectWhaleSweep(closedBars);
@@ -923,8 +625,8 @@ async function traderLoop() {
     // ========================================================
     // 5. ĐIỀU KIỆN VÀO LỆNH (WHALE SWEEP ONLY)
     // ========================================================
-    const isOverExtendedLong = distFromVWMA > (atrM1 * 3.0);
-    const isOverExtendedShort = distFromVWMA > (atrM1 * 3.0);
+    const isOverExtendedLong = distFromVWMA > (atrM1 * 1.2);
+    const isOverExtendedShort = distFromVWMA > (atrM1 * 1.2);
 
     const slDistanceLong = Math.abs(currentPrice - sweep.low);
     const slDistanceShort = Math.abs(sweep.high - currentPrice);
@@ -932,20 +634,12 @@ async function traderLoop() {
     const hasBadEntryPriceShort = slDistanceShort > (atrM1 * 4.0);
 
     // LONG ENTRY
-    if (
-      !isMarketTooChoppy && (
-        (ENABLE_WHALE_SWEEP && !isOverExtendedLong && !hasBadEntryPriceLong && adxM1.adx >= ADX_THRESHOLD && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isInSession && (sweep.confirmClose > sweep.sweepOpen || sweep.confirmClose > sweep.high) && bullishM1)
-      )
-    ) {
+    if ( !isOverExtendedLong && !hasBadEntryPriceLong && adxM1.adx >= ADX_THRESHOLD && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isInSession && (sweep.confirmClose > sweep.sweepOpen || sweep.confirmClose > sweep.high) && bullishM1 ) {
       sig = "LONG";
     }
 
     // SHORT ENTRY
-    if (
-      !isMarketTooChoppy && (
-        (ENABLE_WHALE_SWEEP && !isOverExtendedShort && !hasBadEntryPriceShort && adxM1.adx >= ADX_THRESHOLD && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isInSession && (sweep.confirmClose < sweep.sweepOpen || sweep.confirmClose < sweep.low) && bearishM1)
-      )
-    ) {
+    if ( !isOverExtendedShort && !hasBadEntryPriceShort && adxM1.adx >= ADX_THRESHOLD && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isInSession && (sweep.confirmClose < sweep.sweepOpen || sweep.confirmClose < sweep.low) && bearishM1 ) {
       sig = "SHORT";
     }
 
@@ -955,7 +649,7 @@ async function traderLoop() {
     // 7. XỬ LÝ LỆNH (MARKET ENTRY)
     if (sig) {
       const e = currentPrice; 
-      const slRaw = sig === "LONG" ? (sweep.low - atrM1 * 0.8) : (sweep.high + atrM1 * 0.8);
+      const slRaw = sig === "LONG" ? (sweep.low - atrM1 * 0.2) : (sweep.high + atrM1 * 0.2);
       const minRisk = atrM1 * 1.5;
       let sl = 0;
       if (sig === "LONG") {
@@ -968,9 +662,9 @@ async function traderLoop() {
       const tp = sig === "LONG" ? e + risk * RR : e - risk * RR;
 
       const baseRiskPercent = 0.01;
-      const currentRiskPercent = baseRiskPercent * dynamicRiskMult;
+      const currentRiskPercent = baseRiskPercent;
 
-      console.log(`\n[SIGNAL] ${sig} | ${strategyLabel} | Risk: ${(currentRiskPercent * 100).toFixed(1)}% (${efficiencyLabel}) | Price: $${e.toFixed(2)} | SL: $${sl.toFixed(2)} | TP: $${tp.toFixed(2)}`);
+      console.log(`\n[SIGNAL] ${sig} | ${strategyLabel} | Risk: ${(currentRiskPercent * 100).toFixed(1)}% | Price: $${e.toFixed(2)} | SL: $${sl.toFixed(2)} | TP: $${tp.toFixed(2)}`);
       
       if (!IS_LIVE_TRADING_ENABLED) { 
         const riskAmount = paperBalance * currentRiskPercent;
@@ -1005,71 +699,41 @@ async function traderLoop() {
           `5. Sweep M1: ✅ Confirmed`
         ].join('\n');
 
-        const rollingWRPercent = (rollingWinRate * 100).toFixed(1);
-        const sweepQueueLength = sweepHistoryQueue.length;
-
         await sendTelegram(`🚀 [SIGNAL] **${sig}** Market Entry!\n\n` +
           `📊 **Thông số lệnh:**\n` +
           `🎯 Entry: ${e.toFixed(2)}\n` +
           `🛑 SL: ${sl.toFixed(2)} | 💎 TP: ${tp.toFixed(2)}\n\n` +
-          `📈 **Hiệu suất thực tế:**\n` +
-          `• Tỷ lệ thắng lăn (Rolling WR): **${rollingWRPercent}%** (Dựa trên ${sweepQueueLength} vị thế gần nhất)\n` +
-          `• Phân loại thị trường: **${regimeLabel}** (Risk mult: ${dynamicRiskMult}x)\n\n` +
           `📝 **Điều kiện:**\n${conditions}\n\n` +
           `⏰ Giờ VN: ${vnTime}`); 
+
 
         // Gửi tới MT5 VPS (nếu enabled)
         await sendToMT5(sig, e, sl, tp, PAIR);
       } else {
         // Chế độ Trade thật
-        if (MT5_ENABLED) {
-          try {
-            const res = await placeMT5Order(sig === 'LONG' ? 'buy' : 'sell', sl, tp, strategyLabel);
-            if (res && !res.error && (res.retcode === 10009 || res.retcode === 10008)) {
-               const rollingWRPercent = (rollingWinRate * 100).toFixed(1);
-               const sweepQueueLength = sweepHistoryQueue.length;
-               sendTelegram(`🔥 **MT5 LIVE TRADE EXECUTED**\n• Cặp: ${PAIR}\n• Lệnh: ${sig}\n• Ticket: ${res.order}\n• Entry: ${e.toFixed(2)}\n• SL: ${sl.toFixed(2)} | TP: ${tp.toFixed(2)}\n• Tỷ lệ thắng lăn: **${rollingWRPercent}%** (${sweepQueueLength} vị thế Sweep gần nhất)\n• Regime: **${regimeLabel}**`);
-            } else {
-               sendTelegram(`⚠️ **MT5 ORDER FAILED**\nLỗi: ${res?.error || res?.retcode}`);
-            }
-          } catch (err) {
-            console.error("MT5 Execution Error:", err);
+        try {
+          // Tính toán lot size tự động theo Risk (USD) nếu có cấu hình
+          let lotSize: number | undefined = undefined;
+          const riskUsdStr = process.env.MT5_RISK_USD;
+          if (riskUsdStr) {
+             const riskUsd = parseFloat(riskUsdStr);
+             const contractSize = parseFloat(process.env.MT5_CONTRACT_SIZE || "100");
+             const slDistancePrices = Math.abs(e - sl);
+             if (!isNaN(riskUsd) && riskUsd > 0 && contractSize > 0 && slDistancePrices > 0) {
+                 const rawLot = riskUsd / (slDistancePrices * contractSize);
+                 // Làm tròn đến 2 chữ số thập phân (bước lot 0.01 của MT5)
+                 lotSize = Math.max(0.01, Math.round(rawLot * 100) / 100);
+             }
           }
-        } else {
-          try {
-            const riskAmount = botState.balance * currentRiskPercent;
-            const size = riskAmount / Math.abs(e - sl);
-            const amt = ex.amountToPrecision(PAIR, Math.max(size, 0.001));
-            await ex.createMarketOrder(PAIR, sig === 'LONG' ? 'buy' : 'sell', parseFloat(amt));
-            botState.lastTradeTime = Date.now();
-            
-            const vnTime = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
-            const condCloseOk = sig === 'LONG' 
-              ? (sweep.confirmClose > sweep.sweepOpen || sweep.confirmClose > sweep.high)
-              : (sweep.confirmClose < sweep.sweepOpen || sweep.confirmClose < sweep.low);
 
-            const conditions = [
-              `1. Khoảng cách VWMA: ${sig === 'LONG' ? (!isOverExtendedLong ? '✅ Ok' : '❌ Quá xa') : (!isOverExtendedShort ? '✅ Ok' : '❌ Quá xa')} (${distFromVWMA.toFixed(2)})`,
-              `2. ADX M1 (>=${ADX_THRESHOLD}): ${adxM1.adx >= ADX_THRESHOLD ? '✅ Ok' : '❌ Thấp'} (${adxM1.adx.toFixed(1)})`,
-              `3. Xác nhận đóng nến (Close vs Open/Wick nến quét): ${condCloseOk ? '✅ Ok' : '❌ Trượt'}`,
-              `4. Bộ lọc Xu hướng M1: ${sig === 'LONG' ? (bullishM1 ? '✅ Hợp lệ (Close > EMA20 > VWMA20)' : '❌ Không đồng thuận') : (bearishM1 ? '✅ Hợp lệ (Close < EMA20 < VWMA20)' : '❌ Không đồng thuận')}`,
-              `5. Sweep M1: ✅ Confirmed`
-            ].join('\n');
-
-            const rollingWRPercent = (rollingWinRate * 100).toFixed(1);
-            const sweepQueueLength = sweepHistoryQueue.length;
-
-            await sendTelegram(`⚡ [SIGNAL] **${sig}** Market Order (Binance Live)!\n\n` +
-              `📊 Entry: ${e.toFixed(2)} (Pure 1M Strategy)\n` +
-              `📈 **Hiệu suất thực tế:**\n` +
-              `• Tỷ lệ thắng lăn (Rolling WR): **${rollingWRPercent}%** (Dựa trên ${sweepQueueLength} vị thế gần nhất)\n` +
-              `• Phân loại thị trường: **${regimeLabel}** (Risk mult: ${dynamicRiskMult}x)\n\n` +
-              `📝 **Điều kiện vào lệnh:**\n${conditions}\n` +
-              `⏰ Giờ VN: ${vnTime}`);
-          } catch (err: any) {
-            console.error("Trade Error:", err.message);
-            sendTelegram(`❌ **TRADING ERROR:** ${err.message}`);
+          const res = await placeMT5Order(sig === 'LONG' ? 'buy' : 'sell', sl, tp, strategyLabel, lotSize);
+          if (res && (res.status === "success" || res.order || res.ticket || res.retcode === 10009 || res.retcode === 10008)) {
+             sendTelegram(`🔥 **MT5 LIVE TRADE EXECUTED**\n• Cặp: ${PAIR}\n• Lệnh: ${sig}\n• Lot: ${lotSize !== undefined ? lotSize : (process.env.MT5_LOT_SIZE || "0.01")}\n• Ticket: ${res.order || res.ticket || 'N/A'}\n• Entry: ${e.toFixed(2)}\n• SL: ${sl.toFixed(2)} | TP: ${tp.toFixed(2)}`);
+          } else {
+             sendTelegram(`⚠️ **MT5 ORDER FAILED**\nChi tiết MT5 Bridge: ${JSON.stringify(res)}`);
           }
+        } catch (err) {
+          console.error("MT5 Execution Error:", err);
         }
       }
     }
@@ -1085,12 +749,12 @@ async function startServer() {
   app.get("/api/health", (req, res) => res.json({ status: "ok" }));
   app.post("/api/backtest/run", async (req, res) => {
     if (backtestStatus.isRunning) return res.status(400).json({ error: "Running" });
-    const { startDate, endDate, rr, timeframe, enableSessionFilter, adxThreshold, enableWhaleSweep } = req.body;
-    console.log(`[SERVER] Received backtest request: sessionFilter=${enableSessionFilter}, adxThreshold=${adxThreshold}, enableWhaleSweep=${enableWhaleSweep}`);
+    const { startDate, endDate, rr, timeframe, enableSessionFilter, adxThreshold } = req.body;
+    console.log(`[SERVER] Received backtest request: sessionFilter=${enableSessionFilter}, adxThreshold=${adxThreshold}`);
     backtestStatus.isRunning = true;
     runBacktest(startDate, endDate, rr, timeframe, enableSessionFilter, 20, p => { 
       backtestStatus.progress = p; 
-    }, adxThreshold !== undefined ? adxThreshold : 10, enableWhaleSweep !== undefined ? enableWhaleSweep : true).then(async (r: any) => { 
+    }, adxThreshold !== undefined ? adxThreshold : 10).then(async (r: any) => { 
       backtestStatus.isRunning = false; 
       
       // Gửi báo cáo Telegram khi hoàn tất backtest
@@ -1113,16 +777,6 @@ async function startServer() {
           const whalePnLR = r.totalProfitR;
           const whaleWR = whaleTrades > 0 ? (whaleWins / whaleTrades * 100).toFixed(1) : "0.0";
 
-          // 2. Chi tiết theo Efficiency
-          const getEffStatsStr = (key: string) => {
-            const stats = r.efficiencyStats?.[key] || { trades: 0, wins: 0, pnlR: 0 };
-            const wr = stats.trades > 0 ? (stats.wins / stats.trades * 100).toFixed(1) : "0.0";
-            return `• ${key}: ${stats.trades} lệnh | WR: ${wr}% | ${stats.pnlR.toFixed(1)}R`;
-          };
-          const choppyStr = getEffStatsStr("CHOPPY");
-          const neutralStr = getEffStatsStr("NEUTRAL");
-          const expansionStr = getEffStatsStr("EXPANSION");
-
           // Gửi đúng 1 tin nhắn duy nhất chứa toàn bộ thông tin
           const reportMsg = [
             `📊 **KẾT QUẢ BACKTEST WHALE SWEEP ONLY**`,
@@ -1132,12 +786,7 @@ async function startServer() {
             `⚡ Tổng lệnh: ${whaleTrades} | Winrate: ${whaleWR}%`,
             ``,
             `Thống kê Whale Sweep theo tháng:`,
-            whaleMonthlyReport || `• Không có dữ liệu tháng`,
-            ``,
-            `Chi tiết theo Efficiency (Dynamic Risk):`,
-            choppyStr,
-            neutralStr,
-            expansionStr
+            whaleMonthlyReport || `• Không có dữ liệu tháng`
           ].join('\n');
 
           await sendTelegram(reportMsg);
@@ -1182,7 +831,6 @@ async function startServer() {
     }));
   });
   app.get("/api/trading/status", (req, res) => {
-    const avgEfficiency = botState.efficiencyHistory.reduce((a, b) => a + b, 0) / botState.efficiencyHistory.length;
     res.json({
       symbol: PAIR, last_price: botState.lastPrice, in_position: botState.inPosition,
       signals: botState.signals.slice(0, 10), balance: botState.balance, ai_reasoning: botState.aiReasoning,
@@ -1191,21 +839,13 @@ async function startServer() {
       ema50_5m: botState.ema50_5m.toFixed(2),
       shadow_ema_5m: botState.shadowEma5mCheck, 
       enable_session_filter: ENABLE_SESSION_FILTER,
-      enable_whale_sweep: ENABLE_WHALE_SWEEP,
       vwma_period: VWMA_PERIOD,
-      is_ws_connected: botState.isWsConnected,
-      market_regime: botState.marketRegime,
-      avg_efficiency: avgEfficiency.toFixed(2),
-      efficiency_history: botState.efficiencyHistory
+      is_ws_connected: botState.isWsConnected
     });
   });
   app.post("/api/trading/toggle-session", (req, res) => {
     ENABLE_SESSION_FILTER = !ENABLE_SESSION_FILTER;
     res.json({ success: true, enabled: ENABLE_SESSION_FILTER });
-  });
-  app.post("/api/trading/toggle-whale", (req, res) => {
-    ENABLE_WHALE_SWEEP = !ENABLE_WHALE_SWEEP;
-    res.json({ success: true, enabled: ENABLE_WHALE_SWEEP });
   });
   app.post("/api/trading/set-adx", (req, res) => {
     const { threshold } = req.body;
@@ -1231,8 +871,10 @@ async function startServer() {
     console.log(`--- SYSTEM REBOOTED 2026 ---`);
     
     console.log("[INIT] Hệ thống đã sẵn sàng.");
+    
+    // Gửi thông báo khi server khởi động xong
+    sendTelegram("🚀 Hệ thống XAUUSD Bot đã khởi động thành công và đang hoạt động!").catch(e => console.error("Lỗi gửi tele khởi động:", e));
 
-    startWS(); 
     traderLoop(); 
   });
 }
