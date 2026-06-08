@@ -40,6 +40,10 @@ let paperPosition: {
   size: number;
   strategy: string;
   startTime: number;
+  reachedTp1?: boolean;
+  tp1?: number;
+  tp2?: number;
+  risk?: number;
   isBE?: boolean; // Đã dời về hòa vốn chưa
 } | null = null;
 
@@ -545,45 +549,154 @@ async function traderLoop() {
       // PAPER POSITION TRACKING
       if (paperPosition) {
         let closed = false;
-        let status: "WIN" | "LOSS" = "WIN";
+        let status: "WIN" | "LOSS" = "LOSS";
+        let profitR = 0;
+        let exitPrice = paperPosition.entry;
 
-        // Tỷ lệ RR ban đầu
-        const initialRiskDist = Math.abs(paperPosition.tp - paperPosition.entry) / RR;
+        const { type, entry, sl, reachedTp1, tp1, tp2, risk, size, strategy } = paperPosition;
 
-        if (paperPosition.type === "LONG") {
-          if (cL <= paperPosition.sl) { closed = true; status = "LOSS"; }
-          else if (cH >= paperPosition.tp) { closed = true; status = "WIN"; }
-        } else {
-          if (cH >= paperPosition.sl) { closed = true; status = "LOSS"; }
-          else if (cL <= paperPosition.tp) { closed = true; status = "WIN"; }
+        if (type === "LONG") {
+          if (!reachedTp1) {
+            const hitSl = cL <= sl;
+            const hitTp1 = cH >= tp1;
+            
+            if (hitSl && hitTp1) {
+              closed = true;
+              status = "LOSS";
+              profitR = -1;
+              exitPrice = sl;
+            } else if (hitSl) {
+              closed = true;
+              status = "LOSS";
+              profitR = -1;
+              exitPrice = sl;
+            } else if (hitTp1) {
+              paperPosition.reachedTp1 = true;
+              sendTelegram(`🔔 **THÔNG BÁO PAPER**\nLệnh LONG đã đạt TP1 tuyệt đối (+1.2R) tại giá $${tp1.toFixed(2)}!\n• Chốt 50% lợi nhuận.\n• Dời SL còn lại về giá Entry (Hòa vốn) $${entry.toFixed(2)}.`).catch(console.error);
+
+              const hitBe = cL <= entry;
+              const hitTp2 = cH >= tp2;
+              if (hitBe && hitTp2) {
+                closed = true;
+                status = "WIN";
+                profitR = 0.5 * 1.2;
+                exitPrice = entry;
+              } else if (hitBe) {
+                closed = true;
+                status = "WIN";
+                profitR = 0.5 * 1.2;
+                exitPrice = entry;
+              } else if (hitTp2) {
+                closed = true;
+                status = "WIN";
+                profitR = 0.5 * 1.2 + 0.5 * RR;
+                exitPrice = tp2;
+              }
+            }
+          } else {
+            // Đã đạt TP1 từ trước, SL dời về BE
+            const hitBe = cL <= entry;
+            const hitTp2 = cH >= tp2;
+            if (hitBe && hitTp2) {
+              closed = true;
+              status = "WIN";
+              profitR = 0.5 * 1.2;
+              exitPrice = entry;
+            } else if (hitBe) {
+              closed = true;
+              status = "WIN";
+              profitR = 0.5 * 1.2;
+              exitPrice = entry;
+            } else if (hitTp2) {
+              closed = true;
+              status = "WIN";
+              profitR = 0.5 * 1.2 + 0.5 * RR;
+              exitPrice = tp2;
+            }
+          }
+        } else { // SHORT
+          if (!reachedTp1) {
+            const hitSl = cH >= sl;
+            const hitTp1 = cL <= tp1;
+            
+            if (hitSl && hitTp1) {
+              closed = true;
+              status = "LOSS";
+              profitR = -1;
+              exitPrice = sl;
+            } else if (hitSl) {
+              closed = true;
+              status = "LOSS";
+              profitR = -1;
+              exitPrice = sl;
+            } else if (hitTp1) {
+              paperPosition.reachedTp1 = true;
+              sendTelegram(`🔔 **THÔNG BÁO PAPER**\nLệnh SHORT đã đạt TP1 tuyệt đối (+1.2R) tại giá $${tp1.toFixed(2)}!\n• Chốt 50% lợi nhuận.\n• Dời SL còn lại về giá Entry (Hòa vốn) $${entry.toFixed(2)}.`).catch(console.error);
+
+              const hitBe = cH >= entry;
+              const hitTp2 = cL <= tp2;
+              if (hitBe && hitTp2) {
+                closed = true;
+                status = "WIN";
+                profitR = 0.5 * 1.2;
+                exitPrice = entry;
+              } else if (hitBe) {
+                closed = true;
+                status = "WIN";
+                profitR = 0.5 * 1.2;
+                exitPrice = entry;
+              } else if (hitTp2) {
+                closed = true;
+                status = "WIN";
+                profitR = 0.5 * 1.2 + 0.5 * RR;
+                exitPrice = tp2;
+              }
+            }
+          } else {
+            // Đã đạt TP1 từ trước, SL dời về BE
+            const hitBe = cH >= entry;
+            const hitTp2 = cL <= tp2;
+            if (hitBe && hitTp2) {
+              closed = true;
+              status = "WIN";
+              profitR = 0.5 * 1.2;
+              exitPrice = entry;
+            } else if (hitBe) {
+              closed = true;
+              status = "WIN";
+              profitR = 0.5 * 1.2;
+              exitPrice = entry;
+            } else if (hitTp2) {
+              closed = true;
+              status = "WIN";
+              profitR = 0.5 * 1.2 + 0.5 * RR;
+              exitPrice = tp2;
+            }
+          }
         }
 
         if (closed) {
-          // Tính PnL dựa trên giá thoát thực tế
-          const exitPrice = status === "WIN" ? paperPosition.tp : paperPosition.sl;
-          const pnlActualR = (paperPosition.type === "LONG" ? (exitPrice - paperPosition.entry) : (paperPosition.entry - exitPrice)) / initialRiskDist;
-          
-          const pnlDollar = paperPosition.size * pnlActualR;
+          const pnlDollar = size * profitR;
           paperBalance += pnlDollar;
           const vnTime = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
           
-          console.log(`[TRADE] ${status} | ${paperPosition.strategy} | PnL: ${pnlActualR.toFixed(1)}R | Balance: $${paperBalance.toFixed(2)}`);
+          console.log(`[TRADE] ${profitR > 0 ? "WIN" : "LOSS"} | ${strategy} | PnL: ${profitR.toFixed(2)}R | Balance: $${paperBalance.toFixed(2)}`);
           
           const tradeRecord = {
             time: new Date().toISOString(),
-            type: paperPosition.type,
-            entry: paperPosition.entry,
+            type: type,
+            entry: entry,
             exit: exitPrice,
             pnl: pnlDollar,
-            status: status,
-            strategy: paperPosition.strategy
+            status: profitR > 0 ? "WIN" : "LOSS",
+            strategy: strategy
           };
           botState.trades.unshift(tradeRecord);
           saveTrade(tradeRecord);
 
-          await sendTelegram(`✅ [PAPER CLOSED] ${status === "WIN" ? "CHỐT LỜI" : "CẮT LỖ"}\n` +
-            `💰 PnL: ${pnlDollar.toFixed(2)}$ (${pnlActualR.toFixed(2)}R)\n` +
-            `🎯 Entry: ${paperPosition.entry.toFixed(2)} | Exit: ${exitPrice.toFixed(2)}\n` +
+          await sendTelegram(`✅ [PAPER CLOSED] ${profitR > 0 ? "CHỐT LỜI" : "CẮT LỖ"}\n` +
+            `💰 PnL: ${pnlDollar.toFixed(2)}$ (${profitR.toFixed(2)}R)\n` +
+            `🎯 Entry: ${entry.toFixed(2)} | Exit: ${exitPrice.toFixed(2)}\n` +
             `🏦 Số dư: ${paperBalance.toFixed(2)}$\n` +
             `⏰ Giờ VN: ${vnTime}`);
           
@@ -698,16 +811,23 @@ async function traderLoop() {
       if (!IS_LIVE_TRADING_ENABLED) { 
         const riskAmount = paperBalance * currentRiskPercent;
         const positionSize = riskAmount; 
+        const tp1R = 1.2;
+        const tp2R = RR; // lấy RR từ cấu hình hệ thống
+        const tp1 = sig === "LONG" ? e + risk * tp1R : e - risk * tp1R;
+        const tp2 = sig === "LONG" ? e + risk * tp2R : e - risk * tp2R;
 
         paperPosition = {
           type: sig,
           entry: e,
           sl: sl,
-          tp: tp,
+          tp: tp2,
           size: positionSize,
           strategy: strategyLabel,
           startTime: Date.now(),
-          isBE: false
+          reachedTp1: false,
+          tp1: tp1,
+          tp2: tp2,
+          risk: risk
         };
 
         const vnTime = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
