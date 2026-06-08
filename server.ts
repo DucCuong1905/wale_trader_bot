@@ -479,21 +479,33 @@ async function traderLoop() {
         for (const oldPos of botState.activeMT5Positions) {
            const stillOpen = pos.find((p: any) => p.ticket === oldPos.ticket);
            if (!stillOpen) {
-              const typeStr = oldPos.type === 0 ? "LONG (BUY)" : oldPos.type === 1 ? "SHORT (SELL)" : (oldPos.type || "UNKNOWN");
+              const isBuy = oldPos.type === 0 || oldPos.type === "0" || 
+                            (typeof oldPos.type === "string" && (
+                              oldPos.type.toLowerCase().includes("buy") || 
+                              oldPos.type.toLowerCase() === "long"
+                            ));
+              const isSell = oldPos.type === 1 || oldPos.type === "1" || 
+                             (typeof oldPos.type === "string" && (
+                               oldPos.type.toLowerCase().includes("sell") || 
+                               oldPos.type.toLowerCase() === "short"
+                             ));
+
+              const typeStr = isBuy ? "LONG (BUY)" : isSell ? "SHORT (SELL)" : (oldPos.type || "UNKNOWN");
               const openP = oldPos.price_open || 0;
               const openStr = openP ? openP.toFixed(2) : "N/A";
               
               const exitPrice = currentPrice;
               let isWin = false;
-              if (oldPos.type === 0 && exitPrice >= openP) isWin = true;
-              if (oldPos.type === 1 && exitPrice <= openP) isWin = true;
+              if (isBuy && exitPrice >= openP) isWin = true;
+              if (isSell && exitPrice <= openP) isWin = true;
               
-              const pnlVal = oldPos.type === 0 ? (exitPrice - openP) : (openP - exitPrice);
-              const pnlDollar = pnlVal * (oldPos.volume || 0.01) * 100; // rough estimation for XAUUSD
+              const pnlVal = isBuy ? (exitPrice - openP) : (openP - exitPrice);
+              const volume = parseFloat(oldPos.volume) || 0.01;
+              const pnlDollar = pnlVal * volume * 100; // rough estimation for XAUUSD
 
               const tradeRecord = {
                  time: new Date().toISOString(),
-                 type: typeStr.split(' ')[0], 
+                 type: isBuy ? "LONG" : isSell ? "SHORT" : "UNKNOWN", 
                  entry: openP,
                  exit: exitPrice,
                  pnl: pnlDollar,
@@ -503,7 +515,7 @@ async function traderLoop() {
               botState.trades.unshift(tradeRecord);
               saveTrade(tradeRecord);
 
-              sendTelegram(`🔔 **THÔNG BÁO MT5**\nLệnh ${typeStr} (Ticket: ${oldPos.ticket || 'N/A'}) đã đóng!\n• Cặp: ${PAIR}\n• Giá vào: ${openStr}\n• Giá thoát (ước tính): ${exitPrice.toFixed(2)}\n• PnL (ước tính): ${pnlDollar.toFixed(2)}$\n• Bạn hãy kiểm tra lại ứng dụng MT5 để xem kết quả thật.`).catch(console.error);
+              sendTelegram(`🔔 **THÔNG BÁO MT5**\nLệnh ${typeStr} (Ticket: ${oldPos.ticket || 'N/A'}) đã đóng!\n• Cặp: ${PAIR}\n• Giá vào: ${openStr}\n• Giá thoát (ước tính): ${exitPrice.toFixed(2)}\n• PnL (ước tính): ${pnlDollar >= 0 ? '+' : ''}${pnlDollar.toFixed(2)}$\n• Bạn hãy kiểm tra lại ứng dụng MT5 để xem kết quả thật.`).catch(console.error);
            }
         }
         botState.activeMT5Positions = pos;
