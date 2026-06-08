@@ -301,8 +301,8 @@ export async function runBacktest(
 
     const closePriceM1 = lastClosed[4];
     const distFromVWMA = Math.abs(closePriceM1 - vwmaM1);
-    const bullishM1 = closePriceM1 > emaM1 && closePriceM1 > vwmaM1 && emaM1 > vwmaM1;
-    const bearishM1 = closePriceM1 < emaM1 && closePriceM1 < vwmaM1 && emaM1 < vwmaM1;
+    const bullishM1 = closePriceM1 > emaM1 && closePriceM1 > vwmaM1 && emaM1 > vwmaM1 + (0.1 * atrM1);
+    const bearishM1 = closePriceM1 < emaM1 && closePriceM1 < vwmaM1 && emaM1 < vwmaM1 - (0.1 * atrM1);
 
     let sig: "LONG" | "SHORT" | null = null;
     const isOverExtendedLong = distFromVWMA > (atrM1 * 1.2);
