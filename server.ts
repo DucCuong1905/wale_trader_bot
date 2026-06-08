@@ -475,6 +475,16 @@ async function traderLoop() {
         const pos = await fetchMT5Positions(PAIR);
         botState.inPosition = pos.length > 0;
         
+        // Gán hoặc giữ lại balanceBefore cho các vị thế hiện tại
+        for (const p of pos) {
+           const existing = botState.activeMT5Positions.find((old: any) => old.ticket === p.ticket);
+           if (existing) {
+              p.balanceBefore = existing.balanceBefore || curr;
+           } else {
+              p.balanceBefore = curr;
+           }
+        }
+
         // Notify if a position was closed
         for (const oldPos of botState.activeMT5Positions) {
            const stillOpen = pos.find((p: any) => p.ticket === oldPos.ticket);
@@ -503,6 +513,9 @@ async function traderLoop() {
               const volume = parseFloat(oldPos.volume) || 0.01;
               const pnlDollar = pnlVal * volume * 100; // rough estimation for XAUUSD
 
+              const balanceBefore = oldPos.balanceBefore || curr;
+              const balanceAfter = IS_LIVE_TRADING_ENABLED ? await fetchMT5Balance() : paperBalance;
+
               const tradeRecord = {
                  time: new Date().toISOString(),
                  type: isBuy ? "LONG" : isSell ? "SHORT" : "UNKNOWN", 
@@ -510,12 +523,16 @@ async function traderLoop() {
                  exit: exitPrice,
                  pnl: pnlDollar,
                  status: isWin ? "WIN" : "LOSS",
-                 strategy: "WHALE SWEEP (LIVE)"
+                 strategy: "WHALE SWEEP (LIVE)",
+                 balanceBefore: balanceBefore,
+                 balanceAfter: balanceAfter,
+                 ticket: oldPos.ticket,
+                 volume: volume
               };
               botState.trades.unshift(tradeRecord);
               saveTrade(tradeRecord);
 
-              sendTelegram(`🔔 **THÔNG BÁO MT5**\nLệnh ${typeStr} (Ticket: ${oldPos.ticket || 'N/A'}) đã đóng!\n• Cặp: ${PAIR}\n• Giá vào: ${openStr}\n• Giá thoát (ước tính): ${exitPrice.toFixed(2)}\n• PnL (ước tính): ${pnlDollar >= 0 ? '+' : ''}${pnlDollar.toFixed(2)}$\n• Bạn hãy kiểm tra lại ứng dụng MT5 để xem kết quả thật.`).catch(console.error);
+              sendTelegram(`🔔 **THÔNG BÁO MT5**\nLệnh ${typeStr} (Ticket: ${oldPos.ticket || 'N/A'}) đã đóng!\n• Cặp: ${PAIR}\n• Giá vào: ${openStr}\n• Giá thoát (ước tính): ${exitPrice.toFixed(2)}\n• PnL (ước tính): ${pnlDollar >= 0 ? '+' : ''}${pnlDollar.toFixed(2)}$\n• Số dư: Trước $${balanceBefore.toFixed(2)} | Sau $${balanceAfter.toFixed(2)}\n• Bạn hãy kiểm tra lại ứng dụng MT5 để xem kết quả thật.`).catch(console.error);
            }
         }
         botState.activeMT5Positions = pos;
