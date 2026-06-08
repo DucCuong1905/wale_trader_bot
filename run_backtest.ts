@@ -143,6 +143,8 @@ async function main() {
     console.log(`📊 Tổng số lệnh:   ${results.totalTrades} lệnh`);
     console.log(`🥇 Số lệnh Thắng:   ${results.wins} | Số lệnh Thua: ${results.totalTrades - results.wins}`);
     console.log(`🏆 Tỷ lệ thắng (Winrate): ${((results.wins / (results.totalTrades || 1)) * 100).toFixed(1)}%`);
+    console.log(`📉 Sụt giảm tài khoản lớn nhất (Max Drawdown):   $${results.maxDrawdownValue.toFixed(2)} (${results.maxDrawdownPercent.toFixed(2)}%)`);
+    console.log(`🔥 Chuỗi thua liên tiếp tối đa (Max Consecutive Losses): ${results.maxConsecutiveLosses} lệnh`);
     console.log("=============================================================");
 
     if (results.monthlySnapshots && results.monthlySnapshots.length > 0) {

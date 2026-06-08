@@ -208,6 +208,13 @@ export async function runBacktest(
   let totalTrades = 0;
   let wins = 0;
   
+  let maxConsecutiveLosses = 0;
+  let currentConsecutiveLosses = 0;
+  
+  let peakBalance = 5000;
+  let maxDrawdownPercent = 0;
+  let maxDrawdownValue = 0;
+  
   let paperPosition: any = null;
   const monthlyStats = new Map<string, { trades: number, wins: number, profitR: number }>();
 
@@ -261,12 +268,35 @@ export async function runBacktest(
             stat.wins++;
             stat.profitR += rr;
             pnlDollar = paperPosition.riskUsd * rr;
+            
+            // Reset consecutive losses
+            currentConsecutiveLosses = 0;
           } else {
             totalProfitR -= 1;
             stat.profitR -= 1;
             pnlDollar = -paperPosition.riskUsd;
+            
+            // Increment consecutive losses
+            currentConsecutiveLosses++;
+            if (currentConsecutiveLosses > maxConsecutiveLosses) {
+              maxConsecutiveLosses = currentConsecutiveLosses;
+            }
           }
           balance += pnlDollar;
+          
+          // Update drawdown
+          if (balance > peakBalance) {
+            peakBalance = balance;
+          } else {
+            const currentDrawdownValue = peakBalance - balance;
+            const currentDrawdownPercent = (currentDrawdownValue / peakBalance) * 100;
+            if (currentDrawdownPercent > maxDrawdownPercent) {
+              maxDrawdownPercent = currentDrawdownPercent;
+            }
+            if (currentDrawdownValue > maxDrawdownValue) {
+              maxDrawdownValue = currentDrawdownValue;
+            }
+          }
           
           if (verbose) {
             const timeStr = new Date(cTs).toISOString().replace("T", " ").substring(0, 19);
@@ -382,6 +412,9 @@ export async function runBacktest(
     totalProfitR: totalProfitR,
     totalTrades: totalTrades,
     wins: wins,
+    maxConsecutiveLosses,
+    maxDrawdownPercent,
+    maxDrawdownValue,
     monthlySnapshots
   };
 

@@ -784,6 +784,8 @@ async function startServer() {
             `💰 Số dư cuối: $${r.finalBalance.toFixed(2)}`,
             `📈 Tổng PnL: ${whalePnLR.toFixed(1)}R`,
             `⚡ Tổng lệnh: ${whaleTrades} | Winrate: ${whaleWR}%`,
+            `📉 Max Drawdown: -$${r.maxDrawdownValue ? r.maxDrawdownValue.toFixed(2) : '0.00'} (${r.maxDrawdownPercent ? r.maxDrawdownPercent.toFixed(2) : '0.00'}%)`,
+            `🔥 Max Consecutive Losses: ${r.maxConsecutiveLosses !== undefined ? r.maxConsecutiveLosses : 0} lệnh`,
             ``,
             `Thống kê Whale Sweep theo tháng:`,
             whaleMonthlyReport || `• Không có dữ liệu tháng`
