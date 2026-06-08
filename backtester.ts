@@ -241,116 +241,13 @@ export async function runBacktest(
     // Quản lý Position (Exit check)
     if (paperPosition) {
        let closed = false;
-       let status: "WIN" | "LOSS" = "LOSS";
-       let profitR = 0;
-       
-       const { type, entry, sl, reachedTp1, tp1, tp2, tp2R, risk, riskUsd } = paperPosition;
-       
-       if (type === "LONG") {
-         if (!reachedTp1) {
-           const hitSl = cL <= sl;
-           const hitTp1 = cH >= tp1;
-           
-           if (hitSl && hitTp1) {
-             // Thận trọng: coi như dính SL trước
-             closed = true;
-             status = "LOSS";
-             profitR = -1;
-           } else if (hitSl) {
-             closed = true;
-             status = "LOSS";
-             profitR = -1;
-           } else if (hitTp1) {
-             paperPosition.reachedTp1 = true;
-             // Đạt TP1: Chốt 50% ở 1.2R, dời SL về BE (entry)
-             const hitBe = cL <= entry;
-             const hitTp2 = cH >= tp2;
-             
-             if (hitBe && hitTp2) {
-               closed = true;
-               status = "WIN";
-               profitR = 0.5 * 1.2; // nửa thứ 2 chạm BE (0R)
-             } else if (hitBe) {
-               closed = true;
-               status = "WIN";
-               profitR = 0.5 * 1.2;
-             } else if (hitTp2) {
-               closed = true;
-               status = "WIN";
-               profitR = 0.5 * 1.2 + 0.5 * tp2R; // = 1.6R (nếu tp2R = 2)
-             }
-           }
-         } else {
-           // Đã đạt TP1 tự trước đó, SL dời về BE
-           const hitBe = cL <= entry;
-           const hitTp2 = cH >= tp2;
-           
-           if (hitBe && hitTp2) {
-             closed = true;
-             status = "WIN";
-             profitR = 0.5 * 1.2;
-           } else if (hitBe) {
-             closed = true;
-             status = "WIN";
-             profitR = 0.5 * 1.2;
-           } else if (hitTp2) {
-             closed = true;
-             status = "WIN";
-             profitR = 0.5 * 1.2 + 0.5 * tp2R;
-           }
-         }
-       } else { // SHORT
-         if (!reachedTp1) {
-           const hitSl = cH >= sl;
-           const hitTp1 = cL <= tp1;
-           
-           if (hitSl && hitTp1) {
-             closed = true;
-             status = "LOSS";
-             profitR = -1;
-           } else if (hitSl) {
-             closed = true;
-             status = "LOSS";
-             profitR = -1;
-           } else if (hitTp1) {
-             paperPosition.reachedTp1 = true;
-             // Đạt TP1: Chốt 50% ở 1.2R, dời SL về BE (entry)
-             const hitBe = cH >= entry;
-             const hitTp2 = cL <= tp2;
-             
-             if (hitBe && hitTp2) {
-               closed = true;
-               status = "WIN";
-               profitR = 0.5 * 1.2;
-             } else if (hitBe) {
-               closed = true;
-               status = "WIN";
-               profitR = 0.5 * 1.2;
-             } else if (hitTp2) {
-               closed = true;
-               status = "WIN";
-               profitR = 0.5 * 1.2 + 0.5 * tp2R;
-             }
-           }
-         } else {
-           // Đã đạt TP1 tự trước đó, SL dời về BE
-           const hitBe = cH >= entry;
-           const hitTp2 = cL <= tp2;
-           
-           if (hitBe && hitTp2) {
-             closed = true;
-             status = "WIN";
-             profitR = 0.5 * 1.2;
-           } else if (hitBe) {
-             closed = true;
-             status = "WIN";
-             profitR = 0.5 * 1.2;
-           } else if (hitTp2) {
-             closed = true;
-             status = "WIN";
-             profitR = 0.5 * 1.2 + 0.5 * tp2R;
-           }
-         }
+       let status = "WIN";
+       if (paperPosition.type === "LONG") {
+         if (cL <= paperPosition.sl) { closed = true; status = "LOSS"; }
+         else if (cH >= paperPosition.tp) { closed = true; status = "WIN"; }
+       } else {
+         if (cH >= paperPosition.sl) { closed = true; status = "LOSS"; }
+         else if (cL <= paperPosition.tp) { closed = true; status = "WIN"; }
        }
 
        if (closed) {
@@ -365,19 +262,19 @@ export async function runBacktest(
           stat.trades++;
           
           let pnlDollar = 0;
-          if (profitR > 0) {
+          if (status === "WIN") {
             wins++;
-            totalProfitR += profitR;
+            totalProfitR += rr;
             stat.wins++;
-            stat.profitR += profitR;
-            pnlDollar = paperPosition.riskUsd * profitR;
+            stat.profitR += rr;
+            pnlDollar = paperPosition.riskUsd * rr;
             
             // Reset consecutive losses
             currentConsecutiveLosses = 0;
           } else {
-            totalProfitR += profitR; // profitR là -1
-            stat.profitR += profitR;
-            pnlDollar = paperPosition.riskUsd * profitR;
+            totalProfitR -= 1;
+            stat.profitR -= 1;
+            pnlDollar = -paperPosition.riskUsd;
             
             // Increment consecutive losses
             currentConsecutiveLosses++;
@@ -403,7 +300,7 @@ export async function runBacktest(
           
           if (verbose) {
             const timeStr = new Date(cTs).toISOString().replace("T", " ").substring(0, 19);
-            console.log(`[TRADE] ${timeStr} | ${paperPosition.type} | ${profitR > 0 ? "WIN" : "LOSS"} | PnL: ${profitR >= 0 ? '+' : ''}${profitR.toFixed(2)}R | PnL $: ${pnlDollar >= 0 ? '+' : ''}${pnlDollar.toFixed(2)}$ | B: ${balance.toFixed(2)}$`);
+            console.log(`[TRADE] ${timeStr} | ${paperPosition.type} | ${status} | PnL: ${status === "WIN" ? `+${rr}R` : `-1R`} | PnL $: ${pnlDollar > 0 ? '+' : ''}${pnlDollar.toFixed(2)}$ | B: ${balance.toFixed(2)}$`);
           }
 
           paperPosition = null;
@@ -468,10 +365,7 @@ export async function runBacktest(
       }
       
       const risk = Math.abs(e - sl);
-      const tp1R = 1.2;
-      const tp2R = rr; // Thường là 2.0, lấy từ tham số rr cho linh hoạt
-      const tp1 = sig === "LONG" ? e + risk * tp1R : e - risk * tp1R;
-      const tp2 = sig === "LONG" ? e + risk * tp2R : e - risk * tp2R;
+      const tp = sig === "LONG" ? e + risk * rr : e - risk * rr;
 
       const riskUsdStr = process.env.MT5_RISK_USD;
       let tradeRiskUsd = balance * 0.01; // Mặc định 1% tài khoản 5000 = 50$
@@ -495,12 +389,7 @@ export async function runBacktest(
         type: sig,
         entry: e,
         sl: sl,
-        tp: tp2,
-        reachedTp1: false,
-        tp1: tp1,
-        tp2: tp2,
-        tp2R: tp2R,
-        risk: risk,
+        tp: tp,
         riskUsd: tradeRiskUsd
       };
     }
