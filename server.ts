@@ -593,10 +593,10 @@ async function traderLoop() {
     const prevAdxM1 = calcADX(closedBars.slice(0, -1), 14);
     const emaM1 = calculateEMA(closedBars, 20); // EMA 20 M1
     
-    // Condition: close > emaM1 && close > vwmaM1 && emaM1 > vwmaM1 + 0.1 * ATR
+    // Condition: close > emaM1 && close > vwmaM1 && emaM1 > vwmaM1
     const closePriceM1 = lastClosedCandle[4];
-    const bullishM1 = closePriceM1 > emaM1 && closePriceM1 > vwmaM1 && emaM1 > vwmaM1 + (0.1 * atrM1);
-    const bearishM1 = closePriceM1 < emaM1 && closePriceM1 < vwmaM1 && emaM1 < vwmaM1 - (0.1 * atrM1);
+    const bullishM1 = closePriceM1 > emaM1 && closePriceM1 > vwmaM1 && emaM1 > vwmaM1;
+    const bearishM1 = closePriceM1 < emaM1 && closePriceM1 < vwmaM1 && emaM1 < vwmaM1;
     
     // --- Khung M1 Filter ---
     const vwma1m = vwmaM1;
@@ -695,7 +695,7 @@ async function traderLoop() {
           `1. Khoảng cách VWMA: ${sig === 'LONG' ? (!isOverExtendedLong ? '✅ Ok' : '❌ Quá xa') : (!isOverExtendedShort ? '✅ Ok' : '❌ Quá xa')} (${distFromVWMA.toFixed(2)})`,
           `2. ADX M1 (>=${ADX_THRESHOLD}): ${adxM1.adx >= ADX_THRESHOLD ? '✅ Ok' : '❌ Thấp'} (${adxM1.adx.toFixed(1)})`,
           `3. Xác nhận đóng nến (Close vs Open/Wick nến quét): ${condCloseOk ? '✅ Ok' : '❌ Trượt'} (Confirm: ${sweep.confirmClose?.toFixed(2)}, SweepOpen: ${sweep.sweepOpen?.toFixed(2)}, SweepHigh/Low: ${sig === 'LONG' ? sweep.high?.toFixed(2) : sweep.low?.toFixed(2)})`,
-          `4. Bộ lọc Xu hướng M1: ${sig === 'LONG' ? (bullishM1 ? '✅ Hợp lệ (Close > EMA20 > VWMA20 + 0.1*ATR)' : '❌ Không đồng thuận') : (bearishM1 ? '✅ Hợp lệ (Close < EMA20 < VWMA20 - 0.1*ATR)' : '❌ Không đồng thuận')}`,
+          `4. Bộ lọc Xu hướng M1: ${sig === 'LONG' ? (bullishM1 ? '✅ Hợp lệ (Close > EMA20 > VWMA20)' : '❌ Không đồng thuận') : (bearishM1 ? '✅ Hợp lệ (Close < EMA20 < VWMA20)' : '❌ Không đồng thuận')}`,
           `5. Sweep M1: ✅ Confirmed`
         ].join('\n');
 
