@@ -22,7 +22,19 @@ if (!fs.existsSync(TRADES_FILE)) {
       let totalLosses = 0;
       let totalPnl = 0;
 
-      for (const trade of data) {
+      // Tính toán Max Consecutive Losses và Max Drawdown cho các giao dịch lịch sử trong trades.json
+      const sortedHistory = [...data]
+        .filter((t: any) => t.time && t.status && !t.time.includes('2026-05-03T'))
+        .sort((a: any, b: any) => new Date(a.time).getTime() - new Date(b.time).getTime());
+
+      let maxConsecLosses = 0;
+      let currentConsecLosses = 0;
+      let peakBal = sortedHistory[0]?.balanceBefore !== undefined ? sortedHistory[0].balanceBefore : 5000;
+      let currentBal = peakBal;
+      let maxDDVal = 0;
+      let maxDDPct = 0;
+
+      for (const trade of sortedHistory) {
         if (!trade.time || !trade.status) continue;
         
         // Skip test trades
@@ -35,17 +47,41 @@ if (!fs.existsSync(TRADES_FILE)) {
           monthlyStats[monthKey] = { wins: 0, losses: 0, pnl: 0, totalR: 0 };
         }
 
-        if (trade.status === 'WIN' || trade.status === 'win') {
-          monthlyStats[monthKey].wins++;
-          totalWins++;
-        } else if (trade.status === 'LOSS' || trade.status === 'loss') {
-          monthlyStats[monthKey].losses++;
-          totalLosses++;
-        }
-        
         const pnl = parseFloat(trade.pnl) || 0;
         monthlyStats[monthKey].pnl += pnl;
         totalPnl += pnl;
+
+        let isWin = false;
+        if (trade.status === 'WIN' || trade.status === 'win' || pnl > 0) {
+          monthlyStats[monthKey].wins++;
+          totalWins++;
+          isWin = true;
+          currentConsecLosses = 0;
+        } else {
+          monthlyStats[monthKey].losses++;
+          totalLosses++;
+          currentConsecLosses++;
+          if (currentConsecLosses > maxConsecLosses) {
+            maxConsecLosses = currentConsecLosses;
+          }
+        }
+
+        const bBefore = trade.balanceBefore !== undefined ? trade.balanceBefore : currentBal;
+        const bAfter = trade.balanceAfter !== undefined ? trade.balanceAfter : (bBefore + pnl);
+        currentBal = bAfter;
+
+        if (currentBal > peakBal) {
+          peakBal = currentBal;
+        } else {
+          const ddVal = peakBal - currentBal;
+          const ddPct = (ddVal / peakBal) * 100;
+          if (ddVal > maxDDVal) {
+            maxDDVal = ddVal;
+          }
+          if (ddPct > maxDDPct) {
+            maxDDPct = ddPct;
+          }
+        }
       }
 
       console.log("\n================ KẾT QUẢ GIAO DỊCH THEO THÁNG ================\n");
@@ -72,6 +108,8 @@ if (!fs.existsSync(TRADES_FILE)) {
       console.log(`🟢 Tổng lệnh : ${grandTotal}`);
       console.log(`🏆 Winrate   : ${grandWinrate.toFixed(1)}%`);
       console.log(`💰 Tổng PnL  : $${totalPnl.toFixed(2)}`);
+      console.log(`📉 Sụt giảm tài khoản lớn nhất (Max Drawdown):   $${maxDDVal.toFixed(2)} (${maxDDPct.toFixed(2)}%)`);
+      console.log(`🔥 Chuỗi thua liên tiếp tối đa (Max Consecutive Losses): ${maxConsecLosses} lệnh`);
       console.log(`\n==============================================================\n`);
     }
   } catch (err: any) {
