@@ -632,7 +632,7 @@ async function traderLoop() {
     const vwma1m = vwmaM1;
     
     // --- Mean Reversion Filter (Check if price is too far from VWMA) ---
-    const distFromVWMA = Math.abs(currentPrice - vwmaM1);
+    const distFromVWMA = Math.abs(closePriceM1 - vwmaM1);
     
     const isInSession = isWithinTradingSessions(lastClosedCandleTime);
     
@@ -658,8 +658,8 @@ async function traderLoop() {
     const isOverExtendedLong = distFromVWMA > (atrM1 * 1.2);
     const isOverExtendedShort = distFromVWMA > (atrM1 * 1.2);
 
-    const slDistanceLong = Math.abs(currentPrice - sweep.low);
-    const slDistanceShort = Math.abs(sweep.high - currentPrice);
+    const slDistanceLong = Math.abs(closePriceM1 - sweep.low);
+    const slDistanceShort = Math.abs(sweep.high - closePriceM1);
     const hasBadEntryPriceLong = slDistanceLong > (atrM1 * 4.0);
     const hasBadEntryPriceShort = slDistanceShort > (atrM1 * 4.0);
 
@@ -724,14 +724,14 @@ async function traderLoop() {
 
     // 7. XỬ LÝ LỆNH (MARKET ENTRY)
     if (sig) {
-      const e = currentPrice; 
+      const e = closePriceM1; 
       const slRaw = sig === "LONG" ? (sweep.low - atrM1 * 0.2) : (sweep.high + atrM1 * 0.2);
       const minRisk = atrM1 * 1.5;
       let sl = 0;
       if (sig === "LONG") {
-        sl = Math.min(slRaw, currentPrice - minRisk);
+        sl = Math.min(slRaw, closePriceM1 - minRisk);
       } else {
-        sl = Math.max(slRaw, currentPrice + minRisk);
+        sl = Math.max(slRaw, closePriceM1 + minRisk);
       }
       
       const risk = Math.abs(e - sl);
