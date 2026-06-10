@@ -218,6 +218,22 @@ export async function runBacktest(
   let paperPosition: any = null;
   const monthlyStats = new Map<string, { trades: number, wins: number, profitR: number }>();
 
+  const filterStats = {
+    totalSweeps: 0,
+    totalSweepLow: 0,
+    totalSweepHigh: 0,
+    blockedOverextended: 0,
+    blockedBadEntryPrice: 0,
+    blockedAdx: 0,
+    blockedDisplacement: 0,
+    blockedVolume: 0,
+    blockedSession: 0,
+    blockedConfirmClose: 0,
+    blockedTrendM1: 0,
+    passedLong: 0,
+    passedShort: 0
+  };
+
   for (let i = 50; i < data.length; i++) {
     if (!isRunning) break;
     
@@ -343,14 +359,45 @@ export async function runBacktest(
     const hasBadEntryPriceLong = slDistanceLong > (atrM1 * 4.0);
     const hasBadEntryPriceShort = slDistanceShort > (atrM1 * 4.0);
 
+    // Thu thập thống kê lọc
+    if (sweep.sweepLow) {
+      filterStats.totalSweepLow++;
+      filterStats.totalSweeps++;
+      if (isOverExtendedLong) filterStats.blockedOverextended++;
+      if (hasBadEntryPriceLong) filterStats.blockedBadEntryPrice++;
+      if (adxM1.adx < adxThreshold) filterStats.blockedAdx++;
+      if (!sweep.displacementBullish) filterStats.blockedDisplacement++;
+      if (!sweep.volConfirm) filterStats.blockedVolume++;
+      if (!isInSession) filterStats.blockedSession++;
+      const condCloseOk = (sweep.confirmClose > sweep.sweepOpen || sweep.confirmClose > sweep.high);
+      if (!condCloseOk) filterStats.blockedConfirmClose++;
+      if (!bullishM1) filterStats.blockedTrendM1++;
+    }
+
+    if (sweep.sweepHigh) {
+      filterStats.totalSweepHigh++;
+      filterStats.totalSweeps++;
+      if (isOverExtendedShort) filterStats.blockedOverextended++;
+      if (hasBadEntryPriceShort) filterStats.blockedBadEntryPrice++;
+      if (adxM1.adx < adxThreshold) filterStats.blockedAdx++;
+      if (!sweep.displacementBearish) filterStats.blockedDisplacement++;
+      if (!sweep.volConfirm) filterStats.blockedVolume++;
+      if (!isInSession) filterStats.blockedSession++;
+      const condCloseOk = (sweep.confirmClose < sweep.sweepOpen || sweep.confirmClose < sweep.low);
+      if (!condCloseOk) filterStats.blockedConfirmClose++;
+      if (!bearishM1) filterStats.blockedTrendM1++;
+    }
+
     // Xác nhận vào lệnh Long
     if ( !isOverExtendedLong && !hasBadEntryPriceLong && adxM1.adx >= adxThreshold && sweep.sweepLow && sweep.displacementBullish && sweep.volConfirm && isInSession && (sweep.confirmClose > sweep.sweepOpen || sweep.confirmClose > sweep.high) && bullishM1 ) {
       sig = "LONG";
+      filterStats.passedLong++;
     }
 
     // Xác nhận vào lệnh Short
     if ( !isOverExtendedShort && !hasBadEntryPriceShort && adxM1.adx >= adxThreshold && sweep.sweepHigh && sweep.displacementBearish && sweep.volConfirm && isInSession && (sweep.confirmClose < sweep.sweepOpen || sweep.confirmClose < sweep.low) && bearishM1 ) {
       sig = "SHORT";
+      filterStats.passedShort++;
     }
 
     if (sig) {
@@ -415,7 +462,8 @@ export async function runBacktest(
     maxConsecutiveLosses,
     maxDrawdownPercent,
     maxDrawdownValue,
-    monthlySnapshots
+    monthlySnapshots,
+    filterStats
   };
 
   try {

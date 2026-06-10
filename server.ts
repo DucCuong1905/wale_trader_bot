@@ -27,7 +27,7 @@ const MAX_DAILY_LOSS = 0.06; // Giới hạn lỗ tối đa trong ngày (6%)
 // CẤU HÌNH PHIÊN GIAO DỊCH (LONDON & NEW YORK)
 let ENABLE_SESSION_FILTER = false; 
 const VWMA_PERIOD = 20; // Cố định VWMA 20
-let ADX_THRESHOLD = 20; // Ngưỡng ADX mặc định
+let ADX_THRESHOLD = 18; // Ngưỡng ADX mặc định
 const SESSION_START_GMT = 8;  // 08:00 GMT (Mở phiên Âu)
 const SESSION_END_GMT = 21;    // 21:00 GMT (Đóng phiên Mỹ)
 
@@ -856,6 +856,32 @@ async function startServer() {
           const whalePnLR = r.totalProfitR;
           const whaleWR = whaleTrades > 0 ? (whaleWins / whaleTrades * 100).toFixed(1) : "0.0";
 
+          // Tạo báo cáo về các bộ lọc (Filters status)
+          let filterReport = "";
+          if (r.filterStats) {
+            const fsVal = r.filterStats;
+            filterReport = [
+              `🔍 **THỐNG KÊ QUÉT & BỘ LỌC:**`,
+              `• Tổng số Sweeps: **${fsVal.totalSweeps}** (Quét đáy: ${fsVal.totalSweepLow} | Quét đỉnh: ${fsVal.totalSweepHigh})`,
+              `• LONG vượt bộ lọc: **${fsVal.passedLong}** | SHORT vượt bộ lọc: **${fsVal.passedShort}**`,
+              `• Lệnh thực tế khớp: **${r.totalTrades}** (có thể bị chặn bởi SL/TP đang chạy hoặc cooldown)`,
+              `\n❌ **SỐ LỆNH BỊ CHẶN BỞI CÁC BỘ LỌC:**`,
+              `1. Lọc Xu hướng M1 (Close/EMA20/VWMA20): **${fsVal.blockedTrendM1}**`,
+              `2. Lọc Khoảng cách VWMA (Overextended): **${fsVal.blockedOverextended}**`,
+              `3. Lọc Khoảng dừng lỗ SL quá rộng: **${fsVal.blockedBadEntryPrice}**`,
+              `4. Lọc Chỉ số ADX M1 thấp: **${fsVal.blockedAdx}**`,
+              `5. Lọc Lực nến thắng thế (Displacement): **${fsVal.blockedDisplacement}**`,
+              `6. Lọc Xác nhận Vol yếu: **${fsVal.blockedVolume}**`,
+              `7. Lọc Khung giờ Session: **${fsVal.blockedSession}**`,
+              `8. Lọc Nến xác nhận đóng yếu: **${fsVal.blockedConfirmClose}**`
+            ].join('\n');
+            
+            // Console log chi tiết để theo dõi trên VPS / system log
+            console.log("=== BÁO CÁO BỘ LỌC CHẶN (BACKTEST) ===");
+            console.log(filterReport);
+            console.log("=====================================");
+          }
+
           // Gửi đúng 1 tin nhắn duy nhất chứa toàn bộ thông tin
           const reportMsg = [
             `📊 **KẾT QUẢ BACKTEST WHALE SWEEP ONLY**`,
@@ -865,6 +891,8 @@ async function startServer() {
             `⚡ Tổng lệnh: ${whaleTrades} | Winrate: ${whaleWR}%`,
             `📉 Max Drawdown: -$${r.maxDrawdownValue ? r.maxDrawdownValue.toFixed(2) : '0.00'} (${r.maxDrawdownPercent ? r.maxDrawdownPercent.toFixed(2) : '0.00'}%)`,
             `🔥 Max Consecutive Losses: ${r.maxConsecutiveLosses !== undefined ? r.maxConsecutiveLosses : 0} lệnh`,
+            ``,
+            filterReport,
             ``,
             `Thống kê Whale Sweep theo tháng:`,
             whaleMonthlyReport || `• Không có dữ liệu tháng`
