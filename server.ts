@@ -27,7 +27,7 @@ const MAX_DAILY_LOSS = 0.06; // Giới hạn lỗ tối đa trong ngày (6%)
 // CẤU HÌNH PHIÊN GIAO DỊCH (LONDON & NEW YORK)
 let ENABLE_SESSION_FILTER = false; 
 const VWMA_PERIOD = 20; // Cố định VWMA 20
-let ADX_THRESHOLD = 18; // Ngưỡng ADX mặc định
+let ADX_THRESHOLD = 20; // Ngưỡng ADX mặc định
 const SESSION_START_GMT = 8;  // 08:00 GMT (Mở phiên Âu)
 const SESSION_END_GMT = 21;    // 21:00 GMT (Đóng phiên Mỹ)
 
@@ -632,7 +632,7 @@ async function traderLoop() {
     const vwma1m = vwmaM1;
     
     // --- Mean Reversion Filter (Check if price is too far from VWMA) ---
-    const distFromVWMA = Math.abs(closePriceM1 - vwmaM1);
+    const distFromVWMA = Math.abs(currentPrice - vwmaM1);
     
     const isInSession = isWithinTradingSessions(lastClosedCandleTime);
     
@@ -658,8 +658,8 @@ async function traderLoop() {
     const isOverExtendedLong = distFromVWMA > (atrM1 * 1.2);
     const isOverExtendedShort = distFromVWMA > (atrM1 * 1.2);
 
-    const slDistanceLong = Math.abs(closePriceM1 - sweep.low);
-    const slDistanceShort = Math.abs(sweep.high - closePriceM1);
+    const slDistanceLong = Math.abs(currentPrice - sweep.low);
+    const slDistanceShort = Math.abs(sweep.high - currentPrice);
     const hasBadEntryPriceLong = slDistanceLong > (atrM1 * 4.0);
     const hasBadEntryPriceShort = slDistanceShort > (atrM1 * 4.0);
 
@@ -724,14 +724,14 @@ async function traderLoop() {
 
     // 7. XỬ LÝ LỆNH (MARKET ENTRY)
     if (sig) {
-      const e = closePriceM1; 
+      const e = currentPrice; 
       const slRaw = sig === "LONG" ? (sweep.low - atrM1 * 0.2) : (sweep.high + atrM1 * 0.2);
       const minRisk = atrM1 * 1.5;
       let sl = 0;
       if (sig === "LONG") {
-        sl = Math.min(slRaw, closePriceM1 - minRisk);
+        sl = Math.min(slRaw, currentPrice - minRisk);
       } else {
-        sl = Math.max(slRaw, closePriceM1 + minRisk);
+        sl = Math.max(slRaw, currentPrice + minRisk);
       }
       
       const risk = Math.abs(e - sl);

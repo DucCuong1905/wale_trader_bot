@@ -228,7 +228,7 @@ export async function runBacktest(
     }
     
     // Nến vừa đóng hoàn toàn (đóng vai trò là nến -1 ở hiện tại)
-    const slice = data.slice(Math.max(0, i - 1000), i);
+    const slice = data.slice(i-50, i);
     const lastClosed = slice[slice.length - 1]; // chính là data[i-1]
     const cTs = lastClosed[0];
     
