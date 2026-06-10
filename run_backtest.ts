@@ -130,7 +130,7 @@ async function main() {
   let timeframe = "1m";
   let rr = 1.2;
   let enableSessionFilter = true;
-  let adxThreshold = 20;
+  let adxThreshold = 18;
 
   // Hỗ trợ truyền nhanh qua lệnh: npx tsx run_backtest.ts [startDate] [endDate] [timeframe] [rr]
   if (args[0]) {
@@ -184,6 +184,24 @@ async function main() {
     console.log(`📉 Sụt giảm tài khoản lớn nhất (Max Drawdown):   $${results.maxDrawdownValue.toFixed(2)} (${results.maxDrawdownPercent.toFixed(2)}%)`);
     console.log(`🔥 Chuỗi thua liên tiếp tối đa (Max Consecutive Losses): ${results.maxConsecutiveLosses} lệnh`);
     console.log("=============================================================");
+
+    if (results.filterStats) {
+      const fsVal = results.filterStats;
+      console.log("\n🔍 THỐNG KÊ QUÉT & BỘ LỌC:");
+      console.log(`• Tổng số Sweeps: ${fsVal.totalSweeps} (Quét đáy: ${fsVal.totalSweepLow} | Quét đỉnh: ${fsVal.totalSweepHigh})`);
+      console.log(`• LONG vượt bộ lọc: ${fsVal.passedLong} | SHORT vượt bộ lọc: ${fsVal.passedShort}`);
+      console.log(`• Lệnh thực tế khớp: ${results.totalTrades} (có thể bị chặn bởi SL/TP đang chạy hoặc cooldown)`);
+      console.log("\n❌ SỐ LỆNH BỊ CHẶN BỞI CÁC BỘ LỌC:");
+      console.log(`1. Lọc Xu hướng M1 (Close/EMA20/VWMA20): ${fsVal.blockedTrendM1}`);
+      console.log(`2. Lọc Khoảng cách VWMA (Overextended): ${fsVal.blockedOverextended}`);
+      console.log(`3. Lọc Khoảng dừng lỗ SL quá rộng: ${fsVal.blockedBadEntryPrice}`);
+      console.log(`4. Lọc Chỉ số ADX M1 thấp (<${adxThreshold}): ${fsVal.blockedAdx}`);
+      console.log(`5. Lọc Lực nến thắng thế (Displacement): ${fsVal.blockedDisplacement}`);
+      console.log(`6. Lọc Xác nhận Vol yếu: ${fsVal.blockedVolume}`);
+      console.log(`7. Lọc Khung giờ Session: ${fsVal.blockedSession}`);
+      console.log(`8. Lọc Nến xác nhận đóng yếu: ${fsVal.blockedConfirmClose}`);
+      console.log("=============================================================");
+    }
 
     if (results.monthlySnapshots && results.monthlySnapshots.length > 0) {
       console.log("\n📅 THỐNG KÊ TỪNG THÁNG:");

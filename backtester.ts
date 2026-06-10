@@ -23,15 +23,35 @@ export function tryLoadFromXauCsv(startDate: string, endDate: string, timeframe:
   
   const files = fs.readdirSync(dataDir);
   const csvFiles = files.filter(f => f.endsWith('.csv'));
-  const jsonFile = files.find(f => f.endsWith('.json') && f.includes('1m'));
+  const jsonFiles = files.filter(f => f.endsWith('.json') && f.includes('1m'));
 
   let klines: any[] = [];
-  if (jsonFile && csvFiles.length === 0) {
-     try {
-       const text = fs.readFileSync(path.join(dataDir, jsonFile), 'utf8');
-       klines = JSON.parse(text);
-     } catch (e) {
-       console.error("Error reading JSON data:", e);
+  if (jsonFiles.length > 0 && csvFiles.length === 0) {
+     for (const fName of jsonFiles) {
+        try {
+          const text = fs.readFileSync(path.join(dataDir, fName), 'utf8');
+          let parsed: any[] = [];
+          try {
+             const result = JSON.parse(text);
+             if (Array.isArray(result)) {
+                parsed = result;
+             }
+          } catch {
+             // Fallback for truncated JSON files
+             const matches = text.match(/\[\d+(?:\.\d+)?(?:,[\d.-]+(?:\.\d+)?){5}\]/g);
+             if (matches) {
+                for (const match of matches) {
+                   try {
+                      parsed.push(JSON.parse(match));
+                   } catch {}
+                }
+             }
+             console.log(`⚠️ Đã khôi phục thành công ${parsed.length} nến từ file JSON bị lỗi/cắt cụt (${fName})`);
+          }
+          klines = klines.concat(parsed);
+        } catch (e: any) {
+          console.error(`Lỗi khi đọc file JSON ${fName}:`, e.message);
+        }
      }
   } else if (csvFiles.length > 0) {
      try {
