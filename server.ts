@@ -698,7 +698,8 @@ async function traderLoop() {
           `8. Khoảng dừng lỗ hợp lệ (SL < 4 ATR): ${!hasBadEntryPriceLong ? '✅ Đạt' : '❌ SL quá rộng (Bad entry)'} (Khoảng: ${slDistanceLong.toFixed(2)} vs Ngưỡng: ${(atrM1 * 4.0).toFixed(2)})`,
           `9. Bộ lọc Xu hướng M1 (Close > EMA20 > VWMA20): ${bullishM1 ? '✅ Hợp lệ' : '❌ Không đồng thuận'} (Close: ${closePriceM1.toFixed(2)} | EMA20: ${emaM1.toFixed(2)} | VWMA20: ${vwmaM1.toFixed(2)})`
         ].join('\n');
-        sendTelegram(msg).catch(console.error);
+        // Log to console instead of sending telegram as requested by user
+        console.log(msg);
       } else if (sweep.sweepHigh) {
         const condCloseOk = sweep.confirmClose < sweep.sweepOpen || sweep.confirmClose < sweep.low;
         const msg = [
@@ -718,7 +719,8 @@ async function traderLoop() {
           `8. Khoảng dừng lỗ hợp lệ (SL < 4 ATR): ${!hasBadEntryPriceShort ? '✅ Đạt' : '❌ SL quá rộng (Bad entry)'} (Khoảng: ${slDistanceShort.toFixed(2)} vs Ngưỡng: ${(atrM1 * 4.0).toFixed(2)})`,
           `9. Bộ lọc Xu hướng M1 (Close < EMA20 < VWMA20): ${bearishM1 ? '✅ Hợp lệ' : '❌ Không đồng thuận'} (Close: ${closePriceM1.toFixed(2)} | EMA20: ${emaM1.toFixed(2)} | VWMA20: ${vwmaM1.toFixed(2)})`
         ].join('\n');
-        sendTelegram(msg).catch(console.error);
+        // Log to console instead of sending telegram as requested by user
+        console.log(msg);
       }
     }
 
