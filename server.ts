@@ -819,7 +819,7 @@ async function traderLoop() {
   } catch (e) {
     console.error("Trader Loop Error:", e);
   }
-  setTimeout(traderLoop, 5000);
+  setTimeout(traderLoop, 1000);
 }
 
 async function startServer() {
