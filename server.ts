@@ -602,8 +602,8 @@ async function traderLoop() {
 
 
     // 4. TÍNH TOÁN CÁC CHỈ BÁO KỸ THUẬT dựa trên nến đã đóng hoàn toàn (Khớp 100% với Mô hình Backtest)
-    const closedBars = bars.slice(0, -1);
-    const lastClosedCandle = closedBars[closedBars.length - 1];
+    const closedBarsFull = bars.slice(0, -1);
+    const lastClosedCandle = closedBarsFull[closedBarsFull.length - 1];
     const lastClosedCandleTime = lastClosedCandle[0];
 
     // Chỉ phân tích khi có nến mới đã đóng hoàn toàn (M1)
@@ -612,6 +612,9 @@ async function traderLoop() {
       return;
     }
     botState.lastProcessedCandleTime = lastClosedCandleTime;
+
+    // Chỉ cắt đúng một đoạn 50 nến để tính toán giống hệt backtest
+    const closedBars = closedBarsFull.slice(-50);
 
     // --- Khung M1 ---
     const atrM1 = calculateATR(closedBars, 14);
