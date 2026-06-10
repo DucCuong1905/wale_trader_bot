@@ -130,7 +130,7 @@ async function main() {
   let timeframe = "1m";
   let rr = 1.2;
   let enableSessionFilter = true;
-  let adxThreshold = 18;
+  let adxThreshold = 20;
 
   // Hỗ trợ truyền nhanh qua lệnh: npx tsx run_backtest.ts [startDate] [endDate] [timeframe] [rr]
   if (args[0]) {

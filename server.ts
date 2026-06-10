@@ -27,7 +27,7 @@ const MAX_DAILY_LOSS = 0.06; // Giới hạn lỗ tối đa trong ngày (6%)
 // CẤU HÌNH PHIÊN GIAO DỊCH (LONDON & NEW YORK)
 let ENABLE_SESSION_FILTER = false; 
 const VWMA_PERIOD = 20; // Cố định VWMA 20
-let ADX_THRESHOLD = 18; // Ngưỡng ADX mặc định
+let ADX_THRESHOLD = 20; // Ngưỡng ADX mặc định
 const SESSION_START_GMT = 8;  // 08:00 GMT (Mở phiên Âu)
 const SESSION_END_GMT = 21;    // 21:00 GMT (Đóng phiên Mỹ)
 
