@@ -379,7 +379,8 @@ function calcADX(ohlcv: any[], period: number = 14) {
   const str = smooth(tr), spDM = smooth(pDM), smDM = smooth(mDM);
   const dx: number[] = [], pDIs: number[] = [], mDIs: number[] = [];
   for (let i = 0; i < str.length; i++) {
-    const pDI = 100 * (spDM[i] / str[i]), mDI = 100 * (smDM[i] / str[i]);
+    const divisor = str[i] === 0 ? 1 : str[i];
+    const pDI = 100 * (spDM[i] / divisor), mDI = 100 * (smDM[i] / divisor);
     pDIs.push(pDI); mDIs.push(mDI);
     dx.push(100 * Math.abs(pDI - mDI) / (pDI + mDI || 1));
   }
@@ -672,6 +673,52 @@ async function traderLoop() {
       sig = "SHORT";
     }
 
+    // GỬI TELEGRAM CHO CÁC LỆNH SWEEP BỊ LỌC (KHÔNG KHỚP)
+    if (!sig) {
+      const vnTime = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
+      if (sweep.sweepLow) {
+        const condCloseOk = sweep.confirmClose > sweep.sweepOpen || sweep.confirmClose > sweep.high;
+        const msg = [
+          `🔍 **PHÁT HIỆN SWEEP (QUÉT ĐÁY) - BỊ BỘ LỌC CHẶN**`,
+          `• Cặp giao dịch: ${PAIR}`,
+          `• Hướng giao dịch đề xuất: **BUY (LONG)**`,
+          `• Giá hiện tại: $${currentPrice.toFixed(2)}`,
+          `• Thời gian (VN): ${vnTime}`,
+          `\n📋 **CHI TIẾT KIỂM TRA BỘ LỌC:**`,
+          `1. Quét đáy M1 (SweepLow): ✅ Đạt (Low: ${sweep.low.toFixed(2)})`,
+          `2. Lực nến thắng thế (Displacement): ${sweep.displacementBullish ? '✅ Đạt' : '❌ Thua/Yếu'} (Nến xác nhận đóng: ${sweep.confirmClose.toFixed(2)})`,
+          `3. Xác nhận Vol (Volume Confirm): ${sweep.volConfirm ? '✅ Đạt' : '❌ Thấp'}`,
+          `4. Chỉ số ADX M1 (>=${ADX_THRESHOLD}): ${adxM1.adx >= ADX_THRESHOLD ? '✅ Đạt' : '❌ Thấp'} (Thực tế: ${adxM1.adx.toFixed(1)})`,
+          `5. Khung giờ giao dịch (Session): ${isInSession ? '✅ Trong phiên' : '❌ Ngoài phiên'}`,
+          `6. Đóng nến xác nhận (> Open/High): ${condCloseOk ? '✅ Đạt' : '❌ Không đạt'} (Đóng: ${sweep.confirmClose.toFixed(2)} vs Open: ${sweep.sweepOpen.toFixed(2)} / High: ${sweep.high.toFixed(2)})`,
+          `7. Đồ thị quá mua/bán (Overextended < 1.2 ATR): ${!isOverExtendedLong ? '✅ Đạt' : '❌ Quá xa VWMA (Overextended)'} (Khoảng cách: ${distFromVWMA.toFixed(2)} vs Ngưỡng: ${(atrM1 * 1.2).toFixed(2)})`,
+          `8. Khoảng dừng lỗ hợp lệ (SL < 4 ATR): ${!hasBadEntryPriceLong ? '✅ Đạt' : '❌ SL quá rộng (Bad entry)'} (Khoảng: ${slDistanceLong.toFixed(2)} vs Ngưỡng: ${(atrM1 * 4.0).toFixed(2)})`,
+          `9. Bộ lọc Xu hướng M1 (Close > EMA20 > VWMA20): ${bullishM1 ? '✅ Hợp lệ' : '❌ Không đồng thuận'} (Close: ${closePriceM1.toFixed(2)} | EMA20: ${emaM1.toFixed(2)} | VWMA20: ${vwmaM1.toFixed(2)})`
+        ].join('\n');
+        sendTelegram(msg).catch(console.error);
+      } else if (sweep.sweepHigh) {
+        const condCloseOk = sweep.confirmClose < sweep.sweepOpen || sweep.confirmClose < sweep.low;
+        const msg = [
+          `🔍 **PHÁT HIỆN SWEEP (QUÉT ĐỈNH) - BỊ BỘ LỌC CHẶN**`,
+          `• Cặp giao dịch: ${PAIR}`,
+          `• Hướng giao dịch đề xuất: **SELL (SHORT)**`,
+          `• Giá hiện tại: $${currentPrice.toFixed(2)}`,
+          `• Thời gian (VN): ${vnTime}`,
+          `\n📋 **CHI TIẾT KIỂM TRA BỘ LỌC:**`,
+          `1. Quét đỉnh M1 (SweepHigh): ✅ Đạt (High: ${sweep.high.toFixed(2)})`,
+          `2. Lực nến thắng thế (Displacement): ${sweep.displacementBearish ? '✅ Đạt' : '❌ Thua/Yếu'} (Nến xác nhận đóng: ${sweep.confirmClose.toFixed(2)})`,
+          `3. Xác nhận Vol (Volume Confirm): ${sweep.volConfirm ? '✅ Đạt' : '❌ Thấp'}`,
+          `4. Chỉ số ADX M1 (>=${ADX_THRESHOLD}): ${adxM1.adx >= ADX_THRESHOLD ? '✅ Đạt' : '❌ Thấp'} (Thực tế: ${adxM1.adx.toFixed(1)})`,
+          `5. Khung giờ giao dịch (Session): ${isInSession ? '✅ Trong phiên' : '❌ Ngoài phiên'}`,
+          `6. Đóng nến xác nhận (< Open/Low): ${condCloseOk ? '✅ Đạt' : '❌ Không đạt'} (Đóng: ${sweep.confirmClose.toFixed(2)} vs Open: ${sweep.sweepOpen.toFixed(2)} / Low: ${sweep.low.toFixed(2)})`,
+          `7. Đồ thị quá mua/bán (Overextended < 1.2 ATR): ${!isOverExtendedShort ? '✅ Đạt' : '❌ Quá xa VWMA (Overextended)'} (Khoảng cách: ${distFromVWMA.toFixed(2)} vs Ngưỡng: ${(atrM1 * 1.2).toFixed(2)})`,
+          `8. Khoảng dừng lỗ hợp lệ (SL < 4 ATR): ${!hasBadEntryPriceShort ? '✅ Đạt' : '❌ SL quá rộng (Bad entry)'} (Khoảng: ${slDistanceShort.toFixed(2)} vs Ngưỡng: ${(atrM1 * 4.0).toFixed(2)})`,
+          `9. Bộ lọc Xu hướng M1 (Close < EMA20 < VWMA20): ${bearishM1 ? '✅ Hợp lệ' : '❌ Không đồng thuận'} (Close: ${closePriceM1.toFixed(2)} | EMA20: ${emaM1.toFixed(2)} | VWMA20: ${vwmaM1.toFixed(2)})`
+        ].join('\n');
+        sendTelegram(msg).catch(console.error);
+      }
+    }
+
     const currentRR = RR;
     const strategyLabel = "WHALE SWEEP";
 
@@ -866,6 +913,7 @@ async function startServer() {
       symbol: PAIR, last_price: botState.lastPrice, in_position: botState.inPosition,
       signals: botState.signals.slice(0, 10), balance: botState.balance, ai_reasoning: botState.aiReasoning,
       adx: botState.adx.toFixed(1),
+      adx_threshold: ADX_THRESHOLD,
       ema20_5m: botState.ema20_5m.toFixed(2),
       ema50_5m: botState.ema50_5m.toFixed(2),
       shadow_ema_5m: botState.shadowEma5mCheck, 
