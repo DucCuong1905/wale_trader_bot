@@ -2,8 +2,8 @@ import { runBacktest, tryLoadFromXauCsv } from "./backtester.ts";
 import * as fs from "fs";
 
 async function optimize() {
-  const startDate = "2024-01-01T00:00:00Z";
-  const endDate = "2026-01-01T00:00:00Z";
+  const startDate = "2022-01-01T00:00:00Z";
+  const endDate = "2026-06-01T00:00:00Z";
   const timeframe = "1m";
 
   console.log("⏳ Đang tải dữ liệu một lần duy nhất để phục vụ Optimizer...");
