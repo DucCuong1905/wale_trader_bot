@@ -23,7 +23,7 @@ async function optimize() {
   const wickRatios = [0.25, 0.35, 0.40];
   const bodyRatios = [0.60, 0.70, 0.80];
   const closeRatios = [0.45, 0.50];
-  const adxThresholds = [20, 25];
+  const adxThresholds = [20];
   const volRatios = [0.60, 0.75, 0.90];
   
   let topConfigs: any[] = [];
