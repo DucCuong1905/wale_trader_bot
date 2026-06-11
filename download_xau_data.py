@@ -5,10 +5,23 @@ import os
 import time
 
 # ==========================================================
-# Cấu hình Symbol. Bạn có thể đổi sang "XAUUSD" nếu MT5 của bạn đặt tên như vậy.
+# Cấu hình Symbol và Thư mục dữ liệu. 
+# Bạn có thể đổi sang "XAUUSD" nếu MT5 của bạn đặt tên như vậy.
 # ==========================================================
 SYMBOL = "XAUUSDc"
 OUTPUT_DIR = "C:/xau_data"
+
+# ==========================================================
+# CẤU HÌNH THỜI GIAN TẢI DỮ LIỆU TÙY CHỈNH (Cực kỳ linh hoạt)
+# ==========================================================
+# Mặc định đặt True để tải theo khối từng năm (2018 -> Hiện tại).
+# Đổi thành False nếu bạn chỉ muốn tải một khoảng thời gian ngắn cụ thể (Ví dụ: Tháng 5 và Tháng 6 năm 2026)
+CHE_DO_TAI_NAM = False  
+
+# Điền mốc thời gian nếu CHE_DO_TAI_NAM = False:
+NGAY_BAT_DAU = datetime(2026, 1, 1)    # Định dạng: datetime(Năm, Tháng, Ngày) (Tải từ đầu năm 2026)
+NGAY_KET_THUC = datetime(2027, 1, 1)   # Định dạng: datetime(Năm, Tháng, Ngày) (Hoặc lấy đến hết năm)
+FILE_TEN_TUY_CHINH = "2026.csv"  # Tên file lưu trữ dữ liệu năm 2026 hoàn chỉnh
 
 def download_data():
     print("=== MT5 DATA DOWNLOADER FOR BACKTEST ===")
@@ -32,59 +45,78 @@ def download_data():
     print("🟢 Đã kết nối thành công tới MetaTrader 5!")
 
     # Đảm bảo Symbol được active trong Market Watch
-    if not mt2_select := mt5.symbol_select(SYMBOL, True):
+    if not mt5.symbol_select(SYMBOL, True):
         print(f"⚠️ Không thể hiển thị Symbol '{SYMBOL}' trong Market Watch. Vui lòng kiểm tra lại tên Symbol chính xác trên sàn.")
 
-
-    # Duyệt tải dữ liệu từ 2018 đến 2026
-    current_year = datetime.now().year
-    
-    for year in range(2018, current_year + 1):
-        print(f"\n⏳ Đang yêu cầu tải dữ liệu nến M1 năm {year}...")
-        
-        start_date = datetime(year, 1, 1)
-        end_date = datetime(year + 1, 1, 1)
-
+    if not CHE_DO_TAI_NAM:
+        # CHẾ ĐỘ 1: TẢI THEO PHẠM VI NGÀY TÙY CHỈNH CHỈ ĐỊNH (Ví dụ: chỉ lấy Tháng 5, Tháng 6 năm 2026)
+        print(f"\n⏳ [CHẾ ĐỘ TÙY CHỈNH] Đang yêu cầu tải dữ liệu nến M1 từ {NGAY_BAT_DAU.strftime('%Y-%m-%d')} đến {NGAY_KET_THUC.strftime('%Y-%m-%d')}...")
         rates = None
-        max_retries = 12  # Thử lại tối đa 12 lần (tổng cộng ~24-30 giây) để MT5 tải dữ liệu từ Broker
+        max_retries = 15
         
         for attempt in range(1, max_retries + 1):
             rates = mt5.copy_rates_range(
                 SYMBOL,
                 mt5.TIMEFRAME_M1,
-                start_date,
-                end_date
+                NGAY_BAT_DAU,
+                NGAY_KET_THUC
             )
-            
             count = len(rates) if rates is not None else 0
-            
-            # Đối với các năm cũ (trước năm hiện tại), số nến M1 thực tế phải rất nhiều (> 5,000 nến)
-            # Nếu chỉ lấy được 1-2 nến, nghĩa là MT5 vẫn đang tải từ broker trong nền
-            is_insufficient = (year < current_year and count < 10000) or (year == current_year and count == 0)
-            
-            if not is_insufficient and rates is not None and len(rates) > 0:
+            if rates is not None and count > 0:
                 print(f"   👉 [Lần thử {attempt}] Đã tải thành công {count:,} nến!")
                 break
             else:
                 print(f"   ⚠️ [Lần thử {attempt}] MT5 phản hồi {count} nến. Đang chờ đồng bộ hóa dữ liệu từ Broker...")
                 time.sleep(2.5)
 
-        if rates is None or len(rates) <= 1:
-            print(f"❌ Không thể lấy dữ liệu nến thực tế cho năm {year} (Broker có thế không lưu lịch sử xa hoặc sai Symbol '{SYMBOL}').")
-            continue
+        if rates is None or len(rates) == 0:
+            print(f"❌ Không thể lấy dữ liệu nến cho khoảng thời gian tùy chỉnh.")
+        else:
+            df = pd.DataFrame(rates)
+            df['time'] = pd.to_datetime(df['time'], unit='s')
+            file_path = os.path.join(OUTPUT_DIR, FILE_TEN_TUY_CHINH)
+            df.to_csv(file_path, index=False)
+            print(f"✅ ĐÃ LƯU THÀNH CÔNG: {len(df):,} nến vào file: {file_path}")
 
-        # Chuyển đổi thành DataFrame để xử lý
-        df = pd.DataFrame(rates)
+    else:
+        # CHẾ ĐỘ 2: TẢI THEO KHỐI TỪNG NĂM (2018 -> HIỆN TẠI)
+        current_year = datetime.now().year
+        for year in range(2018, current_year + 1):
+            print(f"\n⏳ [CHẾ ĐỘ NĂM] Đang yêu cầu tải dữ liệu nến M1 năm {year}...")
+            
+            start_date = datetime(year, 1, 1)
+            end_date = datetime(year + 1, 1, 1)
 
-        # Chuyển đổi cột thời gian UTC Epoch giây sang Date_time chuẩn
-        df['time'] = pd.to_datetime(df['time'], unit='s')
+            rates = None
+            max_retries = 12
+            
+            for attempt in range(1, max_retries + 1):
+                rates = mt5.copy_rates_range(
+                    SYMBOL,
+                    mt5.TIMEFRAME_M1,
+                    start_date,
+                    end_date
+                )
+                
+                count = len(rates) if rates is not None else 0
+                is_insufficient = (year < current_year and count < 10000) or (year == current_year and count == 0)
+                
+                if not is_insufficient and rates is not None and len(rates) > 0:
+                    print(f"   👉 [Lần thử {attempt}] Đã tải thành công {count:,} nến!")
+                    break
+                else:
+                    print(f"   ⚠️ [Lần thử {attempt}] MT5 phản hồi {count} nến. Đang chờ đồng bộ hóa dữ liệu từ Broker...")
+                    time.sleep(2.5)
 
-        # Xác định đường dẫn file lưu trữ
-        file_path = os.path.join(OUTPUT_DIR, f"{year}.csv")
+            if rates is None or len(rates) <= 1:
+                print(f"❌ Không thể lấy dữ liệu nến thực tế cho năm {year}.")
+                continue
 
-        # Lưu DataFrame ra CSV (bao gồm đầy đủ: time, open, high, low, close, tick_volume, spread, real_volume)
-        df.to_csv(file_path, index=False)
-        print(f"✅ ĐÃ LƯU THÀNH CÔNG: {len(df):,} nến nạp chuẩn vào: {file_path}")
+            df = pd.DataFrame(rates)
+            df['time'] = pd.to_datetime(df['time'], unit='s')
+            file_path = os.path.join(OUTPUT_DIR, f"{year}.csv")
+            df.to_csv(file_path, index=False)
+            print(f"✅ ĐÃ LƯU THÀNH CÔNG: {len(df):,} nến chuẩn vào: {file_path}")
 
     mt5.shutdown()
     print("\n🎉 HOÀN THÀNH TẢI DỮ LIỆU LỊCH SỬ VÀNG CHẤT LƯỢNG CAO!")
