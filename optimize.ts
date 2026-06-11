@@ -19,11 +19,11 @@ async function optimize() {
   console.log(`✅ Đã tải ${klines.length} nến vào RAM. Bắt đầu Grid Search...\n`);
 
   // --- GRID SEARCH PARAMETERS ---
-  const riskRatios = [1.0, 1.2, 1.5, 2.0]; // ADDED RISKS
+  const riskRatios = [1.2, 1.5, 2.0]; // ADDED RISKS
   const wickRatios = [0.25, 0.35, 0.40];
   const bodyRatios = [0.60, 0.70, 0.80];
   const closeRatios = [0.45, 0.50];
-  const adxThresholds = [10, 15, 20];
+  const adxThresholds = [20, 25];
   const volRatios = [0.60, 0.75, 0.90];
   
   let topConfigs: any[] = [];
