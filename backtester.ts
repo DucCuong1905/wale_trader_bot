@@ -80,6 +80,11 @@ export function tryLoadFromXauCsv(startDate: string, endDate: string, timeframe:
                  oIdx = 2; hIdx = 3; lIdx = 4; cIdx = 5; vIdx = 6;
              } else {
                  timeStr = parts[0].replace(/\./g, '-');
+                 if (timeStr.includes(' ')) {
+                     timeStr = timeStr.replace(' ', 'T') + 'Z';
+                 } else if (timeStr.length === 10) {
+                     timeStr += 'T00:00:00Z';
+                 }
              }
              
              if (!isNaN(Number(parts[0]))) ts = Number(parts[0]);
@@ -102,6 +107,42 @@ export function tryLoadFromXauCsv(startDate: string, endDate: string, timeframe:
      }
   }
   return klines;
+}
+
+function getVietnamTimeMs(cTs: number): number {
+  const d = new Date(cTs);
+  const year = d.getUTCFullYear();
+  
+  // Tìm ngày Chủ Nhật cuối cùng của tháng 3 (bắt đầu mùa hè - DST của EET/EEST)
+  const march31 = new Date(Date.UTC(year, 2, 31, 1, 0, 0));
+  const march31Day = march31.getUTCDay();
+  const dstStart = new Date(march31.getTime() - march31Day * 24 * 60 * 60 * 1000);
+  
+  // Tìm ngày Chủ Nhật cuối cùng của tháng 10 (kết thúc mùa hè - DST của EET/EEST)
+  const oct31 = new Date(Date.UTC(year, 9, 31, 1, 0, 0));
+  const oct31Day = oct31.getUTCDay();
+  const dstEnd = new Date(oct31.getTime() - oct31Day * 24 * 60 * 60 * 1000);
+  
+  // Nếu nằm trong khoảng này thì Broker dùng GMT+3, lệch +4 tiếng so với giờ VN (GMT+7)
+  // Nếu ngoài khoảng (Mùa đông) thì Broker dùng GMT+2, lệch +5 tiếng so với giờ VN (GMT+7)
+  const isDst = d >= dstStart && d < dstEnd;
+  const offsetHours = isDst ? 4 : 5;
+  
+  return cTs + offsetHours * 60 * 60 * 1000;
+}
+
+function getVietnamTimeFromBrokerTime(cTs: number): string {
+  const vnTimeMs = getVietnamTimeMs(cTs);
+  const vnDate = new Date(vnTimeMs);
+  
+  const y = vnDate.getUTCFullYear();
+  const m = String(vnDate.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(vnDate.getUTCDate()).padStart(2, "0");
+  const h = String(vnDate.getUTCHours()).padStart(2, "0");
+  const min = String(vnDate.getUTCMinutes()).padStart(2, "0");
+  const s = String(vnDate.getUTCSeconds()).padStart(2, "0");
+  
+  return `${y}-${m}-${day} ${h}:${min}:${s}`;
 }
 
 function calculateATR(bars: any[], period: number = 14) {
@@ -290,7 +331,7 @@ export async function runBacktest(
           totalTrades++;
           
           const d = new Date(cTs);
-          const monthKey = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+          const monthKey = `${new Date(getVietnamTimeMs(cTs)).getFullYear()}-${String(new Date(getVietnamTimeMs(cTs)).getMonth() + 1).padStart(2, '0')}`;
           if (!monthlyStats.has(monthKey)) {
              monthlyStats.set(monthKey, { trades: 0, wins: 0, profitR: 0 });
           }
@@ -335,7 +376,7 @@ export async function runBacktest(
           }
           
           if (verbose) {
-            const timeStr = new Date(cTs).toISOString().replace("T", " ").substring(0, 19);
+            const timeStr = getVietnamTimeFromBrokerTime(cTs);
             console.log(`[TRADE] ${timeStr} | ${paperPosition.type} | ${status} | PnL: ${status === "WIN" ? `+${rr}R` : `-1R`} | PnL $: ${pnlDollar > 0 ? '+' : ''}${pnlDollar.toFixed(2)}$ | B: ${balance.toFixed(2)}$`);
           }
 
