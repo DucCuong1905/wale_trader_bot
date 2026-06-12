@@ -60,6 +60,7 @@ let paperBalance = 5000; // Vốn giả lập ban đầu 5000$
 const DATA_DIR = path.join(process.cwd(), "data");
 const TRADES_FILE = path.join(DATA_DIR, "trades.json");
 const BACKTEST_RESULTS_FILE = path.join(DATA_DIR, "backtest_results.json");
+const PAPER_STATE_FILE = path.join(DATA_DIR, "paper_state.json");
 
 let backtestStatus = {
   isRunning: false,
@@ -69,6 +70,39 @@ let backtestStatus = {
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR);
 }
+
+function savePaperState() {
+  try {
+    const state = {
+      paperPosition,
+      paperPendingOrder,
+      paperBalance
+    };
+    fs.writeFileSync(PAPER_STATE_FILE, JSON.stringify(state, null, 2), "utf-8");
+  } catch (e) {
+    console.error("Error saving paper state:", e);
+  }
+}
+
+function loadPaperState() {
+  if (fs.existsSync(PAPER_STATE_FILE)) {
+    try {
+      const data = fs.readFileSync(PAPER_STATE_FILE, "utf-8");
+      const state = JSON.parse(data);
+      if (state) {
+        if (state.paperPosition !== undefined) paperPosition = state.paperPosition;
+        if (state.paperPendingOrder !== undefined) paperPendingOrder = state.paperPendingOrder;
+        if (typeof state.paperBalance === "number") paperBalance = state.paperBalance;
+        console.log(`[INIT] Khôi phục trạng thái Paper Trade thành công: Vị thế: ${paperPosition ? paperPosition.type : 'Không có'}, Số dư: $${paperBalance}`);
+      }
+    } catch (e) {
+      console.error("Error loading paper state:", e);
+    }
+  }
+}
+
+// Khởi động lấy lại trạng thái ảo
+loadPaperState();
 
 function loadTrades() {
   if (fs.existsSync(TRADES_FILE)) {
@@ -656,6 +690,7 @@ async function traderLoop() {
           
           paperPosition = null;
           botState.lastTradeTime = Date.now();
+          savePaperState();
         }
       } 
       botState.inPosition = !!paperPosition;
@@ -830,6 +865,7 @@ async function traderLoop() {
 
         const vnTime = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
         botState.lastTradeTime = Date.now(); 
+        savePaperState();
 
         const strategyName = "WHALE SWEEP (Quét thanh khoản)";
 
