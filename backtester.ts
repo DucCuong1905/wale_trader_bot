@@ -110,25 +110,9 @@ export function tryLoadFromXauCsv(startDate: string, endDate: string, timeframe:
 }
 
 function getVietnamTimeMs(cTs: number): number {
-  const d = new Date(cTs);
-  const year = d.getUTCFullYear();
-  
-  // Tìm ngày Chủ Nhật cuối cùng của tháng 3 (bắt đầu mùa hè - DST của EET/EEST)
-  const march31 = new Date(Date.UTC(year, 2, 31, 1, 0, 0));
-  const march31Day = march31.getUTCDay();
-  const dstStart = new Date(march31.getTime() - march31Day * 24 * 60 * 60 * 1000);
-  
-  // Tìm ngày Chủ Nhật cuối cùng của tháng 10 (kết thúc mùa hè - DST của EET/EEST)
-  const oct31 = new Date(Date.UTC(year, 9, 31, 1, 0, 0));
-  const oct31Day = oct31.getUTCDay();
-  const dstEnd = new Date(oct31.getTime() - oct31Day * 24 * 60 * 60 * 1000);
-  
-  // Nếu nằm trong khoảng này thì Broker dùng GMT+3, lệch +4 tiếng so với giờ VN (GMT+7)
-  // Nếu ngoài khoảng (Mùa đông) thì Broker dùng GMT+2, lệch +5 tiếng so với giờ VN (GMT+7)
-  const isDst = d >= dstStart && d < dstEnd;
-  const offsetHours = isDst ? 4 : 5;
-  
-  return cTs + offsetHours * 60 * 60 * 1000;
+  // Vì cTs là timestamp UTC chuẩn, và Việt Nam là GMT+7 cố định quanh năm,
+  // nên ta chỉ cần cộng chính xác 7 giờ để có giờ Việt Nam.
+  return cTs + 7 * 60 * 60 * 1000;
 }
 
 function getVietnamTimeFromBrokerTime(cTs: number): string {
@@ -377,8 +361,7 @@ export async function runBacktest(
           
           if (verbose) {
             const timeStr = getVietnamTimeFromBrokerTime(cTs);
-            const exitPrice = status === "LOSS" ? paperPosition.sl : paperPosition.tp;
-            console.log(`[TRADE] ${timeStr} | ${paperPosition.type} | ${status} | Entry: ${paperPosition.entry.toFixed(2)} | SL: ${paperPosition.sl.toFixed(2)} | TP: ${paperPosition.tp.toFixed(2)} | Close: ${exitPrice.toFixed(2)} | PnL: ${status === "WIN" ? `+${rr}R` : `-1R`} | PnL $: ${pnlDollar > 0 ? '+' : ''}${pnlDollar.toFixed(2)}$ | B: ${balance.toFixed(2)}$`);
+            console.log(`[TRADE] ${timeStr} | ${paperPosition.type} | ${status} | PnL: ${status === "WIN" ? `+${rr}R` : `-1R`} | PnL $: ${pnlDollar > 0 ? '+' : ''}${pnlDollar.toFixed(2)}$ | B: ${balance.toFixed(2)}$`);
           }
 
           paperPosition = null;
