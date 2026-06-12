@@ -104,6 +104,16 @@ function getVietnamTimeString(dateInput?: Date | string): string {
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
 
+function getVietnamDateString(dateInput?: Date | string): string {
+  const date = dateInput ? new Date(dateInput) : new Date();
+  const localString = date.toLocaleString("en-US", { timeZone: "Asia/Ho_Chi_Minh" });
+  const d = new Date(localString);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 async function sendReportToMT5Bridge(trade: any) {
   try {
     console.log(`[MT5 BRIDGE] Đang gửi report lệnh ticket ${trade.ticket} sang MT5 Bridge...`);
@@ -514,9 +524,11 @@ async function traderLoop() {
     }
     
     botState.balance = curr;
-    // Tự động reset số dư gốc mỗi ngày
-    if (botState.lastResetDate !== new Date().toISOString().split('T')[0]) {
-      botState.dailyStartingBalance = curr; botState.lastResetDate = new Date().toISOString().split('T')[0];
+    // Tự động reset số dư gốc mỗi ngày theo giờ Việt Nam (Asia/Ho_Chi_Minh)
+    const currentVNDate = getVietnamDateString();
+    if (botState.lastResetDate !== currentVNDate) {
+      botState.dailyStartingBalance = curr; 
+      botState.lastResetDate = currentVNDate;
     }
     // Dừng nếu lỗ quá 6% trong ngày
     if (botState.dailyStartingBalance > 0 && (curr - botState.dailyStartingBalance) / botState.dailyStartingBalance <= -MAX_DAILY_LOSS) {
