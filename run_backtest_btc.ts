@@ -23,17 +23,33 @@ function tryLoadFromBtcCsv(startDate: string, endDate: string, timeframe: string
   }
   
   const files = fs.readdirSync(dataDir);
+  
+  // Trích xuất năm bắt đầu và kết thúc của khoảng backtest
+  const startYear = new Date(startDate).getUTCFullYear();
+  const endYear = new Date(endDate).getUTCFullYear();
+  
+  // Hàm kiểm tra file có khớp với khoảng năm đang backtest hay không
+  const isFileInYearRange = (fName: string) => {
+      const match = fName.match(/(19|20)\d{2}/);
+      if (!match) {
+          // Nếu không chứa năm dạng Số trong tên file (ví dụ: btc.csv), mặc định cho phép nạp tránh bỏ sót
+          return true;
+      }
+      const fileYear = parseInt(match[0], 10);
+      return fileYear >= startYear && fileYear <= endYear;
+  };
+
   let csvFiles: string[] = [];
   let jsonFiles: string[] = [];
 
-  // Nếu đọc từ ổ C:\btc_data, ta lấy mọi file csv/json trong đó
+  // Nếu đọc từ ổ C:\btc_data, ta lấy mọi file csv/json trong đó và lọc theo năm
   if (dataDir === customWindowsDir) {
-      csvFiles = files.filter(f => f.endsWith('.csv'));
-      jsonFiles = files.filter(f => f.endsWith('.json'));
+      csvFiles = files.filter(f => f.endsWith('.csv') && isFileInYearRange(f));
+      jsonFiles = files.filter(f => f.endsWith('.json') && isFileInYearRange(f));
   } else {
-      // Nếu đọc từ thư mục dự án ./data, ta lọc thông minh chỉ lấy file tên chứa "btc" để không dính nến Vàng
-      csvFiles = files.filter(f => f.toLowerCase().includes('btc') && f.endsWith('.csv'));
-      jsonFiles = files.filter(f => f.toLowerCase().includes('btc') && f.endsWith('.json'));
+      // Nếu đọc từ thư mục dự án ./data, ta lọc thông minh chỉ lấy file tên chứa "btc" và lọc theo năm
+      csvFiles = files.filter(f => f.toLowerCase().includes('btc') && f.endsWith('.csv') && isFileInYearRange(f));
+      jsonFiles = files.filter(f => f.toLowerCase().includes('btc') && f.endsWith('.json') && isFileInYearRange(f));
   }
 
   let klines: any[] = [];
