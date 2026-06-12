@@ -24,6 +24,7 @@ NGAY_KET_THUC = datetime(2026, 6, 1)   # Đến đầu tháng 6 năm 2026
 FILE_TEN_TUY_CHINH = "2026_btc.csv"  # Tên file lưu trữ dữ liệu tùy chỉnh
 
 def download_data():
+    global OUTPUT_DIR
     print("=== MT5 BITCOIN DATA DOWNLOADER FOR BACKTEST ===")
     print(f"Thư mục lưu mặc định: {OUTPUT_DIR}")
 
@@ -37,7 +38,6 @@ def download_data():
             project_data_dir = os.path.join(os.getcwd(), 'data')
             if not os.path.exists(project_data_dir):
                 os.makedirs(project_data_dir)
-            global OUTPUT_DIR
             OUTPUT_DIR = project_data_dir
             print(f"⚠️ Không thể tạo thư mục ổ C. Chuyển hướng lưu vào: {OUTPUT_DIR}")
 
