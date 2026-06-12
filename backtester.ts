@@ -377,7 +377,8 @@ export async function runBacktest(
           
           if (verbose) {
             const timeStr = getVietnamTimeFromBrokerTime(cTs);
-            console.log(`[TRADE] ${timeStr} | ${paperPosition.type} | ${status} | PnL: ${status === "WIN" ? `+${rr}R` : `-1R`} | PnL $: ${pnlDollar > 0 ? '+' : ''}${pnlDollar.toFixed(2)}$ | B: ${balance.toFixed(2)}$`);
+            const exitPrice = status === "LOSS" ? paperPosition.sl : paperPosition.tp;
+            console.log(`[TRADE] ${timeStr} | ${paperPosition.type} | ${status} | Entry: ${paperPosition.entry.toFixed(2)} | SL: ${paperPosition.sl.toFixed(2)} | TP: ${paperPosition.tp.toFixed(2)} | Close: ${exitPrice.toFixed(2)} | PnL: ${status === "WIN" ? `+${rr}R` : `-1R`} | PnL $: ${pnlDollar > 0 ? '+' : ''}${pnlDollar.toFixed(2)}$ | B: ${balance.toFixed(2)}$`);
           }
 
           paperPosition = null;
