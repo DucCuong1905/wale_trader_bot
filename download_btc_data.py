@@ -14,9 +14,8 @@ OUTPUT_DIR = "C:/btc_data"
 # ==========================================================
 # CẤU HÌNH THỜI GIAN TẢI DỮ LIỆU TÙY CHỈNH
 # ==========================================================
-# Mặc định đặt False để tải theo khoảng ngày chỉ định dưới đây (tiết kiệm thời gian)
-# Đổi thành True nếu bạn muốn tải sỉ nguyên cả khối lịch sử từng năm (2020 -> Hiện tại)
-CHE_DO_TAI_NAM = False  
+# Mặc định đặt True để tải sỉ nguyên cả khối lịch sử từng năm (2018 -> Hiện tại)
+CHE_DO_TAI_NAM = True  
 
 # Mốc thời gian nếu CHE_DO_TAI_NAM = False:
 NGAY_BAT_DAU = datetime(2026, 1, 1)    # Tải từ đầu năm 2026
@@ -96,7 +95,7 @@ def download_data():
     else:
         # CHẾ ĐỘ 2: TẢI THEO KHỐI TỪNG NĂM
         current_year = datetime.now().year
-        for year in range(2020, current_year + 1):
+        for year in range(2018, current_year + 1):
             print(f"\n⏳ [CHẾ ĐỘ NĂM] Đang yêu cầu tải dữ liệu nến M1 năm {year}...")
             
             start_date = datetime(year, 1, 1)
