@@ -1,6 +1,8 @@
 import MetaTrader5 as mt5
 from flask import Flask, request, jsonify
 import sys
+import os
+import csv
 
 app = Flask(__name__)
 
@@ -206,6 +208,48 @@ def get_positions():
         return jsonify({"status": "success", "positions": pos_list})
     except Exception as e:
         return jsonify({"status": "error", "message": f"Lỗi exception khi lấy vị thế: {str(e)}"}), 500
+
+@app.route('/save_report', methods=['POST'])
+def save_report():
+    try:
+        data = request.json
+        print(f"📥 Nhận dữ liệu report giao dịch: {data}")
+        
+        # Thư mục lưu trữ giống/khớp với download_xau_data.py
+        output_dir = "C:/xau_data"
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+            
+        file_path = os.path.join(output_dir, "live_reports.csv")
+        file_exists = os.path.isfile(file_path)
+        
+        # Mở file để ghi thêm dòng báo cáo
+        with open(file_path, mode='a', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            # Nếu file chưa tồn tại thì tạo tiêu đề
+            if not file_exists:
+                writer.writerow(["time", "ticket", "type", "volume", "entry", "exit", "pnl", "status", "strategy", "balanceBefore", "balanceAfter"])
+            
+            writer.writerow([
+                data.get("time", ""),
+                data.get("ticket", ""),
+                data.get("type", ""),
+                data.get("volume", ""),
+                data.get("entry", ""),
+                data.get("exit", ""),
+                data.get("pnl", ""),
+                data.get("status", ""),
+                data.get("strategy", ""),
+                data.get("balanceBefore", ""),
+                data.get("balanceAfter", "")
+            ])
+            
+        print(f"✅ Đã ghi thêm báo cáo lệnh ticket {data.get('ticket')} vào {file_path}")
+        return jsonify({"status": "success", "message": "Report saved successfully"}), 200
+    except Exception as e:
+        print(f"❌ Lỗi khi lưu report: {str(e)}")
+        return jsonify({"status": "error", "message": f"Exception: {str(e)}"}), 500
+
 
 if __name__ == "__main__":
     initialize_mt5()

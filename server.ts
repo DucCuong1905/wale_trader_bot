@@ -89,14 +89,68 @@ function loadTrades() {
   return [];
 }
 
+function getVietnamTimeString(dateInput?: Date | string): string {
+  const date = dateInput ? new Date(dateInput) : new Date();
+  const localString = date.toLocaleString("en-US", { timeZone: "Asia/Ho_Chi_Minh" });
+  const d = new Date(localString);
+  
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const hours = String(d.getHours()).padStart(2, "0");
+  const minutes = String(d.getMinutes()).padStart(2, "0");
+  const seconds = String(d.getSeconds()).padStart(2, "0");
+  
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
+async function sendReportToMT5Bridge(trade: any) {
+  try {
+    console.log(`[MT5 BRIDGE] Đang gửi report lệnh ticket ${trade.ticket} sang MT5 Bridge...`);
+    const res = await fetch(`${MT5_BRIDGE_URL}/save_report`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(trade)
+    });
+    const result = await res.json() as any;
+    if (result && result.status === "success") {
+       console.log(`✅ [MT5 BRIDGE] Đã lưu thành công báo cáo lệnh vào ổ cứng VPS!`);
+    } else {
+       console.warn(`⚠️ [MT5 BRIDGE] Phản hồi lỗi từ VPS:`, result?.message);
+    }
+  } catch (err: any) {
+    console.error(`❌ [MT5 BRIDGE] Gửi báo cáo thất bại:`, err.message);
+  }
+}
+
 function saveTrade(trade: any) {
   const trades = loadTrades();
   trades.unshift(trade);
   const limited = trades.slice(0, 1000);
   try {
     fs.writeFileSync(TRADES_FILE, JSON.stringify(limited, null, 2));
+
+    // Ghi cục bộ vào file CSV (data/live_reports.csv)
+    const localCsvPath = path.join(DATA_DIR, "live_reports.csv");
+    const csvExists = fs.existsSync(localCsvPath);
+    const headers = "time,ticket,type,volume,entry,exit,pnl,status,strategy,balanceBefore,balanceAfter\n";
+    const newRow = `"${trade.time || ''}","${trade.ticket || ''}","${trade.type || ''}","${trade.volume || ''}","${trade.entry || ''}","${trade.exit || ''}","${trade.pnl || ''}","${trade.status || ''}","${trade.strategy || ''}","${trade.balanceBefore || ''}","${trade.balanceAfter || ''}"\n`;
+    
+    if (!csvExists) {
+      fs.writeFileSync(localCsvPath, headers + newRow);
+    } else {
+      fs.appendFileSync(localCsvPath, newRow);
+    }
+    console.log(`✅ Đã lưu báo cáo lệnh ticket ${trade.ticket || 'paper'} tại ${localCsvPath}`);
   } catch (e) {
-    console.error("Error saving trade:", e);
+    console.error("Error saving trade locally:", e);
+  }
+
+  // Nếu là lệnh có ticket (LIVE) hoặc nếu người dùng muốn lưu live thì ta đồng bộ sang VPS ổ cứng
+  if (trade.ticket && MT5_ENABLED) {
+    sendReportToMT5Bridge(trade).catch(err => {
+      console.error("❌ Không thể gửi report sang MT5 Bridge:", err.message);
+    });
   }
 }
 
@@ -518,7 +572,7 @@ async function traderLoop() {
               const balanceAfter = IS_LIVE_TRADING_ENABLED ? await fetchMT5Balance() : paperBalance;
 
               const tradeRecord = {
-                 time: new Date().toISOString(),
+                 time: getVietnamTimeString(),
                  type: isBuy ? "LONG" : isSell ? "SHORT" : "UNKNOWN", 
                  entry: openP,
                  exit: exitPrice,
@@ -571,7 +625,7 @@ async function traderLoop() {
           console.log(`[TRADE] ${status} | ${paperPosition.strategy} | PnL: ${pnlActualR.toFixed(1)}R | Balance: $${paperBalance.toFixed(2)}`);
           
           const tradeRecord = {
-            time: new Date().toISOString(),
+            time: getVietnamTimeString(),
             type: paperPosition.type,
             entry: paperPosition.entry,
             exit: exitPrice,
